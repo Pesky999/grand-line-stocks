@@ -14,7 +14,148 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      characters: {
+        Row: {
+          bounty: number | null
+          created_at: string
+          crew: string | null
+          current_price: number
+          description: string | null
+          id: string
+          image_url: string | null
+          name: string
+          previous_price: number
+          role: string | null
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          bounty?: number | null
+          created_at?: string
+          crew?: string | null
+          current_price?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          name: string
+          previous_price?: number
+          role?: string | null
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          bounty?: number | null
+          created_at?: string
+          crew?: string | null
+          current_price?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          name?: string
+          previous_price?: number
+          role?: string | null
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      news: {
+        Row: {
+          body: string
+          character_id: string | null
+          created_at: string
+          id: string
+          impact: string
+          title: string
+        }
+        Insert: {
+          body: string
+          character_id?: string | null
+          created_at?: string
+          id?: string
+          impact?: string
+          title: string
+        }
+        Update: {
+          body?: string
+          character_id?: string | null
+          created_at?: string
+          id?: string
+          impact?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_history: {
+        Row: {
+          character_id: string
+          created_at: string
+          id: string
+          note: string | null
+          price: number
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          price: number
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_history_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trivia_questions: {
+        Row: {
+          answer_index: number
+          choices: Json
+          created_at: string
+          difficulty: string
+          id: string
+          question: string
+          reward: number
+        }
+        Insert: {
+          answer_index: number
+          choices: Json
+          created_at?: string
+          difficulty?: string
+          id?: string
+          question: string
+          reward?: number
+        }
+        Update: {
+          answer_index?: number
+          choices?: Json
+          created_at?: string
+          difficulty?: string
+          id?: string
+          question?: string
+          reward?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
