@@ -126,6 +126,65 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      trivia_attempts: {
+        Row: {
+          correct: boolean
+          created_at: string
+          id: string
+          question_id: string
+          reward: number
+          user_id: string
+        }
+        Insert: {
+          correct: boolean
+          created_at?: string
+          id?: string
+          question_id: string
+          reward?: number
+          user_id: string
+        }
+        Update: {
+          correct?: boolean
+          created_at?: string
+          id?: string
+          question_id?: string
+          reward?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trivia_attempts_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "trivia_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trivia_questions: {
         Row: {
           answer_index: number
@@ -153,6 +212,65 @@ export type Database = {
           id?: string
           question?: string
           reward?: number
+        }
+        Relationships: []
+      }
+      user_holdings: {
+        Row: {
+          avg_cost: number
+          character_id: string
+          created_at: string
+          id: string
+          shares: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avg_cost?: number
+          character_id: string
+          created_at?: string
+          id?: string
+          shares?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avg_cost?: number
+          character_id?: string
+          created_at?: string
+          id?: string
+          shares?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_holdings_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_wallets: {
+        Row: {
+          berries: number
+          created_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          berries?: number
+          created_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          berries?: number
+          created_at?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

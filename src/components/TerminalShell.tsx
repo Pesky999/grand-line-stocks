@@ -1,18 +1,22 @@
 import { Link } from "@tanstack/react-router";
 import { ReactNode, useEffect, useState } from "react";
-import { useWallet, formatBerries } from "@/lib/wallet";
+import { useMe } from "@/hooks/useMe";
+import { formatBerries } from "@/lib/wallet";
 
 function Clock() {
-  const [t, setT] = useState(() => new Date());
+  const [t, setT] = useState<string>("");
   useEffect(() => {
-    const id = setInterval(() => setT(new Date()), 1000);
+    const update = () => setT(new Date().toUTCString().slice(17, 25));
+    update();
+    const id = setInterval(update, 1000);
     return () => clearInterval(id);
   }, []);
-  return <span className="tabular">{t.toUTCString().slice(17, 25)} UTC</span>;
+  if (!t) return null;
+  return <span className="tabular">{t} UTC</span>;
 }
 
 export function TerminalShell({ children }: { children: ReactNode }) {
-  const { state } = useWallet();
+  const { data, user } = useMe();
   return (
     <div className="relative z-10 min-h-screen">
       <header className="border-b border-border bg-card/80 backdrop-blur">
@@ -21,7 +25,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
             <Link to="/" className="flex items-center gap-2 font-bold text-primary glow-green">
               <span className="text-base">◆</span>
               <span className="tracking-[0.2em]">BERRY&nbsp;STREET</span>
-              <span className="text-muted-foreground">/ ONE PIECE MKT</span>
+              <span className="text-muted-foreground hidden sm:inline">/ ONE PIECE MKT</span>
             </Link>
             <nav className="hidden gap-4 md:flex">
               <Link to="/" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F1] MARKET</Link>
@@ -32,10 +36,23 @@ export function TerminalShell({ children }: { children: ReactNode }) {
             </nav>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-muted-foreground">BAL</span>
-            <span className="text-accent tabular glow-green">฿{formatBerries(state.berries)}</span>
+            {user && data ? (
+              <>
+                <span className="text-muted-foreground hidden sm:inline">BAL</span>
+                <span className="text-accent tabular glow-green">฿{formatBerries(data.berries)}</span>
+                <Link to="/profile" className="text-muted-foreground hover:text-primary">
+                  @{data.profile?.username ?? "trader"}
+                </Link>
+              </>
+            ) : user ? (
+              <span className="text-muted-foreground">…</span>
+            ) : (
+              <Link to="/auth" className="border border-border px-2 py-1 uppercase tracking-widest text-foreground hover:border-primary hover:text-primary">
+                Sign in
+              </Link>
+            )}
             <span className="text-muted-foreground hidden sm:inline"><Clock /></span>
-            <span className="flex items-center gap-1 text-bull">
+            <span className="hidden sm:flex items-center gap-1 text-bull">
               <span className="size-1.5 rounded-full bg-bull blink" />
               LIVE
             </span>
