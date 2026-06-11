@@ -1,34 +1,50 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { listCharacters } from "@/lib/api/market.functions";
+import { useMe, useInvalidateMe } from "@/hooks/useMe";
+import { sellShares, resetMyAccount } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
-import { useWallet, formatBerries } from "@/lib/wallet";
+import { formatBerries } from "@/lib/wallet";
+import { toast } from "sonner";
 
-const qo = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
-
-export const Route = createFileRoute("/portfolio")({
-  head: () => ({ meta: [{ title: "Portfolio — Berry Street" }, { name: "description", content: "Your One Piece stock holdings." }] }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(qo),
+export const Route = createFileRoute("/_authenticated/portfolio")({
+  head: () => ({ meta: [{ title: "Portfolio — Berry Street" }] }),
   component: Portfolio,
-  errorComponent: ({ error }) => <TerminalShell><div className="p-8 text-bear">{error.message}</div></TerminalShell>,
-  notFoundComponent: () => null,
 });
 
 function Portfolio() {
-  const { data: characters } = useSuspenseQuery(qo);
-  const { state, sell, reset } = useWallet();
-  const bySlug = Object.fromEntries(characters.map((c) => [c.slug, c] as const));
-  const holdings = Object.values(state.holdings);
+  const { data, isLoading } = useMe();
+  const invalidate = useInvalidateMe();
 
-  const marketValue = holdings.reduce((s, h) => s + h.shares * Number(bySlug[h.slug]?.current_price ?? 0), 0);
+  if (isLoading || !data) {
+    return <TerminalShell><div className="p-8 text-sm text-muted-foreground">Loading account…</div></TerminalShell>;
+  }
+
+  const holdings = data.holdings;
+  const marketValue = holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const costBasis = holdings.reduce((s, h) => s + h.shares * h.avgCost, 0);
   const pnl = marketValue - costBasis;
-  const netWorth = state.berries + marketValue;
+  const netWorth = data.berries + marketValue;
+
+  async function handleSellAll(slug: string, shares: number) {
+    try {
+      await sellShares({ data: { slug, shares } });
+      await invalidate();
+      toast.success(`Sold ${shares} ${slug.toUpperCase()}`);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  async function handleReset() {
+    if (!confirm("Reset wallet to ฿10,000 and clear all positions?")) return;
+    await resetMyAccount();
+    await invalidate();
+    toast.success("Account reset.");
+  }
 
   return (
     <TerminalShell>
       <div className="grid gap-px border-b border-border bg-border md:grid-cols-4">
-        <Stat label="Cash" value={`฿${formatBerries(state.berries)}`} />
+        <Stat label="Cash" value={`฿${formatBerries(data.berries)}`} />
         <Stat label="Equity" value={`฿${formatBerries(marketValue)}`} />
         <Stat label="Net Worth" value={`฿${formatBerries(netWorth)}`} tone="accent" />
         <Stat label="P/L" value={`${pnl >= 0 ? "+" : ""}฿${formatBerries(pnl)}`} tone={pnl >= 0 ? "bull" : "bear"} />
@@ -38,7 +54,7 @@ function Portfolio() {
         <div className="terminal-panel overflow-hidden">
           <div className="terminal-header flex items-center justify-between">
             <span>Holdings</span>
-            <button onClick={() => confirm("Reset portfolio?") && reset()} className="text-[10px] text-muted-foreground hover:text-bear">[reset]</button>
+            <button onClick={handleReset} className="text-[10px] text-muted-foreground hover:text-bear">[reset]</button>
           </div>
           {holdings.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
@@ -59,25 +75,22 @@ function Portfolio() {
               </thead>
               <tbody>
                 {holdings.map((h) => {
-                  const c = bySlug[h.slug];
-                  if (!c) return null;
-                  const last = Number(c.current_price);
-                  const mv = h.shares * last;
-                  const pl = (last - h.avgCost) * h.shares;
+                  const mv = h.shares * h.currentPrice;
+                  const pl = (h.currentPrice - h.avgCost) * h.shares;
                   return (
                     <tr key={h.slug} className="border-b border-border/40 hover:bg-secondary/50">
                       <td className="px-3 py-2">
                         <Link to="/character/$slug" params={{ slug: h.slug }} className="font-bold text-accent">{h.slug.toUpperCase().slice(0, 4)}</Link>
-                        <span className="ml-2 text-muted-foreground">{c.name}</span>
+                        <span className="ml-2 text-muted-foreground">{h.name}</span>
                       </td>
                       <td className="px-3 py-2 text-right">{h.shares}</td>
                       <td className="px-3 py-2 text-right">{h.avgCost.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right">{last.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right">{h.currentPrice.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right">{mv.toFixed(2)}</td>
                       <td className={`px-3 py-2 text-right ${pl >= 0 ? "text-bull" : "text-bear"}`}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right">
                         <button
-                          onClick={() => sell(h.slug, h.shares, last)}
+                          onClick={() => handleSellAll(h.slug, h.shares)}
                           className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground"
                         >
                           Sell all
