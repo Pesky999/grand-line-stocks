@@ -3,8 +3,10 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { getCharacter } from "@/lib/api/market.functions";
+import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
-import { useWallet, formatBerries, formatBounty } from "@/lib/wallet";
+import { formatBerries, formatBounty } from "@/lib/wallet";
+import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { toast } from "sonner";
 
 const qo = (slug: string) => queryOptions({ queryKey: ["character", slug], queryFn: () => getCharacter({ data: { slug } }) });
@@ -26,16 +28,18 @@ function CharacterPage() {
   const { slug } = Route.useParams();
   const { data } = useSuspenseQuery(qo(slug));
   const { character: c, history } = data;
-  const { state, buy, sell } = useWallet();
+  const { data: me, user } = useMe();
+  const invalidateMe = useInvalidateMe();
   const router = useRouter();
   const [qty, setQty] = useState(1);
+  const [busy, setBusy] = useState(false);
 
   const price = Number(c.current_price);
   const prev = Number(c.previous_price);
   const diff = price - prev;
   const pct = (diff / prev) * 100;
   const up = diff >= 0;
-  const held = state.holdings[slug];
+  const held = me?.holdings.find((h) => h.slug === slug);
 
   const chartData = history.map((h) => ({
     t: new Date(h.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
@@ -46,15 +50,21 @@ function CharacterPage() {
   const max = Math.max(...chartData.map((d) => d.price), price);
   const min = Math.min(...chartData.map((d) => d.price), price);
 
-  function handleBuy() {
-    const r = buy(slug, qty, price);
-    if (!r.ok) toast.error(r.error);
-    else toast.success(`Bought ${qty} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`);
+  async function handleBuy() {
+    setBusy(true);
+    try {
+      await buyShares({ data: { slug, shares: qty } });
+      await invalidateMe();
+      toast.success(`Bought ${qty} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`);
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   }
-  function handleSell() {
-    const r = sell(slug, qty, price);
-    if (!r.ok) toast.error(r.error);
-    else toast.success(`Sold ${qty} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`);
+  async function handleSell() {
+    setBusy(true);
+    try {
+      await sellShares({ data: { slug, shares: qty } });
+      await invalidateMe();
+      toast.success(`Sold ${qty} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`);
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
   return (
@@ -69,7 +79,6 @@ function CharacterPage() {
 
       <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
-          {/* Header */}
           <section className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
               <span>Quote</span>
@@ -94,7 +103,6 @@ function CharacterPage() {
             </div>
           </section>
 
-          {/* Chart */}
           <section className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
               <span>Price History</span>
@@ -120,65 +128,61 @@ function CharacterPage() {
               )}
             </div>
           </section>
-
-          {/* History log */}
-          <section className="terminal-panel">
-            <div className="terminal-header">Order Tape</div>
-            <ul className="max-h-64 divide-y divide-border overflow-auto text-xs tabular">
-              {[...history].reverse().map((h, i) => (
-                <li key={i} className="flex items-center justify-between px-3 py-2">
-                  <span className="text-muted-foreground">{new Date(h.created_at).toLocaleString()}</span>
-                  <span className="text-foreground">฿{Number(h.price).toFixed(2)}</span>
-                  <span className="text-muted-foreground truncate ml-3">{h.note ?? ""}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
         </div>
 
-        {/* Trade panel */}
         <aside className="space-y-4">
           <div className="terminal-panel">
             <div className="terminal-header">Trade Desk</div>
             <div className="space-y-3 p-4 text-sm">
-              <div className="flex justify-between text-xs text-muted-foreground tabular">
-                <span>Balance</span><span className="text-accent">฿{formatBerries(state.berries)}</span>
-              </div>
-              <div className="flex justify-between text-xs text-muted-foreground tabular">
-                <span>Position</span>
-                <span className="text-foreground">{held ? `${held.shares} @ avg ฿${held.avgCost.toFixed(2)}` : "—"}</span>
-              </div>
-              {held && (
-                <div className="flex justify-between text-xs tabular">
-                  <span className="text-muted-foreground">Unrealized P/L</span>
-                  <span className={price >= held.avgCost ? "text-bull" : "text-bear"}>
-                    {((price - held.avgCost) * held.shares).toFixed(2)}
-                  </span>
+              {!user ? (
+                <div className="space-y-3 text-center">
+                  <p className="text-xs text-muted-foreground">Sign in to trade {slug.toUpperCase()}.</p>
+                  <Link to="/auth" className="block bg-primary px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground">
+                    Sign in to trade
+                  </Link>
                 </div>
+              ) : (
+                <>
+                  <div className="flex justify-between text-xs text-muted-foreground tabular">
+                    <span>Balance</span><span className="text-accent">฿{formatBerries(me?.berries ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground tabular">
+                    <span>Position</span>
+                    <span className="text-foreground">{held ? `${held.shares} @ avg ฿${held.avgCost.toFixed(2)}` : "—"}</span>
+                  </div>
+                  {held && (
+                    <div className="flex justify-between text-xs tabular">
+                      <span className="text-muted-foreground">Unrealized P/L</span>
+                      <span className={price >= held.avgCost ? "text-bull" : "text-bear"}>
+                        {((price - held.avgCost) * held.shares).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pt-2">
+                    <button onClick={() => setQty(Math.max(1, qty - 1))} className="size-7 border border-border text-muted-foreground hover:text-primary">−</button>
+                    <input
+                      type="number" min={1} value={qty}
+                      onChange={(e) => setQty(Math.max(1, parseInt(e.target.value || "1")))}
+                      className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
+                    />
+                    <button onClick={() => setQty(qty + 1)} className="size-7 border border-border text-muted-foreground hover:text-primary">+</button>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground tabular">
+                    <span>Est. cost</span><span>฿{(qty * price).toFixed(2)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button onClick={handleBuy} disabled={busy} className="bg-bull px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40">
+                      ▲ Buy
+                    </button>
+                    <button onClick={handleSell} disabled={busy} className="bg-bear px-3 py-2 text-xs font-bold uppercase tracking-widest text-destructive-foreground hover:opacity-90 disabled:opacity-40">
+                      ▼ Sell
+                    </button>
+                  </div>
+                  <button onClick={() => router.invalidate()} className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary">
+                    Refresh quote
+                  </button>
+                </>
               )}
-              <div className="flex items-center gap-2 pt-2">
-                <button onClick={() => setQty(Math.max(1, qty - 1))} className="size-7 border border-border text-muted-foreground hover:text-primary">−</button>
-                <input
-                  type="number" min={1} value={qty}
-                  onChange={(e) => setQty(Math.max(1, parseInt(e.target.value || "1")))}
-                  className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
-                />
-                <button onClick={() => setQty(qty + 1)} className="size-7 border border-border text-muted-foreground hover:text-primary">+</button>
-              </div>
-              <div className="flex justify-between text-xs text-muted-foreground tabular">
-                <span>Est. cost</span><span>฿{(qty * price).toFixed(2)}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <button onClick={handleBuy} className="bg-bull px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90">
-                  ▲ Buy
-                </button>
-                <button onClick={handleSell} className="bg-bear px-3 py-2 text-xs font-bold uppercase tracking-widest text-destructive-foreground hover:opacity-90">
-                  ▼ Sell
-                </button>
-              </div>
-              <button onClick={() => router.invalidate()} className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary">
-                Refresh quote
-              </button>
             </div>
           </div>
 

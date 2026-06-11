@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getTriviaBatch } from "@/lib/api/market.functions";
+import { submitTriviaAnswer } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
-import { useWallet, formatBerries } from "@/lib/wallet";
+import { formatBerries } from "@/lib/wallet";
+import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { toast } from "sonner";
 
 type Q = { id: string; question: string; choices: string[]; answer_index: number; reward: number; difficulty: string };
@@ -13,7 +15,8 @@ export const Route = createFileRoute("/games")({
 });
 
 function Games() {
-  const { state, rewardBerries } = useWallet();
+  const { data: me, user } = useMe();
+  const invalidateMe = useInvalidateMe();
   const [batch, setBatch] = useState<Q[] | null>(null);
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -32,36 +35,44 @@ function Games() {
 
   useEffect(() => { start(); }, []);
 
-  function answer(i: number) {
+  async function answer(i: number) {
     if (!batch || selected !== null) return;
     setSelected(i);
     const q = batch[idx];
-    if (i === q.answer_index) {
-      rewardBerries(q.reward, q.id);
-      setEarned((e) => e + q.reward);
-      toast.success(`+฿${q.reward}`);
-    } else {
-      toast.error("Wrong — no Berries");
+    if (!user) {
+      if (i === q.answer_index) toast("Correct — sign in to bank the Berries.");
+      else toast.error("Wrong");
+      return;
     }
+    try {
+      const r = await submitTriviaAnswer({ data: { questionId: q.id, choiceIndex: i } });
+      if (r.alreadyAnswered) toast("Already answered.");
+      else if (r.correct) {
+        setEarned((e) => e + r.reward);
+        toast.success(`+฿${r.reward}`);
+        await invalidateMe();
+      } else toast.error("Wrong — no Berries");
+    } catch (e: any) { toast.error(e.message); }
   }
 
   function next() {
     if (!batch) return;
-    if (idx + 1 >= batch.length) {
-      start();
-    } else {
-      setIdx(idx + 1);
-      setSelected(null);
-    }
+    if (idx + 1 >= batch.length) start();
+    else { setIdx(idx + 1); setSelected(null); }
   }
 
   return (
     <TerminalShell>
       <div className="mx-auto max-w-2xl p-4">
+        {!user && (
+          <div className="mb-4 border border-border bg-card/60 p-3 text-xs text-muted-foreground">
+            Playing as guest. <Link to="/auth" className="text-primary underline">Sign in</Link> to earn and keep your Berries.
+          </div>
+        )}
         <div className="terminal-panel">
           <div className="terminal-header flex items-center justify-between">
             <span>Trivia · Earn Berries</span>
-            <span className="text-muted-foreground tabular">Balance ฿{formatBerries(state.berries)}</span>
+            <span className="text-muted-foreground tabular">Balance ฿{formatBerries(me?.berries ?? 0)}</span>
           </div>
 
           {loading || !batch ? (
@@ -110,10 +121,6 @@ function Games() {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-          Trivia is the v1 earner. More games coming: bounty-guessing, devil-fruit roulette, bounty board.
         </div>
       </div>
     </TerminalShell>
