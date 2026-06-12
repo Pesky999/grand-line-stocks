@@ -65,18 +65,18 @@ export const getTriviaBatch = createServerFn({ method: "GET" }).handler(async ()
 });
 
 export const adminUpdatePrice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z
       .object({
-        passcode: z.string(),
         slug: z.string(),
         newPrice: z.number().positive().max(99999),
         note: z.string().max(200).optional(),
       })
       .parse(d),
   )
-  .handler(async ({ data }) => {
-    checkPasscode(data.passcode);
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
     const db = await admin();
     const { data: existing, error: e1 } = await db
       .from("characters")
@@ -94,10 +94,10 @@ export const adminUpdatePrice = createServerFn({ method: "POST" })
   });
 
 export const adminPostNews = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z
       .object({
-        passcode: z.string(),
         title: z.string().min(2),
         body: z.string().min(2),
         impact: z.enum(["bullish", "bearish", "neutral"]).default("neutral"),
@@ -105,8 +105,8 @@ export const adminPostNews = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data }) => {
-    checkPasscode(data.passcode);
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
     const db = await admin();
     let character_id: string | null = null;
     if (data.characterSlug) {
@@ -121,4 +121,12 @@ export const adminPostNews = createServerFn({ method: "POST" })
     });
     if (error) throw error;
     return { ok: true };
+  });
+
+export const amIAdmin = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const db = await admin();
+    const { data } = await db.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    return { isAdmin: !!data };
   });
