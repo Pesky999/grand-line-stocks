@@ -1,16 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-
-const ADMIN_FALLBACK = "strawhat";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
-function checkPasscode(passcode: string) {
-  const expected = process.env.ADMIN_PASSCODE || ADMIN_FALLBACK;
-  if (passcode !== expected) throw new Error("Invalid admin passcode");
+async function requireAdminRole(userId: string) {
+  const db = await admin();
+  const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Forbidden: admin role required");
 }
 
 export const listCharacters = createServerFn({ method: "GET" }).handler(async () => {
