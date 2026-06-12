@@ -1,24 +1,27 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useRouter, redirect } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { listCharacters, adminUpdatePrice, adminPostNews } from "@/lib/api/market.functions";
+import { listCharacters, adminUpdatePrice, adminPostNews, amIAdmin } from "@/lib/api/market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { toast } from "sonner";
 
-const qo = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
+const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 
-export const Route = createFileRoute("/admin")({
+export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Admin — Berry Street" }, { name: "robots", content: "noindex" }] }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(qo),
+  loader: async ({ context }) => {
+    const { isAdmin } = await amIAdmin();
+    if (!isAdmin) throw redirect({ to: "/" });
+    await context.queryClient.ensureQueryData(charsQO);
+  },
   component: Admin,
   errorComponent: ({ error }) => <TerminalShell><div className="p-8 text-bear">{error.message}</div></TerminalShell>,
   notFoundComponent: () => null,
 });
 
 function Admin() {
-  const { data: characters } = useSuspenseQuery(qo);
+  const { data: characters } = useSuspenseQuery(charsQO);
   const router = useRouter();
-  const [passcode, setPasscode] = useState("");
   const [slug, setSlug] = useState(characters[0]?.slug ?? "");
   const [newPrice, setNewPrice] = useState("");
   const [note, setNote] = useState("");
@@ -31,7 +34,7 @@ function Admin() {
   async function submitPrice(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await adminUpdatePrice({ data: { passcode, slug, newPrice: parseFloat(newPrice), note: note || undefined } });
+      await adminUpdatePrice({ data: { slug, newPrice: parseFloat(newPrice), note: note || undefined } });
       toast.success(`${slug.toUpperCase()} updated to ฿${newPrice}`);
       setNewPrice(""); setNote("");
       router.invalidate();
@@ -43,7 +46,7 @@ function Admin() {
   async function submitNews(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await adminPostNews({ data: { passcode, title: newsTitle, body: newsBody, impact, characterSlug: newsSlug || undefined } });
+      await adminPostNews({ data: { title: newsTitle, body: newsBody, impact, characterSlug: newsSlug || undefined } });
       toast.success("News posted");
       setNewsTitle(""); setNewsBody("");
       router.invalidate();
@@ -58,14 +61,9 @@ function Admin() {
     <TerminalShell>
       <div className="mx-auto max-w-3xl space-y-4 p-4">
         <div className="terminal-panel">
-          <div className="terminal-header text-warn">⚠ Editor Console — Passcode Required</div>
-          <div className="p-4">
-            <label className="block text-[10px] uppercase tracking-widest text-muted-foreground">Admin passcode</label>
-            <input
-              type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)}
-              placeholder="default: strawhat (override via ADMIN_PASSCODE env var)"
-              className="mt-1 w-full border border-border bg-input px-3 py-2 font-mono text-sm focus:border-primary outline-none"
-            />
+          <div className="terminal-header text-warn">⚡ Editor Console — Admin Role Verified</div>
+          <div className="p-4 text-xs text-muted-foreground">
+            You are signed in with the <span className="text-accent">admin</span> role. All actions are logged against your account.
           </div>
         </div>
 

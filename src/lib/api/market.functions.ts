@@ -1,16 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-
-const ADMIN_FALLBACK = "strawhat";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
-function checkPasscode(passcode: string) {
-  const expected = process.env.ADMIN_PASSCODE || ADMIN_FALLBACK;
-  if (passcode !== expected) throw new Error("Invalid admin passcode");
+async function requireAdminRole(userId: string) {
+  const db = await admin();
+  const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Forbidden: admin role required");
 }
 
 export const listCharacters = createServerFn({ method: "GET" }).handler(async () => {
@@ -64,18 +65,18 @@ export const getTriviaBatch = createServerFn({ method: "GET" }).handler(async ()
 });
 
 export const adminUpdatePrice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z
       .object({
-        passcode: z.string(),
         slug: z.string(),
         newPrice: z.number().positive().max(99999),
         note: z.string().max(200).optional(),
       })
       .parse(d),
   )
-  .handler(async ({ data }) => {
-    checkPasscode(data.passcode);
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
     const db = await admin();
     const { data: existing, error: e1 } = await db
       .from("characters")
@@ -93,10 +94,10 @@ export const adminUpdatePrice = createServerFn({ method: "POST" })
   });
 
 export const adminPostNews = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z
       .object({
-        passcode: z.string(),
         title: z.string().min(2),
         body: z.string().min(2),
         impact: z.enum(["bullish", "bearish", "neutral"]).default("neutral"),
@@ -104,8 +105,8 @@ export const adminPostNews = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data }) => {
-    checkPasscode(data.passcode);
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
     const db = await admin();
     let character_id: string | null = null;
     if (data.characterSlug) {
@@ -120,4 +121,12 @@ export const adminPostNews = createServerFn({ method: "POST" })
     });
     if (error) throw error;
     return { ok: true };
+  });
+
+export const amIAdmin = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const db = await admin();
+    const { data } = await db.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    return { isAdmin: !!data };
   });

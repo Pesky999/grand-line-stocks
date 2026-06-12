@@ -49,76 +49,46 @@ export const updateProfile = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+async function executeTrade(userId: string, slug: string, side: "buy" | "sell", shares: number) {
+  const db = await admin();
+  const { data, error } = await db.rpc("execute_trade", {
+    _user_id: userId,
+    _slug: slug,
+    _side: side,
+    _shares: shares,
+  });
+  if (error) throw new Error(error.message);
+  return data as any;
+}
+
 export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
   .handler(async ({ data, context }) => {
-    const db = await admin();
-    const { data: c, error: ce } = await db
-      .from("characters")
-      .select("id,current_price")
-      .eq("slug", data.slug)
-      .maybeSingle();
-    if (ce || !c) throw new Error("Character not found");
-    const price = Number(c.current_price);
-    const cost = price * data.shares;
-
-    const { data: w } = await db.from("user_wallets").select("berries").eq("user_id", context.userId).maybeSingle();
-    const balance = Number(w?.berries ?? 0);
-    if (balance < cost) throw new Error("Not enough Berries");
-
-    const { data: held } = await db
-      .from("user_holdings")
-      .select("id,shares,avg_cost")
-      .eq("user_id", context.userId)
-      .eq("character_id", c.id)
-      .maybeSingle();
-    const prevShares = Number(held?.shares ?? 0);
-    const newShares = prevShares + data.shares;
-    const newAvg = held ? (Number(held.avg_cost) * prevShares + cost) / newShares : price;
-
-    await db.from("user_wallets").update({ berries: balance - cost }).eq("user_id", context.userId);
-    if (held) {
-      await db.from("user_holdings").update({ shares: newShares, avg_cost: newAvg }).eq("id", held.id);
-    } else {
-      await db
-        .from("user_holdings")
-        .insert({ user_id: context.userId, character_id: c.id, shares: newShares, avg_cost: newAvg });
-    }
-    return { ok: true, price, cost };
+    const tx = await executeTrade(context.userId, data.slug, "buy", data.shares);
+    return { ok: true, price: Number(tx.price), cost: Number(tx.total), balance: Number(tx.balance_after) };
   });
 
 export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
   .handler(async ({ data, context }) => {
+    const tx = await executeTrade(context.userId, data.slug, "sell", data.shares);
+    return { ok: true, price: Number(tx.price), proceeds: Number(tx.total), balance: Number(tx.balance_after) };
+  });
+
+export const listMyTransactions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
     const db = await admin();
-    const { data: c, error: ce } = await db
-      .from("characters")
-      .select("id,current_price")
-      .eq("slug", data.slug)
-      .maybeSingle();
-    if (ce || !c) throw new Error("Character not found");
-    const price = Number(c.current_price);
-
-    const { data: held } = await db
-      .from("user_holdings")
-      .select("id,shares,avg_cost")
+    const { data, error } = await db
+      .from("transactions")
+      .select("id,side,shares,price,total,balance_after,created_at,characters(name,slug)")
       .eq("user_id", context.userId)
-      .eq("character_id", c.id)
-      .maybeSingle();
-    if (!held || Number(held.shares) < data.shares) throw new Error("Not enough shares");
-
-    const newShares = Number(held.shares) - data.shares;
-    const proceeds = price * data.shares;
-    const { data: w } = await db.from("user_wallets").select("berries").eq("user_id", context.userId).maybeSingle();
-    await db
-      .from("user_wallets")
-      .update({ berries: Number(w?.berries ?? 0) + proceeds })
-      .eq("user_id", context.userId);
-    if (newShares <= 0) await db.from("user_holdings").delete().eq("id", held.id);
-    else await db.from("user_holdings").update({ shares: newShares }).eq("id", held.id);
-    return { ok: true, price, proceeds };
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return data ?? [];
   });
 
 export const submitTriviaAnswer = createServerFn({ method: "POST" })
