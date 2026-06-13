@@ -127,6 +127,33 @@ function Market() {
             </ul>
           </div>
           <div className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span>Recent Events</span>
+              <Link to="/events" className="text-muted-foreground hover:text-primary">all →</Link>
+            </div>
+            <ul className="divide-y divide-border text-xs">
+              {events.length === 0 && <li className="px-3 py-2 text-muted-foreground">No events yet.</li>}
+              {events.map((e: any) => {
+                const impacts = e.market_event_impacts ?? [];
+                const avg = impacts.length ? impacts.reduce((s: number, i: any) => s + Number(i.pct_change), 0) / impacts.length : 0;
+                const up = avg >= 0;
+                return (
+                  <li key={e.id} className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] uppercase text-accent">{e.event_type.replace("_", " ")}</span>
+                      <span className={`text-[10px] tabular ${up ? "text-bull" : "text-bear"}`}>{up ? "+" : ""}{avg.toFixed(1)}%</span>
+                    </div>
+                    <div className="text-foreground">{e.title}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground tabular">
+                      {impacts.slice(0, 3).map((i: any) => i.characters?.slug?.toUpperCase()).join(" · ")}
+                      {impacts.length > 3 ? ` +${impacts.length - 3}` : ""}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="terminal-panel">
             <div className="terminal-header">Wire</div>
             <ul className="divide-y divide-border text-xs">
               {news.slice(0, 5).map((n) => (
