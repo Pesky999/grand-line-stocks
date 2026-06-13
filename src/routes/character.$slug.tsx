@@ -38,8 +38,6 @@ function CharacterPage() {
   const { data: me, user } = useMe();
   const invalidateMe = useInvalidateMe();
   const router = useRouter();
-  const invalidateMe = useInvalidateMe();
-  const router = useRouter();
   const [qty, setQty] = useState(1);
   const [busy, setBusy] = useState(false);
 
