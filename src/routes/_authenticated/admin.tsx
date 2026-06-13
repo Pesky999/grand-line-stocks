@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter, redirect } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { listCharacters, adminUpdatePrice, adminPostNews, amIAdmin } from "@/lib/api/market.functions";
@@ -62,8 +62,11 @@ function Admin() {
       <div className="mx-auto max-w-3xl space-y-4 p-4">
         <div className="terminal-panel">
           <div className="terminal-header text-warn">⚡ Editor Console — Admin Role Verified</div>
-          <div className="p-4 text-xs text-muted-foreground">
-            You are signed in with the <span className="text-accent">admin</span> role. All actions are logged against your account.
+          <div className="space-y-3 p-4 text-xs text-muted-foreground">
+            <p>You are signed in with the <span className="text-accent">admin</span> role. All actions are logged against your account.</p>
+            <Link to="/events-admin" className="inline-block bg-accent px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-accent-foreground hover:opacity-90">
+              → Event Editor (catalysts)
+            </Link>
           </div>
         </div>
 

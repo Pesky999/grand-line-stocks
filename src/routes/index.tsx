@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { listCharacters, listNews } from "@/lib/api/market.functions";
+import { listRecentEvents } from "@/lib/api/events.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
 
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
+const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,7 +20,11 @@ export const Route = createFileRoute("/")({
     ],
   }),
   loader: ({ context }) =>
-    Promise.all([context.queryClient.ensureQueryData(charsQO), context.queryClient.ensureQueryData(newsQO)]),
+    Promise.all([
+      context.queryClient.ensureQueryData(charsQO),
+      context.queryClient.ensureQueryData(newsQO),
+      context.queryClient.ensureQueryData(eventsQO),
+    ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
   notFoundComponent: () => <div className="p-8">Not found</div>,
@@ -27,6 +33,7 @@ export const Route = createFileRoute("/")({
 function Market() {
   const { data: characters } = useSuspenseQuery(charsQO);
   const { data: news } = useSuspenseQuery(newsQO);
+  const { data: events } = useSuspenseQuery(eventsQO);
 
   const movers = [...characters].sort((a, b) => {
     const da = (a.current_price - a.previous_price) / a.previous_price;
@@ -117,6 +124,33 @@ function Market() {
               {topLosers.map((c) => (
                 <MoverRow key={c.id} c={c} />
               ))}
+            </ul>
+          </div>
+          <div className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span>Recent Events</span>
+              <Link to="/events" className="text-muted-foreground hover:text-primary">all →</Link>
+            </div>
+            <ul className="divide-y divide-border text-xs">
+              {events.length === 0 && <li className="px-3 py-2 text-muted-foreground">No events yet.</li>}
+              {events.map((e: any) => {
+                const impacts = e.market_event_impacts ?? [];
+                const avg = impacts.length ? impacts.reduce((s: number, i: any) => s + Number(i.pct_change), 0) / impacts.length : 0;
+                const up = avg >= 0;
+                return (
+                  <li key={e.id} className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] uppercase text-accent">{e.event_type.replace("_", " ")}</span>
+                      <span className={`text-[10px] tabular ${up ? "text-bull" : "text-bear"}`}>{up ? "+" : ""}{avg.toFixed(1)}%</span>
+                    </div>
+                    <div className="text-foreground">{e.title}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground tabular">
+                      {impacts.slice(0, 3).map((i: any) => i.characters?.slug?.toUpperCase()).join(" · ")}
+                      {impacts.length > 3 ? ` +${impacts.length - 3}` : ""}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
           <div className="terminal-panel">

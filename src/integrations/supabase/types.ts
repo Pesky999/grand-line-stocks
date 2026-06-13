@@ -59,6 +59,93 @@ export type Database = {
         }
         Relationships: []
       }
+      market_event_impacts: {
+        Row: {
+          character_id: string
+          created_at: string
+          event_id: string
+          id: string
+          pct_change: number
+          price_after: number | null
+          price_before: number | null
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          event_id: string
+          id?: string
+          pct_change: number
+          price_after?: number | null
+          price_before?: number | null
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          pct_change?: number
+          price_after?: number | null
+          price_before?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_event_impacts_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_event_impacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "market_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_events: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          default_pct_change: number
+          description: string
+          event_type: Database["public"]["Enums"]["event_type"]
+          id: string
+          published_at: string | null
+          scheduled_for: string | null
+          status: Database["public"]["Enums"]["event_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          default_pct_change?: number
+          description?: string
+          event_type: Database["public"]["Enums"]["event_type"]
+          id?: string
+          published_at?: string | null
+          scheduled_for?: string | null
+          status?: Database["public"]["Enums"]["event_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          default_pct_change?: number
+          description?: string
+          event_type?: Database["public"]["Enums"]["event_type"]
+          id?: string
+          published_at?: string | null
+          scheduled_for?: string | null
+          status?: Database["public"]["Enums"]["event_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       news: {
         Row: {
           body: string
@@ -100,21 +187,27 @@ export type Database = {
           created_at: string
           id: string
           note: string | null
+          pct_change: number | null
           price: number
+          source_event_id: string | null
         }
         Insert: {
           character_id: string
           created_at?: string
           id?: string
           note?: string | null
+          pct_change?: number | null
           price: number
+          source_event_id?: string | null
         }
         Update: {
           character_id?: string
           created_at?: string
           id?: string
           note?: string | null
+          pct_change?: number | null
           price?: number
+          source_event_id?: string | null
         }
         Relationships: [
           {
@@ -122,6 +215,13 @@ export type Database = {
             columns: ["character_id"]
             isOneToOne: false
             referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_history_source_event_id_fkey"
+            columns: ["source_event_id"]
+            isOneToOne: false
+            referencedRelation: "market_events"
             referencedColumns: ["id"]
           },
         ]
@@ -344,6 +444,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_market_event: {
+        Args: { _event_id: string }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          default_pct_change: number
+          description: string
+          event_type: Database["public"]["Enums"]["event_type"]
+          id: string
+          published_at: string | null
+          scheduled_for: string | null
+          status: Database["public"]["Enums"]["event_status"]
+          title: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_events"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       execute_trade: {
         Args: {
           _shares: number
@@ -376,9 +498,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      preview_market_event: {
+        Args: { _event_id: string }
+        Returns: {
+          character_id: string
+          name: string
+          pct_change: number
+          price_after: number
+          price_before: number
+          slug: string
+        }[]
+      }
+      publish_due_events: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      event_status: "draft" | "scheduled" | "published"
+      event_type:
+        | "story_event"
+        | "battle_result"
+        | "character_reveal"
+        | "power_up"
+        | "political_event"
+        | "community_event"
+        | "market_correction"
+        | "meme_event"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -507,6 +651,17 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      event_status: ["draft", "scheduled", "published"],
+      event_type: [
+        "story_event",
+        "battle_result",
+        "character_reveal",
+        "power_up",
+        "political_event",
+        "community_event",
+        "market_correction",
+        "meme_event",
+      ],
     },
   },
 } as const
