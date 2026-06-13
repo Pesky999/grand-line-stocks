@@ -3,6 +3,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { getCharacter } from "@/lib/api/market.functions";
+import { getCharacterEvents } from "@/lib/api/events.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
@@ -10,6 +11,7 @@ import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { toast } from "sonner";
 
 const qo = (slug: string) => queryOptions({ queryKey: ["character", slug], queryFn: () => getCharacter({ data: { slug } }) });
+const eventsQO = (slug: string) => queryOptions({ queryKey: ["character", slug, "events"], queryFn: () => getCharacterEvents({ data: { slug } }) });
 
 export const Route = createFileRoute("/character/$slug")({
   head: ({ params }) => ({
@@ -18,7 +20,11 @@ export const Route = createFileRoute("/character/$slug")({
       { name: "description", content: `Live stock quote for ${params.slug} on Berry Street.` },
     ],
   }),
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(qo(params.slug)),
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(qo(params.slug)),
+      context.queryClient.ensureQueryData(eventsQO(params.slug)),
+    ]),
   component: CharacterPage,
   errorComponent: ({ error }) => <TerminalShell><div className="p-8 text-bear">Error: {error.message}</div></TerminalShell>,
   notFoundComponent: () => <TerminalShell><div className="p-8">Character not found</div></TerminalShell>,
@@ -27,8 +33,11 @@ export const Route = createFileRoute("/character/$slug")({
 function CharacterPage() {
   const { slug } = Route.useParams();
   const { data } = useSuspenseQuery(qo(slug));
+  const { data: charEvents } = useSuspenseQuery(eventsQO(slug));
   const { character: c, history } = data;
   const { data: me, user } = useMe();
+  const invalidateMe = useInvalidateMe();
+  const router = useRouter();
   const invalidateMe = useInvalidateMe();
   const router = useRouter();
   const [qty, setQty] = useState(1);
