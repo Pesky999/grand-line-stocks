@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { listCharacters, listNews } from "@/lib/api/market.functions";
+import { listRecentEvents } from "@/lib/api/events.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
 
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
+const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,7 +20,11 @@ export const Route = createFileRoute("/")({
     ],
   }),
   loader: ({ context }) =>
-    Promise.all([context.queryClient.ensureQueryData(charsQO), context.queryClient.ensureQueryData(newsQO)]),
+    Promise.all([
+      context.queryClient.ensureQueryData(charsQO),
+      context.queryClient.ensureQueryData(newsQO),
+      context.queryClient.ensureQueryData(eventsQO),
+    ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
   notFoundComponent: () => <div className="p-8">Not found</div>,
@@ -27,6 +33,7 @@ export const Route = createFileRoute("/")({
 function Market() {
   const { data: characters } = useSuspenseQuery(charsQO);
   const { data: news } = useSuspenseQuery(newsQO);
+  const { data: events } = useSuspenseQuery(eventsQO);
 
   const movers = [...characters].sort((a, b) => {
     const da = (a.current_price - a.previous_price) / a.previous_price;
