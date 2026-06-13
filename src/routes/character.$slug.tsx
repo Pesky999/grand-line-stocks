@@ -202,6 +202,32 @@ function CharacterPage() {
               <Row label="Symbol" value={slug.toUpperCase()} />
             </dl>
           </div>
+
+          <div className="terminal-panel">
+            <div className="terminal-header">Catalysts</div>
+            <ul className="divide-y divide-border text-xs">
+              {charEvents.length === 0 && <li className="px-3 py-3 text-muted-foreground">No events yet.</li>}
+              {charEvents.map((row: any, idx: number) => {
+                const e = row.market_events;
+                const pct = Number(row.pct_change);
+                const up = pct >= 0;
+                return (
+                  <li key={idx} className="px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase text-accent">{e.event_type.replace("_", " ")}</span>
+                      <span className={`tabular ${up ? "text-bull" : "text-bear"}`}>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%</span>
+                    </div>
+                    <div className="text-foreground">{e.title}</div>
+                    {row.price_before != null && row.price_after != null && (
+                      <div className="text-[10px] text-muted-foreground tabular">
+                        ฿{Number(row.price_before).toFixed(2)} → ฿{Number(row.price_after).toFixed(2)} · {new Date(row.created_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </aside>
       </div>
     </TerminalShell>
