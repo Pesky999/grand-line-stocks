@@ -18,7 +18,7 @@ export const listCharacters = createServerFn({ method: "GET" }).handler(async ()
   const db = await admin();
   const { data, error } = await db
     .from("characters")
-    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,updated_at")
+    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at")
     .order("current_price", { ascending: false });
   if (error) throw error;
   return data ?? [];
