@@ -108,12 +108,16 @@ export type Database = {
           biggest_loser_id: string | null
           biggest_loser_pct: number | null
           created_at: string
+          discussed_explanation: string | null
+          gainer_explanation: string | null
           headline: string
           id: string
+          loser_explanation: string | null
           most_discussed_id: string | null
           report_date: string
           sentiment: Database["public"]["Enums"]["market_sentiment"]
           summary: string
+          trending_explanation: string | null
           trending_id: string | null
         }
         Insert: {
@@ -123,12 +127,16 @@ export type Database = {
           biggest_loser_id?: string | null
           biggest_loser_pct?: number | null
           created_at?: string
+          discussed_explanation?: string | null
+          gainer_explanation?: string | null
           headline: string
           id?: string
+          loser_explanation?: string | null
           most_discussed_id?: string | null
           report_date: string
           sentiment: Database["public"]["Enums"]["market_sentiment"]
           summary: string
+          trending_explanation?: string | null
           trending_id?: string | null
         }
         Update: {
@@ -138,12 +146,16 @@ export type Database = {
           biggest_loser_id?: string | null
           biggest_loser_pct?: number | null
           created_at?: string
+          discussed_explanation?: string | null
+          gainer_explanation?: string | null
           headline?: string
           id?: string
+          loser_explanation?: string | null
           most_discussed_id?: string | null
           report_date?: string
           sentiment?: Database["public"]["Enums"]["market_sentiment"]
           summary?: string
+          trending_explanation?: string | null
           trending_id?: string | null
         }
         Relationships: [
@@ -491,6 +503,66 @@ export type Database = {
           },
         ]
       }
+      price_movement_explanations: {
+        Row: {
+          character_id: string
+          created_at: string
+          factors: Json
+          id: string
+          pct_change: number
+          price_after: number | null
+          price_before: number | null
+          price_history_id: string | null
+          reason_codes: Database["public"]["Enums"]["movement_reason_code"][]
+          source: string
+          source_ref_id: string | null
+          summary: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          factors?: Json
+          id?: string
+          pct_change: number
+          price_after?: number | null
+          price_before?: number | null
+          price_history_id?: string | null
+          reason_codes?: Database["public"]["Enums"]["movement_reason_code"][]
+          source: string
+          source_ref_id?: string | null
+          summary: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          factors?: Json
+          id?: string
+          pct_change?: number
+          price_after?: number | null
+          price_before?: number | null
+          price_history_id?: string | null
+          reason_codes?: Database["public"]["Enums"]["movement_reason_code"][]
+          source?: string
+          source_ref_id?: string | null
+          summary?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_movement_explanations_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_movement_explanations_price_history_id_fkey"
+            columns: ["price_history_id"]
+            isOneToOne: false
+            referencedRelation: "price_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -774,6 +846,36 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      generate_movement_explanation: {
+        Args: {
+          _character_id: string
+          _pct_change: number
+          _price_history_id?: string
+          _source?: string
+          _source_ref_id?: string
+          _threshold?: number
+        }
+        Returns: {
+          character_id: string
+          created_at: string
+          factors: Json
+          id: string
+          pct_change: number
+          price_after: number | null
+          price_before: number | null
+          price_history_id: string | null
+          reason_codes: Database["public"]["Enums"]["movement_reason_code"][]
+          source: string
+          source_ref_id: string | null
+          summary: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "price_movement_explanations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -802,12 +904,16 @@ export type Database = {
           biggest_loser_id: string | null
           biggest_loser_pct: number | null
           created_at: string
+          discussed_explanation: string | null
+          gainer_explanation: string | null
           headline: string
           id: string
+          loser_explanation: string | null
           most_discussed_id: string | null
           report_date: string
           sentiment: Database["public"]["Enums"]["market_sentiment"]
           summary: string
+          trending_explanation: string | null
           trending_id: string | null
         }
         SetofOptions: {
@@ -844,6 +950,19 @@ export type Database = {
         | "neutral"
         | "bullish"
         | "extremely_bullish"
+      movement_reason_code:
+        | "story_momentum"
+        | "speculation"
+        | "investor_optimism"
+        | "investor_fear"
+        | "market_correction"
+        | "hype_surge"
+        | "meme_activity"
+        | "whale_buying"
+        | "whale_selling"
+        | "event_reaction"
+        | "long_term_growth"
+        | "normal_volatility"
       rumor_status: "active" | "expired"
       stock_category: "blue_chip" | "growth" | "speculative" | "meme"
     }
@@ -1000,6 +1119,20 @@ export const Constants = {
         "neutral",
         "bullish",
         "extremely_bullish",
+      ],
+      movement_reason_code: [
+        "story_momentum",
+        "speculation",
+        "investor_optimism",
+        "investor_fear",
+        "market_correction",
+        "hype_surge",
+        "meme_activity",
+        "whale_buying",
+        "whale_selling",
+        "event_reaction",
+        "long_term_growth",
+        "normal_volatility",
       ],
       rumor_status: ["active", "expired"],
       stock_category: ["blue_chip", "growth", "speculative", "meme"],
