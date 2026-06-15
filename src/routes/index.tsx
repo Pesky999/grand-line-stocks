@@ -64,6 +64,20 @@ function Market() {
     <TerminalShell>
       <Ticker items={characters} />
 
+      {report && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 px-4 py-2 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">SENTIMENT</span>
+            <span className={`font-bold uppercase tracking-widest ${SENT_TONE[report.sentiment] ?? ""}`}>
+              {report.sentiment.replace(/_/g, " ")}
+            </span>
+            <span className="text-muted-foreground hidden sm:inline">·</span>
+            <span className="text-foreground hidden sm:inline truncate max-w-[60ch]">{report.headline}</span>
+          </div>
+          <Link to="/market-report" className="text-accent hover:text-primary">Daily Report →</Link>
+        </div>
+      )}
+
       {/* Top stats strip */}
       <div className="grid grid-cols-2 gap-px border-b border-border bg-border md:grid-cols-4">
         <Stat label="MKT INDEX" value={(totalMcap / characters.length).toFixed(2)} sub="avg price" />
