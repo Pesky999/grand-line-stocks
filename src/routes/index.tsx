@@ -183,6 +183,30 @@ function Market() {
             </ul>
           </div>
           <div className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span className="text-warn">◆ Rumors</span>
+              <Link to="/market-report" className="text-muted-foreground hover:text-primary">all →</Link>
+            </div>
+            <ul className="divide-y divide-border text-xs">
+              {rumors.length === 0 && <li className="px-3 py-2 text-muted-foreground">Quiet on the wire.</li>}
+              {rumors.slice(0, 4).map((r: any) => {
+                const i = r.market_rumor_impacts?.[0];
+                const up = Number(i?.pct_change ?? 0) >= 0;
+                return (
+                  <li key={r.id} className="px-3 py-2">
+                    <div className="text-foreground truncate">{r.title}</div>
+                    {i?.characters && (
+                      <div className="mt-0.5 flex items-center gap-2 text-[10px] tabular">
+                        <span className="text-accent">{i.characters.slug.toUpperCase()}</span>
+                        <span className={up ? "text-bull" : "text-bear"}>{up ? "+" : ""}{Number(i.pct_change).toFixed(2)}%</span>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="terminal-panel">
             <div className="terminal-header">Wire</div>
             <ul className="divide-y divide-border text-xs">
               {news.slice(0, 5).map((n) => (
