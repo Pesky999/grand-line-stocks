@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { getCharacter } from "@/lib/api/market.functions";
 import { getCharacterEvents } from "@/lib/api/events.functions";
+import { getCharacterIntel } from "@/lib/api/intelligence.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 
 const qo = (slug: string) => queryOptions({ queryKey: ["character", slug], queryFn: () => getCharacter({ data: { slug } }) });
 const eventsQO = (slug: string) => queryOptions({ queryKey: ["character", slug, "events"], queryFn: () => getCharacterEvents({ data: { slug } }) });
+const intelQO = (slug: string) => queryOptions({ queryKey: ["character", slug, "intel"], queryFn: () => getCharacterIntel({ data: { slug } }) });
 
 export const Route = createFileRoute("/character/$slug")({
   head: ({ params }) => ({
@@ -24,16 +26,33 @@ export const Route = createFileRoute("/character/$slug")({
     Promise.all([
       context.queryClient.ensureQueryData(qo(params.slug)),
       context.queryClient.ensureQueryData(eventsQO(params.slug)),
+      context.queryClient.ensureQueryData(intelQO(params.slug)),
     ]),
   component: CharacterPage,
   errorComponent: ({ error }) => <TerminalShell><div className="p-8 text-bear">Error: {error.message}</div></TerminalShell>,
   notFoundComponent: () => <TerminalShell><div className="p-8">Character not found</div></TerminalShell>,
 });
 
+const REASON_LABEL: Record<string, string> = {
+  story_momentum: "Story Momentum",
+  speculation: "Speculation",
+  investor_optimism: "Investor Optimism",
+  investor_fear: "Investor Fear",
+  market_correction: "Market Correction",
+  hype_surge: "Hype Surge",
+  meme_activity: "Meme Activity",
+  whale_buying: "Whale Buying",
+  whale_selling: "Whale Selling",
+  event_reaction: "Event Reaction",
+  long_term_growth: "Long-Term Growth",
+  normal_volatility: "Normal Volatility",
+};
+
 function CharacterPage() {
   const { slug } = Route.useParams();
   const { data } = useSuspenseQuery(qo(slug));
   const { data: charEvents } = useSuspenseQuery(eventsQO(slug));
+  const { data: intel } = useSuspenseQuery(intelQO(slug));
   const { character: c, history } = data;
   const { data: me, user } = useMe();
   const invalidateMe = useInvalidateMe();
