@@ -257,6 +257,53 @@ function CharacterPage() {
           </div>
 
           <div className="terminal-panel">
+            <div className="terminal-header">Investor Intelligence</div>
+            <div className="space-y-3 p-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <Meter label="Confidence" value={intel.intel.confidence} tone="bull" />
+                <Meter label="Risk" value={intel.intel.risk} tone="bear" />
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-bull">▲ Bullish Signals</div>
+                {intel.intel.bullish.length === 0 ? (
+                  <div className="text-muted-foreground">None detected.</div>
+                ) : (
+                  <ul className="ml-3 list-disc space-y-0.5 text-foreground">
+                    {intel.intel.bullish.map((s: string) => <li key={s}>{s}</li>)}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-bear">▼ Bearish Signals</div>
+                {intel.intel.bearish.length === 0 ? (
+                  <div className="text-muted-foreground">None detected.</div>
+                ) : (
+                  <ul className="ml-3 list-disc space-y-0.5 text-foreground">
+                    {intel.intel.bearish.map((s: string) => <li key={s}>{s}</li>)}
+                  </ul>
+                )}
+              </div>
+              {intel.rumors.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-widest text-warn">◆ Active Rumors</div>
+                  <ul className="space-y-1">
+                    {intel.rumors.map((r: any, i: number) => (
+                      <li key={i} className="text-foreground">
+                        <span className={Number(r.pct_change) >= 0 ? "text-bull" : "text-bear"}>
+                          {Number(r.pct_change) >= 0 ? "+" : ""}{Number(r.pct_change).toFixed(2)}%
+                        </span>{" "}
+                        {r.market_rumors.title}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+
+
+          <div className="terminal-panel">
             <div className="terminal-header">Catalysts</div>
             <ul className="divide-y divide-border text-xs">
               {charEvents.length === 0 && <li className="px-3 py-3 text-muted-foreground">No events yet.</li>}
