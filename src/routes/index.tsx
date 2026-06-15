@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { listCharacters, listNews } from "@/lib/api/market.functions";
 import { listRecentEvents } from "@/lib/api/events.functions";
+import { getLatestReport, listActiveRumors } from "@/lib/api/living-market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
@@ -9,6 +10,8 @@ import { formatBounty } from "@/lib/wallet";
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
 const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
+const reportQO = queryOptions({ queryKey: ["report", "latest"], queryFn: () => getLatestReport() });
+const rumorsQO = queryOptions({ queryKey: ["rumors", "active", 5], queryFn: () => listActiveRumors({ data: { limit: 5 } }) });
 
 export const Route = createFileRoute("/")({
   head: () => ({
