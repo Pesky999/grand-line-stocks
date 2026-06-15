@@ -154,7 +154,41 @@ function CharacterPage() {
               )}
             </div>
           </section>
+
+          <section className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span>Why Is This Stock Moving?</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Sentiment · <span className={Number(intel.avg_change_pct) >= 0 ? "text-bull" : "text-bear"}>{String(intel.sentiment).replace(/_/g, " ")}</span>
+              </span>
+            </div>
+            {intel.explanations.length === 0 ? (
+              <div className="p-4 text-xs text-muted-foreground">No significant moves logged yet. Quiet trading session.</div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {intel.explanations.slice(0, 6).map((e: any) => {
+                  const up = Number(e.pct_change) >= 0;
+                  return (
+                    <li key={e.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+                        <div className="flex flex-wrap gap-1">
+                          {(e.reason_codes ?? []).map((rc: string) => (
+                            <span key={rc} className="bg-secondary px-1.5 py-0.5 text-accent">{REASON_LABEL[rc] ?? rc}</span>
+                          ))}
+                          <span className="text-muted-foreground">via {e.source}</span>
+                        </div>
+                        <span className={`tabular ${up ? "text-bull" : "text-bear"}`}>{up ? "▲" : "▼"} {Math.abs(Number(e.pct_change)).toFixed(2)}%</span>
+                      </div>
+                      <p className="mt-1 text-sm text-foreground">{e.summary}</p>
+                      <div className="mt-1 text-[10px] text-muted-foreground tabular">{new Date(e.created_at).toLocaleString()}</div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
+
 
         <aside className="space-y-4">
           <div className="terminal-panel">
