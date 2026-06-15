@@ -61,10 +61,10 @@ function ReportPage() {
               <h1 className="text-xl font-bold text-foreground">{latest.headline}</h1>
               <p className="text-sm text-muted-foreground">{latest.summary}</p>
               <div className="grid gap-px bg-border md:grid-cols-4">
-                <Cell label="Biggest Gainer" name={(latest as any).gainer?.name} slug={(latest as any).gainer?.slug} pct={latest.biggest_gainer_pct} bull />
-                <Cell label="Biggest Loser" name={(latest as any).loser?.name} slug={(latest as any).loser?.slug} pct={latest.biggest_loser_pct} />
-                <Cell label="Trending" name={(latest as any).trending?.name} slug={(latest as any).trending?.slug} />
-                <Cell label="Most Discussed" name={(latest as any).discussed?.name} slug={(latest as any).discussed?.slug} />
+                <Cell label="Biggest Gainer" name={(latest as any).gainer?.name} slug={(latest as any).gainer?.slug} pct={latest.biggest_gainer_pct} explanation={(latest as any).gainer_explanation} bull />
+                <Cell label="Biggest Loser" name={(latest as any).loser?.name} slug={(latest as any).loser?.slug} pct={latest.biggest_loser_pct} explanation={(latest as any).loser_explanation} />
+                <Cell label="Trending" name={(latest as any).trending?.name} slug={(latest as any).trending?.slug} explanation={(latest as any).trending_explanation} />
+                <Cell label="Most Discussed" name={(latest as any).discussed?.name} slug={(latest as any).discussed?.slug} explanation={(latest as any).discussed_explanation} />
               </div>
             </div>
           )}
@@ -120,7 +120,7 @@ function ReportPage() {
   );
 }
 
-function Cell({ label, name, slug, pct, bull }: { label: string; name?: string; slug?: string; pct?: number | null; bull?: boolean }) {
+function Cell({ label, name, slug, pct, explanation, bull }: { label: string; name?: string; slug?: string; pct?: number | null; explanation?: string | null; bull?: boolean }) {
   return (
     <div className="bg-card px-4 py-3">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
@@ -132,6 +132,7 @@ function Cell({ label, name, slug, pct, bull }: { label: string; name?: string; 
           {Number(pct) >= 0 ? "+" : ""}{Number(pct).toFixed(2)}%
         </div>
       )}
+      {explanation && <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{explanation}</p>}
     </div>
   );
 }
