@@ -31,8 +31,9 @@ export function TerminalShell({ children }: { children: ReactNode }) {
               <Link to="/" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F1] MARKET</Link>
               <Link to="/portfolio" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F2] PORTFOLIO</Link>
               <Link to="/events" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F3] EVENTS</Link>
-              <Link to="/news" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F4] NEWS</Link>
-              <Link to="/games" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F5] GAMES</Link>
+              <Link to="/market-report" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F4] REPORT</Link>
+              <Link to="/news" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F5] NEWS</Link>
+              <Link to="/games" className="text-muted-foreground hover:text-primary" activeProps={{ className: "text-primary" }}>[F6] GAMES</Link>
               <Link to="/admin" className="text-muted-foreground hover:text-accent" activeProps={{ className: "text-accent" }}>[F9] ADMIN</Link>
             </nav>
           </div>
