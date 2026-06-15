@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { getCharacter } from "@/lib/api/market.functions";
 import { getCharacterEvents } from "@/lib/api/events.functions";
+import { getCharacterIntel } from "@/lib/api/intelligence.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 
 const qo = (slug: string) => queryOptions({ queryKey: ["character", slug], queryFn: () => getCharacter({ data: { slug } }) });
 const eventsQO = (slug: string) => queryOptions({ queryKey: ["character", slug, "events"], queryFn: () => getCharacterEvents({ data: { slug } }) });
+const intelQO = (slug: string) => queryOptions({ queryKey: ["character", slug, "intel"], queryFn: () => getCharacterIntel({ data: { slug } }) });
 
 export const Route = createFileRoute("/character/$slug")({
   head: ({ params }) => ({
@@ -24,16 +26,33 @@ export const Route = createFileRoute("/character/$slug")({
     Promise.all([
       context.queryClient.ensureQueryData(qo(params.slug)),
       context.queryClient.ensureQueryData(eventsQO(params.slug)),
+      context.queryClient.ensureQueryData(intelQO(params.slug)),
     ]),
   component: CharacterPage,
   errorComponent: ({ error }) => <TerminalShell><div className="p-8 text-bear">Error: {error.message}</div></TerminalShell>,
   notFoundComponent: () => <TerminalShell><div className="p-8">Character not found</div></TerminalShell>,
 });
 
+const REASON_LABEL: Record<string, string> = {
+  story_momentum: "Story Momentum",
+  speculation: "Speculation",
+  investor_optimism: "Investor Optimism",
+  investor_fear: "Investor Fear",
+  market_correction: "Market Correction",
+  hype_surge: "Hype Surge",
+  meme_activity: "Meme Activity",
+  whale_buying: "Whale Buying",
+  whale_selling: "Whale Selling",
+  event_reaction: "Event Reaction",
+  long_term_growth: "Long-Term Growth",
+  normal_volatility: "Normal Volatility",
+};
+
 function CharacterPage() {
   const { slug } = Route.useParams();
   const { data } = useSuspenseQuery(qo(slug));
   const { data: charEvents } = useSuspenseQuery(eventsQO(slug));
+  const { data: intel } = useSuspenseQuery(intelQO(slug));
   const { character: c, history } = data;
   const { data: me, user } = useMe();
   const invalidateMe = useInvalidateMe();
@@ -135,7 +154,41 @@ function CharacterPage() {
               )}
             </div>
           </section>
+
+          <section className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span>Why Is This Stock Moving?</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Sentiment · <span className={Number(intel.avg_change_pct) >= 0 ? "text-bull" : "text-bear"}>{String(intel.sentiment).replace(/_/g, " ")}</span>
+              </span>
+            </div>
+            {intel.explanations.length === 0 ? (
+              <div className="p-4 text-xs text-muted-foreground">No significant moves logged yet. Quiet trading session.</div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {intel.explanations.slice(0, 6).map((e: any) => {
+                  const up = Number(e.pct_change) >= 0;
+                  return (
+                    <li key={e.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+                        <div className="flex flex-wrap gap-1">
+                          {(e.reason_codes ?? []).map((rc: string) => (
+                            <span key={rc} className="bg-secondary px-1.5 py-0.5 text-accent">{REASON_LABEL[rc] ?? rc}</span>
+                          ))}
+                          <span className="text-muted-foreground">via {e.source}</span>
+                        </div>
+                        <span className={`tabular ${up ? "text-bull" : "text-bear"}`}>{up ? "▲" : "▼"} {Math.abs(Number(e.pct_change)).toFixed(2)}%</span>
+                      </div>
+                      <p className="mt-1 text-sm text-foreground">{e.summary}</p>
+                      <div className="mt-1 text-[10px] text-muted-foreground tabular">{new Date(e.created_at).toLocaleString()}</div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
+
 
         <aside className="space-y-4">
           <div className="terminal-panel">
@@ -204,6 +257,53 @@ function CharacterPage() {
           </div>
 
           <div className="terminal-panel">
+            <div className="terminal-header">Investor Intelligence</div>
+            <div className="space-y-3 p-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <Meter label="Confidence" value={intel.intel.confidence} tone="bull" />
+                <Meter label="Risk" value={intel.intel.risk} tone="bear" />
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-bull">▲ Bullish Signals</div>
+                {intel.intel.bullish.length === 0 ? (
+                  <div className="text-muted-foreground">None detected.</div>
+                ) : (
+                  <ul className="ml-3 list-disc space-y-0.5 text-foreground">
+                    {intel.intel.bullish.map((s: string) => <li key={s}>{s}</li>)}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-bear">▼ Bearish Signals</div>
+                {intel.intel.bearish.length === 0 ? (
+                  <div className="text-muted-foreground">None detected.</div>
+                ) : (
+                  <ul className="ml-3 list-disc space-y-0.5 text-foreground">
+                    {intel.intel.bearish.map((s: string) => <li key={s}>{s}</li>)}
+                  </ul>
+                )}
+              </div>
+              {intel.rumors.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-widest text-warn">◆ Active Rumors</div>
+                  <ul className="space-y-1">
+                    {intel.rumors.map((r: any, i: number) => (
+                      <li key={i} className="text-foreground">
+                        <span className={Number(r.pct_change) >= 0 ? "text-bull" : "text-bear"}>
+                          {Number(r.pct_change) >= 0 ? "+" : ""}{Number(r.pct_change).toFixed(2)}%
+                        </span>{" "}
+                        {r.market_rumors.title}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+
+
+          <div className="terminal-panel">
             <div className="terminal-header">Catalysts</div>
             <ul className="divide-y divide-border text-xs">
               {charEvents.length === 0 && <li className="px-3 py-3 text-muted-foreground">No events yet.</li>}
@@ -242,3 +342,18 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function Meter({ label, value, tone }: { label: string; value: number; tone: "bull" | "bear" }) {
+  const color = tone === "bull" ? "var(--bull)" : "var(--bear)";
+  return (
+    <div className="border border-border bg-card/40 p-2">
+      <div className="flex justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
+        <span>{label}</span><span className="tabular text-foreground">{value}/100</span>
+      </div>
+      <div className="mt-1 h-1 w-full bg-border">
+        <div className="h-1" style={{ width: `${value}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
