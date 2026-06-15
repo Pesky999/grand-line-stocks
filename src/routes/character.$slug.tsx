@@ -342,3 +342,18 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function Meter({ label, value, tone }: { label: string; value: number; tone: "bull" | "bear" }) {
+  const color = tone === "bull" ? "var(--bull)" : "var(--bear)";
+  return (
+    <div className="border border-border bg-card/40 p-2">
+      <div className="flex justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
+        <span>{label}</span><span className="tabular text-foreground">{value}/100</span>
+      </div>
+      <div className="mt-1 h-1 w-full bg-border">
+        <div className="h-1" style={{ width: `${value}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
