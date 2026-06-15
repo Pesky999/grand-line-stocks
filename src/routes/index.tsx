@@ -27,16 +27,28 @@ export const Route = createFileRoute("/")({
       context.queryClient.ensureQueryData(charsQO),
       context.queryClient.ensureQueryData(newsQO),
       context.queryClient.ensureQueryData(eventsQO),
+      context.queryClient.ensureQueryData(reportQO),
+      context.queryClient.ensureQueryData(rumorsQO),
     ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
   notFoundComponent: () => <div className="p-8">Not found</div>,
 });
 
+const SENT_TONE: Record<string, string> = {
+  extremely_bullish: "text-bull",
+  bullish: "text-bull",
+  neutral: "text-muted-foreground",
+  bearish: "text-bear",
+  extremely_bearish: "text-bear",
+};
+
 function Market() {
   const { data: characters } = useSuspenseQuery(charsQO);
   const { data: news } = useSuspenseQuery(newsQO);
   const { data: events } = useSuspenseQuery(eventsQO);
+  const { data: report } = useSuspenseQuery(reportQO);
+  const { data: rumors } = useSuspenseQuery(rumorsQO);
 
   const movers = [...characters].sort((a, b) => {
     const da = (a.current_price - a.previous_price) / a.previous_price;
