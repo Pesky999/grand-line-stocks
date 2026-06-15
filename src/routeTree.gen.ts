@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as NewsRouteImport } from './routes/news'
+import { Route as MarketReportRouteImport } from './routes/market-report'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -18,12 +19,18 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
+import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenticated/market-admin'
 import { Route as AuthenticatedEventsAdminRouteImport } from './routes/_authenticated/events-admin'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const NewsRoute = NewsRouteImport.update({
   id: '/news',
   path: '/news',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketReportRoute = MarketReportRouteImport.update({
+  id: '/market-report',
+  path: '/market-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GamesRoute = GamesRouteImport.update({
@@ -65,6 +72,12 @@ const AuthenticatedPortfolioRoute = AuthenticatedPortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMarketAdminRoute =
+  AuthenticatedMarketAdminRouteImport.update({
+    id: '/market-admin',
+    path: '/market-admin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedEventsAdminRoute =
   AuthenticatedEventsAdminRouteImport.update({
     id: '/events-admin',
@@ -82,9 +95,11 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
@@ -94,9 +109,11 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
@@ -108,9 +125,11 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
@@ -122,9 +141,11 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/market-report'
     | '/news'
     | '/admin'
     | '/events-admin'
+    | '/market-admin'
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
@@ -134,9 +155,11 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/market-report'
     | '/news'
     | '/admin'
     | '/events-admin'
+    | '/market-admin'
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
@@ -147,9 +170,11 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/market-report'
     | '/news'
     | '/_authenticated/admin'
     | '/_authenticated/events-admin'
+    | '/_authenticated/market-admin'
     | '/_authenticated/portfolio'
     | '/_authenticated/profile'
     | '/character/$slug'
@@ -161,6 +186,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   EventsRoute: typeof EventsRoute
   GamesRoute: typeof GamesRoute
+  MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
   CharacterSlugRoute: typeof CharacterSlugRoute
 }
@@ -172,6 +198,13 @@ declare module '@tanstack/react-router' {
       path: '/news'
       fullPath: '/news'
       preLoaderRoute: typeof NewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/market-report': {
+      id: '/market-report'
+      path: '/market-report'
+      fullPath: '/market-report'
+      preLoaderRoute: typeof MarketReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/games': {
@@ -230,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPortfolioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/market-admin': {
+      id: '/_authenticated/market-admin'
+      path: '/market-admin'
+      fullPath: '/market-admin'
+      preLoaderRoute: typeof AuthenticatedMarketAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/events-admin': {
       id: '/_authenticated/events-admin'
       path: '/events-admin'
@@ -250,6 +290,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedEventsAdminRoute: typeof AuthenticatedEventsAdminRoute
+  AuthenticatedMarketAdminRoute: typeof AuthenticatedMarketAdminRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
 }
@@ -257,6 +298,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedEventsAdminRoute: AuthenticatedEventsAdminRoute,
+  AuthenticatedMarketAdminRoute: AuthenticatedMarketAdminRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
 }
@@ -270,6 +312,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   EventsRoute: EventsRoute,
   GamesRoute: GamesRoute,
+  MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
   CharacterSlugRoute: CharacterSlugRoute,
 }

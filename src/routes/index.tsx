@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { listCharacters, listNews } from "@/lib/api/market.functions";
 import { listRecentEvents } from "@/lib/api/events.functions";
+import { getLatestReport, listActiveRumors } from "@/lib/api/living-market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
@@ -9,6 +10,8 @@ import { formatBounty } from "@/lib/wallet";
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
 const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
+const reportQO = queryOptions({ queryKey: ["report", "latest"], queryFn: () => getLatestReport() });
+const rumorsQO = queryOptions({ queryKey: ["rumors", "active", 5], queryFn: () => listActiveRumors({ data: { limit: 5 } }) });
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,16 +27,28 @@ export const Route = createFileRoute("/")({
       context.queryClient.ensureQueryData(charsQO),
       context.queryClient.ensureQueryData(newsQO),
       context.queryClient.ensureQueryData(eventsQO),
+      context.queryClient.ensureQueryData(reportQO),
+      context.queryClient.ensureQueryData(rumorsQO),
     ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
   notFoundComponent: () => <div className="p-8">Not found</div>,
 });
 
+const SENT_TONE: Record<string, string> = {
+  extremely_bullish: "text-bull",
+  bullish: "text-bull",
+  neutral: "text-muted-foreground",
+  bearish: "text-bear",
+  extremely_bearish: "text-bear",
+};
+
 function Market() {
   const { data: characters } = useSuspenseQuery(charsQO);
   const { data: news } = useSuspenseQuery(newsQO);
   const { data: events } = useSuspenseQuery(eventsQO);
+  const { data: report } = useSuspenseQuery(reportQO);
+  const { data: rumors } = useSuspenseQuery(rumorsQO);
 
   const movers = [...characters].sort((a, b) => {
     const da = (a.current_price - a.previous_price) / a.previous_price;
@@ -48,6 +63,20 @@ function Market() {
   return (
     <TerminalShell>
       <Ticker items={characters} />
+
+      {report && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 px-4 py-2 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">SENTIMENT</span>
+            <span className={`font-bold uppercase tracking-widest ${SENT_TONE[report.sentiment] ?? ""}`}>
+              {report.sentiment.replace(/_/g, " ")}
+            </span>
+            <span className="text-muted-foreground hidden sm:inline">·</span>
+            <span className="text-foreground hidden sm:inline truncate max-w-[60ch]">{report.headline}</span>
+          </div>
+          <Link to="/market-report" className="text-accent hover:text-primary">Daily Report →</Link>
+        </div>
+      )}
 
       {/* Top stats strip */}
       <div className="grid grid-cols-2 gap-px border-b border-border bg-border md:grid-cols-4">
@@ -148,6 +177,30 @@ function Market() {
                       {impacts.slice(0, 3).map((i: any) => i.characters?.slug?.toUpperCase()).join(" · ")}
                       {impacts.length > 3 ? ` +${impacts.length - 3}` : ""}
                     </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="terminal-panel">
+            <div className="terminal-header flex items-center justify-between">
+              <span className="text-warn">◆ Rumors</span>
+              <Link to="/market-report" className="text-muted-foreground hover:text-primary">all →</Link>
+            </div>
+            <ul className="divide-y divide-border text-xs">
+              {rumors.length === 0 && <li className="px-3 py-2 text-muted-foreground">Quiet on the wire.</li>}
+              {rumors.slice(0, 4).map((r: any) => {
+                const i = r.market_rumor_impacts?.[0];
+                const up = Number(i?.pct_change ?? 0) >= 0;
+                return (
+                  <li key={r.id} className="px-3 py-2">
+                    <div className="text-foreground truncate">{r.title}</div>
+                    {i?.characters && (
+                      <div className="mt-0.5 flex items-center gap-2 text-[10px] tabular">
+                        <span className="text-accent">{i.characters.slug.toUpperCase()}</span>
+                        <span className={up ? "text-bull" : "text-bear"}>{up ? "+" : ""}{Number(i.pct_change).toFixed(2)}%</span>
+                      </div>
+                    )}
                   </li>
                 );
               })}

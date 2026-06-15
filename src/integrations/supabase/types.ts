@@ -14,15 +14,52 @@ export type Database = {
   }
   public: {
     Tables: {
+      character_attributes: {
+        Row: {
+          character_id: string
+          hype_rating: number
+          investor_confidence: number
+          narrative_potential: number
+          updated_at: string
+          volatility_rating: number
+        }
+        Insert: {
+          character_id: string
+          hype_rating?: number
+          investor_confidence?: number
+          narrative_potential?: number
+          updated_at?: string
+          volatility_rating?: number
+        }
+        Update: {
+          character_id?: string
+          hype_rating?: number
+          investor_confidence?: number
+          narrative_potential?: number
+          updated_at?: string
+          volatility_rating?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_attributes_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: true
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       characters: {
         Row: {
           bounty: number | null
+          category: Database["public"]["Enums"]["stock_category"]
           created_at: string
           crew: string | null
           current_price: number
           description: string | null
           id: string
           image_url: string | null
+          momentum: number
           name: string
           previous_price: number
           role: string | null
@@ -31,12 +68,14 @@ export type Database = {
         }
         Insert: {
           bounty?: number | null
+          category?: Database["public"]["Enums"]["stock_category"]
           created_at?: string
           crew?: string | null
           current_price?: number
           description?: string | null
           id?: string
           image_url?: string | null
+          momentum?: number
           name: string
           previous_price?: number
           role?: string | null
@@ -45,17 +84,165 @@ export type Database = {
         }
         Update: {
           bounty?: number | null
+          category?: Database["public"]["Enums"]["stock_category"]
           created_at?: string
           crew?: string | null
           current_price?: number
           description?: string | null
           id?: string
           image_url?: string | null
+          momentum?: number
           name?: string
           previous_price?: number
           role?: string | null
           slug?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_market_reports: {
+        Row: {
+          avg_change_pct: number
+          biggest_gainer_id: string | null
+          biggest_gainer_pct: number | null
+          biggest_loser_id: string | null
+          biggest_loser_pct: number | null
+          created_at: string
+          headline: string
+          id: string
+          most_discussed_id: string | null
+          report_date: string
+          sentiment: Database["public"]["Enums"]["market_sentiment"]
+          summary: string
+          trending_id: string | null
+        }
+        Insert: {
+          avg_change_pct?: number
+          biggest_gainer_id?: string | null
+          biggest_gainer_pct?: number | null
+          biggest_loser_id?: string | null
+          biggest_loser_pct?: number | null
+          created_at?: string
+          headline: string
+          id?: string
+          most_discussed_id?: string | null
+          report_date: string
+          sentiment: Database["public"]["Enums"]["market_sentiment"]
+          summary: string
+          trending_id?: string | null
+        }
+        Update: {
+          avg_change_pct?: number
+          biggest_gainer_id?: string | null
+          biggest_gainer_pct?: number | null
+          biggest_loser_id?: string | null
+          biggest_loser_pct?: number | null
+          created_at?: string
+          headline?: string
+          id?: string
+          most_discussed_id?: string | null
+          report_date?: string
+          sentiment?: Database["public"]["Enums"]["market_sentiment"]
+          summary?: string
+          trending_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_market_reports_biggest_gainer_id_fkey"
+            columns: ["biggest_gainer_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_market_reports_biggest_loser_id_fkey"
+            columns: ["biggest_loser_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_market_reports_most_discussed_id_fkey"
+            columns: ["most_discussed_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_market_reports_trending_id_fkey"
+            columns: ["trending_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hype_modifier_targets: {
+        Row: {
+          character_id: string
+          id: string
+          modifier_id: string
+        }
+        Insert: {
+          character_id: string
+          id?: string
+          modifier_id: string
+        }
+        Update: {
+          character_id?: string
+          id?: string
+          modifier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hype_modifier_targets_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hype_modifier_targets_modifier_id_fkey"
+            columns: ["modifier_id"]
+            isOneToOne: false
+            referencedRelation: "hype_modifiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hype_modifiers: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          ends_at: string | null
+          id: string
+          modifier_type: Database["public"]["Enums"]["hype_modifier_type"]
+          multiplier: number
+          starts_at: string
+          title: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          modifier_type: Database["public"]["Enums"]["hype_modifier_type"]
+          multiplier?: number
+          starts_at?: string
+          title: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          modifier_type?: Database["public"]["Enums"]["hype_modifier_type"]
+          multiplier?: number
+          starts_at?: string
+          title?: string
         }
         Relationships: []
       }
@@ -146,6 +333,78 @@ export type Database = {
         }
         Relationships: []
       }
+      market_rumor_impacts: {
+        Row: {
+          character_id: string
+          created_at: string
+          id: string
+          pct_change: number
+          price_after: number | null
+          price_before: number | null
+          rumor_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          id?: string
+          pct_change: number
+          price_after?: number | null
+          price_before?: number | null
+          rumor_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          id?: string
+          pct_change?: number
+          price_after?: number | null
+          price_before?: number | null
+          rumor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_rumor_impacts_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_rumor_impacts_rumor_id_fkey"
+            columns: ["rumor_id"]
+            isOneToOne: false
+            referencedRelation: "market_rumors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_rumors: {
+        Row: {
+          created_at: string
+          description: string
+          expires_at: string | null
+          id: string
+          status: Database["public"]["Enums"]["rumor_status"]
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          expires_at?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["rumor_status"]
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          expires_at?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["rumor_status"]
+          title?: string
+        }
+        Relationships: []
+      }
       news: {
         Row: {
           body: string
@@ -189,7 +448,9 @@ export type Database = {
           note: string | null
           pct_change: number | null
           price: number
+          source: string | null
           source_event_id: string | null
+          source_rumor_id: string | null
         }
         Insert: {
           character_id: string
@@ -198,7 +459,9 @@ export type Database = {
           note?: string | null
           pct_change?: number | null
           price: number
+          source?: string | null
           source_event_id?: string | null
+          source_rumor_id?: string | null
         }
         Update: {
           character_id?: string
@@ -207,7 +470,9 @@ export type Database = {
           note?: string | null
           pct_change?: number | null
           price?: number
+          source?: string | null
           source_event_id?: string | null
+          source_rumor_id?: string | null
         }
         Relationships: [
           {
@@ -491,6 +756,24 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      expire_old_rumors: { Args: never; Returns: number }
+      generate_market_rumor: {
+        Args: never
+        Returns: {
+          created_at: string
+          description: string
+          expires_at: string | null
+          id: string
+          status: Database["public"]["Enums"]["rumor_status"]
+          title: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_rumors"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -510,6 +793,30 @@ export type Database = {
         }[]
       }
       publish_due_events: { Args: never; Returns: number }
+      run_daily_market_cycle: {
+        Args: never
+        Returns: {
+          avg_change_pct: number
+          biggest_gainer_id: string | null
+          biggest_gainer_pct: number | null
+          biggest_loser_id: string | null
+          biggest_loser_pct: number | null
+          created_at: string
+          headline: string
+          id: string
+          most_discussed_id: string | null
+          report_date: string
+          sentiment: Database["public"]["Enums"]["market_sentiment"]
+          summary: string
+          trending_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "daily_market_reports"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
@@ -523,6 +830,22 @@ export type Database = {
         | "community_event"
         | "market_correction"
         | "meme_event"
+      hype_modifier_type:
+        | "movie_announcement"
+        | "anime_announcement"
+        | "trailer_release"
+        | "game_release"
+        | "merchandise"
+        | "live_action"
+        | "other"
+      market_sentiment:
+        | "extremely_bearish"
+        | "bearish"
+        | "neutral"
+        | "bullish"
+        | "extremely_bullish"
+      rumor_status: "active" | "expired"
+      stock_category: "blue_chip" | "growth" | "speculative" | "meme"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -662,6 +985,24 @@ export const Constants = {
         "market_correction",
         "meme_event",
       ],
+      hype_modifier_type: [
+        "movie_announcement",
+        "anime_announcement",
+        "trailer_release",
+        "game_release",
+        "merchandise",
+        "live_action",
+        "other",
+      ],
+      market_sentiment: [
+        "extremely_bearish",
+        "bearish",
+        "neutral",
+        "bullish",
+        "extremely_bullish",
+      ],
+      rumor_status: ["active", "expired"],
+      stock_category: ["blue_chip", "growth", "speculative", "meme"],
     },
   },
 } as const
