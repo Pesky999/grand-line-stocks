@@ -11,11 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as MarketReportRouteImport } from './routes/market-report'
+import { Route as LeaderboardsRouteImport } from './routes/leaderboards'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
@@ -31,6 +33,11 @@ const NewsRoute = NewsRouteImport.update({
 const MarketReportRoute = MarketReportRouteImport.update({
   id: '/market-report',
   path: '/market-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeaderboardsRoute = LeaderboardsRouteImport.update({
+  id: '/leaderboards',
+  path: '/leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GamesRoute = GamesRouteImport.update({
@@ -55,6 +62,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UUsernameRoute = UUsernameRouteImport.update({
+  id: '/u/$username',
+  path: '/u/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CharacterSlugRoute = CharacterSlugRouteImport.update({
@@ -95,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
@@ -103,12 +116,14 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
@@ -117,6 +132,7 @@ export interface FileRoutesByTo {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +141,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
@@ -133,6 +150,7 @@ export interface FileRoutesById {
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +159,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/admin'
@@ -149,12 +168,14 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/u/$username'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/admin'
@@ -163,6 +184,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/u/$username'
   id:
     | '__root__'
     | '/'
@@ -170,6 +192,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/_authenticated/admin'
@@ -178,6 +201,7 @@ export interface FileRouteTypes {
     | '/_authenticated/portfolio'
     | '/_authenticated/profile'
     | '/character/$slug'
+    | '/u/$username'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -186,9 +210,11 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   EventsRoute: typeof EventsRoute
   GamesRoute: typeof GamesRoute
+  LeaderboardsRoute: typeof LeaderboardsRoute
   MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
   CharacterSlugRoute: typeof CharacterSlugRoute
+  UUsernameRoute: typeof UUsernameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -205,6 +231,13 @@ declare module '@tanstack/react-router' {
       path: '/market-report'
       fullPath: '/market-report'
       preLoaderRoute: typeof MarketReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaderboards': {
+      id: '/leaderboards'
+      path: '/leaderboards'
+      fullPath: '/leaderboards'
+      preLoaderRoute: typeof LeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/games': {
@@ -240,6 +273,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/u/$username': {
+      id: '/u/$username'
+      path: '/u/$username'
+      fullPath: '/u/$username'
+      preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/character/$slug': {
@@ -312,9 +352,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   EventsRoute: EventsRoute,
   GamesRoute: GamesRoute,
+  LeaderboardsRoute: LeaderboardsRoute,
   MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
   CharacterSlugRoute: CharacterSlugRoute,
+  UUsernameRoute: UUsernameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

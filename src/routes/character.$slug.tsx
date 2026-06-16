@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useSuspenseQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { getCharacter } from "@/lib/api/market.functions";
 import { getCharacterEvents } from "@/lib/api/events.functions";
 import { getCharacterIntel } from "@/lib/api/intelligence.functions";
+import { listCharacterTopHolders } from "@/lib/api/legendary.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
@@ -53,6 +54,11 @@ function CharacterPage() {
   const { data } = useSuspenseQuery(qo(slug));
   const { data: charEvents } = useSuspenseQuery(eventsQO(slug));
   const { data: intel } = useSuspenseQuery(intelQO(slug));
+  const topHolders = useQuery({
+    queryKey: ["top-holders", slug],
+    queryFn: () => listCharacterTopHolders({ data: { slug, limit: 5 } }),
+    staleTime: 60_000,
+  });
   const { character: c, history } = data;
   const { data: me, user } = useMe();
   const invalidateMe = useInvalidateMe();
@@ -327,6 +333,25 @@ function CharacterPage() {
                 );
               })}
             </ul>
+          </div>
+
+          <div className="terminal-panel">
+            <div className="terminal-header">Top {c.name} Investors</div>
+            {(topHolders.data ?? []).length === 0 ? (
+              <div className="px-3 py-3 text-xs text-muted-foreground">No holders yet.</div>
+            ) : (
+              <ol className="divide-y divide-border text-xs">
+                {(topHolders.data ?? []).map((h: any) => (
+                  <li key={h.username} className="flex items-center justify-between px-3 py-2">
+                    <span>
+                      <span className="font-bold text-accent mr-2">#{h.rank}</span>
+                      <Link to="/u/$username" params={{ username: h.username }} className="text-primary hover:underline">@{h.username}</Link>
+                    </span>
+                    <span className="tabular text-muted-foreground">{h.shares.toLocaleString()} sh · ฿{formatBerries(h.value)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
         </aside>
       </div>

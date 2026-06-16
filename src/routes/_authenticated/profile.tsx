@@ -1,10 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { updateProfile } from "@/lib/api/wallet.functions";
+import { getPublicProfile } from "@/lib/api/legendary.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
+import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL } from "@/lib/legendary";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/profile")({
@@ -20,6 +23,14 @@ function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const username = data?.profile?.username ?? null;
+  const pub = useQuery({
+    queryKey: ["public-profile", username],
+    queryFn: () => getPublicProfile({ data: { username: username! } }),
+    enabled: !!username,
+    staleTime: 30_000,
+  });
+
   if (isLoading || !data) {
     return <TerminalShell><div className="p-8 text-sm text-muted-foreground">Loading profile…</div></TerminalShell>;
   }
@@ -28,6 +39,8 @@ function Profile() {
   const marketValue = data.holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const netWorth = data.berries + marketValue;
   const joined = profile?.created_at ? new Date(profile.created_at) : null;
+  const stats: any = pub.data?.stats ?? {};
+  const ach = pub.data?.achievements ?? [];
 
   async function handleSave() {
     setSaving(true);
@@ -83,6 +96,54 @@ function Profile() {
             <Row label="Member Since">{joined ? joined.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "—"}</Row>
           </div>
         </div>
+
+        <div className="terminal-panel">
+          <div className="terminal-header flex items-center justify-between">
+            <span>Prestige</span>
+            {username && (
+              <Link to="/u/$username" params={{ username }} className="text-[10px] uppercase tracking-widest text-primary hover:underline">
+                view public profile →
+              </Link>
+            )}
+          </div>
+          <div className="grid gap-3 p-4 text-xs md:grid-cols-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Title</div>
+              <div className={`mt-1 inline-block border px-2 py-1 text-[11px] uppercase tracking-widest ${TITLE_TONE[stats.title] ?? ""}`}>
+                {TITLE_LABEL[stats.title] ?? "Rookie Pirate"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Specialization</div>
+              <div className="mt-1 tabular">{SPEC_LABEL[stats.specialization] ?? "Generalist"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Reputation</div>
+              <div className="mt-1 tabular">{stats.reputation_score ?? 0} / 1000</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Rank · Best</div>
+              <div className="mt-1 tabular">
+                {pub.data?.rank ? `#${pub.data.rank}` : "—"}
+                <span className="ml-2 text-muted-foreground">best #{stats.highest_rank ?? "—"}</span>
+              </div>
+            </div>
+          </div>
+          {ach.length > 0 && (
+            <div className="border-t border-border px-4 py-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Achievements ({ach.length})</div>
+              <div className="flex flex-wrap gap-2">
+                {ach.slice(0, 8).map((ua: any) => (
+                  <span key={ua.achievements.code} className="border border-border px-2 py-1 text-[11px]" title={ua.achievements.description}>
+                    {ua.achievements.icon} {ua.achievements.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+
 
         <div className="grid gap-px border border-border bg-border md:grid-cols-3">
           <Stat label="Cash Balance" value={`฿${formatBerries(data.berries)}`} tone="accent" />
