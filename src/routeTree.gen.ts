@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as MarketReportRouteImport } from './routes/market-report'
+import { Route as LeaderboardsRouteImport } from './routes/leaderboards'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -31,6 +32,11 @@ const NewsRoute = NewsRouteImport.update({
 const MarketReportRoute = MarketReportRouteImport.update({
   id: '/market-report',
   path: '/market-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeaderboardsRoute = LeaderboardsRouteImport.update({
+  id: '/leaderboards',
+  path: '/leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GamesRoute = GamesRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/admin': typeof AuthenticatedAdminRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/games': typeof GamesRoute
+  '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/admin'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/admin'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/games'
+    | '/leaderboards'
     | '/market-report'
     | '/news'
     | '/_authenticated/admin'
@@ -186,6 +198,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   EventsRoute: typeof EventsRoute
   GamesRoute: typeof GamesRoute
+  LeaderboardsRoute: typeof LeaderboardsRoute
   MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
   CharacterSlugRoute: typeof CharacterSlugRoute
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       path: '/market-report'
       fullPath: '/market-report'
       preLoaderRoute: typeof MarketReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaderboards': {
+      id: '/leaderboards'
+      path: '/leaderboards'
+      fullPath: '/leaderboards'
+      preLoaderRoute: typeof LeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/games': {
@@ -312,6 +332,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   EventsRoute: EventsRoute,
   GamesRoute: GamesRoute,
+  LeaderboardsRoute: LeaderboardsRoute,
   MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
   CharacterSlugRoute: CharacterSlugRoute,
