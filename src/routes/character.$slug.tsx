@@ -54,6 +54,11 @@ function CharacterPage() {
   const { data } = useSuspenseQuery(qo(slug));
   const { data: charEvents } = useSuspenseQuery(eventsQO(slug));
   const { data: intel } = useSuspenseQuery(intelQO(slug));
+  const topHolders = useQuery({
+    queryKey: ["top-holders", slug],
+    queryFn: () => listCharacterTopHolders({ data: { slug, limit: 5 } }),
+    staleTime: 60_000,
+  });
   const { character: c, history } = data;
   const { data: me, user } = useMe();
   const invalidateMe = useInvalidateMe();
