@@ -334,6 +334,25 @@ function CharacterPage() {
               })}
             </ul>
           </div>
+
+          <div className="terminal-panel">
+            <div className="terminal-header">Top {c.name} Investors</div>
+            {(topHolders.data ?? []).length === 0 ? (
+              <div className="px-3 py-3 text-xs text-muted-foreground">No holders yet.</div>
+            ) : (
+              <ol className="divide-y divide-border text-xs">
+                {(topHolders.data ?? []).map((h: any) => (
+                  <li key={h.username} className="flex items-center justify-between px-3 py-2">
+                    <span>
+                      <span className="font-bold text-accent mr-2">#{h.rank}</span>
+                      <Link to="/u/$username" params={{ username: h.username }} className="text-primary hover:underline">@{h.username}</Link>
+                    </span>
+                    <span className="tabular text-muted-foreground">{h.shares.toLocaleString()} sh · ฿{formatBerries(h.value)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         </aside>
       </div>
     </TerminalShell>
