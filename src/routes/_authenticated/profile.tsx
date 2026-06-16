@@ -23,6 +23,14 @@ function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const username = data?.profile?.username ?? null;
+  const pub = useQuery({
+    queryKey: ["public-profile", username],
+    queryFn: () => getPublicProfile({ data: { username: username! } }),
+    enabled: !!username,
+    staleTime: 30_000,
+  });
+
   if (isLoading || !data) {
     return <TerminalShell><div className="p-8 text-sm text-muted-foreground">Loading profile…</div></TerminalShell>;
   }
@@ -31,6 +39,8 @@ function Profile() {
   const marketValue = data.holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const netWorth = data.berries + marketValue;
   const joined = profile?.created_at ? new Date(profile.created_at) : null;
+  const stats: any = pub.data?.stats ?? {};
+  const ach = pub.data?.achievements ?? [];
 
   async function handleSave() {
     setSaving(true);
