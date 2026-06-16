@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      achievements: {
+        Row: {
+          category: string
+          code: string
+          created_at: string
+          criteria: Json
+          description: string
+          icon: string
+          id: string
+          name: string
+          reputation_reward: number
+          tier: Database["public"]["Enums"]["achievement_tier"]
+        }
+        Insert: {
+          category?: string
+          code: string
+          created_at?: string
+          criteria?: Json
+          description: string
+          icon?: string
+          id?: string
+          name: string
+          reputation_reward?: number
+          tier: Database["public"]["Enums"]["achievement_tier"]
+        }
+        Update: {
+          category?: string
+          code?: string
+          created_at?: string
+          criteria?: Json
+          description?: string
+          icon?: string
+          id?: string
+          name?: string
+          reputation_reward?: number
+          tier?: Database["public"]["Enums"]["achievement_tier"]
+        }
+        Relationships: []
+      }
       character_attributes: {
         Row: {
           character_id: string
@@ -258,6 +297,80 @@ export type Database = {
         }
         Relationships: []
       }
+      leaderboard_cache: {
+        Row: {
+          board_key: string
+          id: number
+          meta: Json
+          prev_rank: number | null
+          rank: number
+          refreshed_at: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          board_key: string
+          id?: number
+          meta?: Json
+          prev_rank?: number | null
+          rank: number
+          refreshed_at?: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          board_key?: string
+          id?: number
+          meta?: Json
+          prev_rank?: number | null
+          rank?: number
+          refreshed_at?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: []
+      }
+      legacy_records: {
+        Row: {
+          achieved_at: string
+          character_id: string | null
+          code: string
+          description: string
+          id: string
+          title: string
+          user_id: string | null
+          value: number | null
+        }
+        Insert: {
+          achieved_at?: string
+          character_id?: string | null
+          code: string
+          description: string
+          id?: string
+          title: string
+          user_id?: string | null
+          value?: number | null
+        }
+        Update: {
+          achieved_at?: string
+          character_id?: string | null
+          code?: string
+          description?: string
+          id?: string
+          title?: string
+          user_id?: string | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_records_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       market_event_impacts: {
         Row: {
           character_id: string
@@ -414,6 +527,42 @@ export type Database = {
           id?: string
           status?: Database["public"]["Enums"]["rumor_status"]
           title?: string
+        }
+        Relationships: []
+      }
+      net_worth_snapshots: {
+        Row: {
+          cash: number
+          created_at: string
+          equity: number
+          id: string
+          net_worth: number
+          rank_overall: number | null
+          return_pct: number
+          snapshot_date: string
+          user_id: string
+        }
+        Insert: {
+          cash?: number
+          created_at?: string
+          equity?: number
+          id?: string
+          net_worth?: number
+          rank_overall?: number | null
+          return_pct?: number
+          snapshot_date: string
+          user_id: string
+        }
+        Update: {
+          cash?: number
+          created_at?: string
+          equity?: number
+          id?: string
+          net_worth?: number
+          rank_overall?: number | null
+          return_pct?: number
+          snapshot_date?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -696,6 +845,35 @@ export type Database = {
         }
         Relationships: []
       }
+      user_achievements: {
+        Row: {
+          achievement_id: string
+          id: string
+          unlocked_at: string
+          user_id: string
+        }
+        Insert: {
+          achievement_id: string
+          id?: string
+          unlocked_at?: string
+          user_id: string
+        }
+        Update: {
+          achievement_id?: string
+          id?: string
+          unlocked_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_achievements_achievement_id_fkey"
+            columns: ["achievement_id"]
+            isOneToOne: false
+            referencedRelation: "achievements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_holdings: {
         Row: {
           avg_cost: number
@@ -755,6 +933,96 @@ export type Database = {
         }
         Relationships: []
       }
+      user_stats: {
+        Row: {
+          avg_holding_days: number
+          best_trade_pnl: number
+          best_trade_slug: string | null
+          current_net_worth: number
+          current_rank: number | null
+          days_active: number
+          highest_net_worth: number
+          highest_rank: number | null
+          largest_position_slug: string | null
+          largest_position_value: number
+          last_active_date: string
+          login_streak: number
+          losses: number
+          rank_overall_prev: number | null
+          realized_pnl: number
+          reputation_score: number
+          specialization: Database["public"]["Enums"]["investor_specialization"]
+          title: Database["public"]["Enums"]["investor_title"]
+          total_buys: number
+          total_sells: number
+          total_trades: number
+          total_volume: number
+          updated_at: string
+          user_id: string
+          wins: number
+          worst_trade_pnl: number
+          worst_trade_slug: string | null
+        }
+        Insert: {
+          avg_holding_days?: number
+          best_trade_pnl?: number
+          best_trade_slug?: string | null
+          current_net_worth?: number
+          current_rank?: number | null
+          days_active?: number
+          highest_net_worth?: number
+          highest_rank?: number | null
+          largest_position_slug?: string | null
+          largest_position_value?: number
+          last_active_date?: string
+          login_streak?: number
+          losses?: number
+          rank_overall_prev?: number | null
+          realized_pnl?: number
+          reputation_score?: number
+          specialization?: Database["public"]["Enums"]["investor_specialization"]
+          title?: Database["public"]["Enums"]["investor_title"]
+          total_buys?: number
+          total_sells?: number
+          total_trades?: number
+          total_volume?: number
+          updated_at?: string
+          user_id: string
+          wins?: number
+          worst_trade_pnl?: number
+          worst_trade_slug?: string | null
+        }
+        Update: {
+          avg_holding_days?: number
+          best_trade_pnl?: number
+          best_trade_slug?: string | null
+          current_net_worth?: number
+          current_rank?: number | null
+          days_active?: number
+          highest_net_worth?: number
+          highest_rank?: number | null
+          largest_position_slug?: string | null
+          largest_position_value?: number
+          last_active_date?: string
+          login_streak?: number
+          losses?: number
+          rank_overall_prev?: number | null
+          realized_pnl?: number
+          reputation_score?: number
+          specialization?: Database["public"]["Enums"]["investor_specialization"]
+          title?: Database["public"]["Enums"]["investor_title"]
+          total_buys?: number
+          total_sells?: number
+          total_trades?: number
+          total_volume?: number
+          updated_at?: string
+          user_id?: string
+          wins?: number
+          worst_trade_pnl?: number
+          worst_trade_slug?: string | null
+        }
+        Relationships: []
+      }
       user_wallets: {
         Row: {
           berries: number
@@ -803,6 +1071,8 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      check_achievements: { Args: { _user_id: string }; Returns: number }
+      check_legacy_for_user: { Args: { _user_id: string }; Returns: undefined }
       execute_trade: {
         Args: {
           _shares: number
@@ -876,6 +1146,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      grant_achievement: {
+        Args: { _code: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -895,6 +1169,56 @@ export type Database = {
         }[]
       }
       publish_due_events: { Args: never; Returns: number }
+      recalc_user_stats: {
+        Args: { _user_id: string }
+        Returns: {
+          avg_holding_days: number
+          best_trade_pnl: number
+          best_trade_slug: string | null
+          current_net_worth: number
+          current_rank: number | null
+          days_active: number
+          highest_net_worth: number
+          highest_rank: number | null
+          largest_position_slug: string | null
+          largest_position_value: number
+          last_active_date: string
+          login_streak: number
+          losses: number
+          rank_overall_prev: number | null
+          realized_pnl: number
+          reputation_score: number
+          specialization: Database["public"]["Enums"]["investor_specialization"]
+          title: Database["public"]["Enums"]["investor_title"]
+          total_buys: number
+          total_sells: number
+          total_trades: number
+          total_volume: number
+          updated_at: string
+          user_id: string
+          wins: number
+          worst_trade_pnl: number
+          worst_trade_slug: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_stats"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      record_legacy_if_first: {
+        Args: {
+          _character_id: string
+          _code: string
+          _description: string
+          _title: string
+          _user_id: string
+          _value: number
+        }
+        Returns: undefined
+      }
+      refresh_leaderboards: { Args: never; Returns: undefined }
       run_daily_market_cycle: {
         Args: never
         Returns: {
@@ -923,8 +1247,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      user_equity: { Args: { _user_id: string }; Returns: number }
     }
     Enums: {
+      achievement_tier: "beginner" | "intermediate" | "advanced" | "legendary"
       app_role: "admin" | "moderator" | "user"
       event_status: "draft" | "scheduled" | "published"
       event_type:
@@ -944,6 +1270,21 @@ export type Database = {
         | "merchandise"
         | "live_action"
         | "other"
+      investor_specialization:
+        | "generalist"
+        | "value_investor"
+        | "growth_investor"
+        | "speculator"
+        | "meme_investor"
+        | "event_trader"
+        | "whale"
+      investor_title:
+        | "rookie_pirate"
+        | "east_blue_trader"
+        | "grand_line_investor"
+        | "warlord_investor"
+        | "yonko_investor"
+        | "pirate_king_investor"
       market_sentiment:
         | "extremely_bearish"
         | "bearish"
@@ -1092,6 +1433,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      achievement_tier: ["beginner", "intermediate", "advanced", "legendary"],
       app_role: ["admin", "moderator", "user"],
       event_status: ["draft", "scheduled", "published"],
       event_type: [
@@ -1112,6 +1454,23 @@ export const Constants = {
         "merchandise",
         "live_action",
         "other",
+      ],
+      investor_specialization: [
+        "generalist",
+        "value_investor",
+        "growth_investor",
+        "speculator",
+        "meme_investor",
+        "event_trader",
+        "whale",
+      ],
+      investor_title: [
+        "rookie_pirate",
+        "east_blue_trader",
+        "grand_line_investor",
+        "warlord_investor",
+        "yonko_investor",
+        "pirate_king_investor",
       ],
       market_sentiment: [
         "extremely_bearish",
