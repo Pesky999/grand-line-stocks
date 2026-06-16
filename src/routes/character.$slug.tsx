@@ -5,6 +5,7 @@ import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianG
 import { getCharacter } from "@/lib/api/market.functions";
 import { getCharacterEvents } from "@/lib/api/events.functions";
 import { getCharacterIntel } from "@/lib/api/intelligence.functions";
+import { listCharacterTopHolders } from "@/lib/api/legendary.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
