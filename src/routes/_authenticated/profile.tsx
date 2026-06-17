@@ -56,10 +56,8 @@ function Profile() {
     }
   }
 
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    navigate({ to: "/" });
-  }
+  const handleSignOut = useSignOut();
+
 
   return (
     <TerminalShell>
