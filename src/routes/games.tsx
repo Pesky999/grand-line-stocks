@@ -7,7 +7,7 @@ import { formatBerries } from "@/lib/wallet";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { toast } from "sonner";
 
-type Q = { id: string; question: string; choices: string[]; answer_index: number; reward: number; difficulty: string };
+type Q = { id: string; question: string; choices: string[]; reward: number; difficulty: string };
 
 export const Route = createFileRoute("/games")({
   head: () => ({ meta: [{ title: "Games — Berry Street" }, { name: "description", content: "Play One Piece trivia to earn Berries." }] }),
@@ -20,6 +20,7 @@ function Games() {
   const [batch, setBatch] = useState<Q[] | null>(null);
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  const [correctIndex, setCorrectIndex] = useState<number | null>(null);
   const [earned, setEarned] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +29,7 @@ function Games() {
     setEarned(0);
     setIdx(0);
     setSelected(null);
+    setCorrectIndex(null);
     const b = await getTriviaBatch();
     setBatch(b as any);
     setLoading(false);
@@ -40,26 +42,29 @@ function Games() {
     setSelected(i);
     const q = batch[idx];
     if (!user) {
-      if (i === q.answer_index) toast("Correct — sign in to bank the Berries.");
-      else toast.error("Wrong");
+      toast("Sign in to play trivia and earn Berries.");
       return;
     }
     try {
       const r = await submitTriviaAnswer({ data: { questionId: q.id, choiceIndex: i } });
       if (r.alreadyAnswered) toast("Already answered.");
       else if (r.correct) {
+        setCorrectIndex(i);
         setEarned((e) => e + r.reward);
         toast.success(`+฿${r.reward}`);
         await invalidateMe();
-      } else toast.error("Wrong — no Berries");
+      } else {
+        toast.error("Wrong — no Berries");
+      }
     } catch (e: any) { toast.error(e.message); }
   }
 
   function next() {
     if (!batch) return;
     if (idx + 1 >= batch.length) start();
-    else { setIdx(idx + 1); setSelected(null); }
+    else { setIdx(idx + 1); setSelected(null); setCorrectIndex(null); }
   }
+
 
   return (
     <TerminalShell>
@@ -88,16 +93,20 @@ function Games() {
               <h2 className="mb-6 text-lg font-bold text-foreground">{batch[idx].question}</h2>
               <ul className="space-y-2">
                 {batch[idx].choices.map((c, i) => {
-                  const isAns = i === batch[idx].answer_index;
                   const picked = selected === i;
                   const showState = selected !== null;
+                  const isCorrect = correctIndex !== null && i === correctIndex;
+                  const isWrongPick = showState && picked && correctIndex !== null && i !== correctIndex;
                   const cls = !showState
                     ? "border-border hover:border-primary hover:bg-secondary"
-                    : isAns
+                    : isCorrect
                       ? "border-bull bg-bull/10 text-bull"
-                      : picked
+                      : isWrongPick
                         ? "border-bear bg-bear/10 text-bear"
-                        : "border-border opacity-60";
+                        : picked
+                          ? "border-border bg-secondary"
+                          : "border-border opacity-60";
+
                   return (
                     <li key={i}>
                       <button onClick={() => answer(i)} disabled={selected !== null} className={`flex w-full items-center gap-3 border px-4 py-3 text-left text-sm tabular transition ${cls}`}>

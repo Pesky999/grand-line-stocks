@@ -53,7 +53,9 @@ export const listNews = createServerFn({ method: "GET" }).handler(async () => {
 
 export const getTriviaBatch = createServerFn({ method: "GET" }).handler(async () => {
   const db = await admin();
-  const { data, error } = await db.from("trivia_questions").select("*");
+  const { data, error } = await db
+    .from("trivia_questions")
+    .select("id,question,choices,reward,difficulty");
   if (error) throw error;
   // shuffle
   const arr = [...(data ?? [])];
@@ -63,6 +65,7 @@ export const getTriviaBatch = createServerFn({ method: "GET" }).handler(async ()
   }
   return arr.slice(0, 5);
 });
+
 
 export const adminUpdatePrice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
