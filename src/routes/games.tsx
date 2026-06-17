@@ -20,6 +20,7 @@ function Games() {
   const [batch, setBatch] = useState<Q[] | null>(null);
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  const [correctIndex, setCorrectIndex] = useState<number | null>(null);
   const [earned, setEarned] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +29,7 @@ function Games() {
     setEarned(0);
     setIdx(0);
     setSelected(null);
+    setCorrectIndex(null);
     const b = await getTriviaBatch();
     setBatch(b as any);
     setLoading(false);
@@ -40,26 +42,29 @@ function Games() {
     setSelected(i);
     const q = batch[idx];
     if (!user) {
-      if (i === q.answer_index) toast("Correct — sign in to bank the Berries.");
-      else toast.error("Wrong");
+      toast("Sign in to play trivia and earn Berries.");
       return;
     }
     try {
       const r = await submitTriviaAnswer({ data: { questionId: q.id, choiceIndex: i } });
       if (r.alreadyAnswered) toast("Already answered.");
       else if (r.correct) {
+        setCorrectIndex(i);
         setEarned((e) => e + r.reward);
         toast.success(`+฿${r.reward}`);
         await invalidateMe();
-      } else toast.error("Wrong — no Berries");
+      } else {
+        toast.error("Wrong — no Berries");
+      }
     } catch (e: any) { toast.error(e.message); }
   }
 
   function next() {
     if (!batch) return;
     if (idx + 1 >= batch.length) start();
-    else { setIdx(idx + 1); setSelected(null); }
+    else { setIdx(idx + 1); setSelected(null); setCorrectIndex(null); }
   }
+
 
   return (
     <TerminalShell>
