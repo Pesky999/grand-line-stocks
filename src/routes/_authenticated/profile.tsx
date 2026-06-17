@@ -5,6 +5,8 @@ import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { updateProfile } from "@/lib/api/wallet.functions";
 import { getPublicProfile } from "@/lib/api/legendary.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useSignOut } from "@/hooks/useSignOut";
+
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL } from "@/lib/legendary";
