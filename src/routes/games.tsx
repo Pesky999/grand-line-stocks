@@ -7,7 +7,7 @@ import { formatBerries } from "@/lib/wallet";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { toast } from "sonner";
 
-type Q = { id: string; question: string; choices: string[]; answer_index: number; reward: number; difficulty: string };
+type Q = { id: string; question: string; choices: string[]; reward: number; difficulty: string };
 
 export const Route = createFileRoute("/games")({
   head: () => ({ meta: [{ title: "Games — Berry Street" }, { name: "description", content: "Play One Piece trivia to earn Berries." }] }),
