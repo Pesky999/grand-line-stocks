@@ -17,7 +17,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -43,7 +43,6 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        // If email confirmation is required, Supabase returns a user but no session.
         if (data.session) {
           toast.success("Account created. Welcome aboard.");
           navigate({ to: "/portfolio" });
@@ -52,6 +51,13 @@ function AuthPage() {
           setMode("signin");
           setPassword("");
         }
+      } else if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+        toast.success("If that email exists, a reset link is on the way.");
+        setMode("signin");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
