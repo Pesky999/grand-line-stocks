@@ -95,37 +95,21 @@ export const submitTriviaAnswer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ questionId: z.string().uuid(), choiceIndex: z.number().int().min(0).max(10) }).parse(d))
   .handler(async ({ data, context }) => {
-    const db = await admin();
-    const { data: q, error } = await db
-      .from("trivia_questions")
-      .select("id,answer_index,reward")
-      .eq("id", data.questionId)
-      .maybeSingle();
-    if (error || !q) throw new Error("Question not found");
-    const correct = q.answer_index === data.choiceIndex;
-
-    // already attempted?
-    const { data: prior } = await db
-      .from("trivia_attempts")
-      .select("id")
-      .eq("user_id", context.userId)
-      .eq("question_id", q.id)
-      .maybeSingle();
-    if (prior) return { correct, reward: 0, alreadyAnswered: true };
-
-    const reward = correct ? Number(q.reward) : 0;
-    await db.from("trivia_attempts").insert({
-      user_id: context.userId,
-      question_id: q.id,
-      correct,
-      reward,
+    // Atomic RPC: validates user, dedupes attempts, and credits wallet in one transaction.
+    // Runs as the authenticated user (auth.uid() inside the function).
+    const { data: rows, error } = await context.supabase.rpc("submit_trivia_answer", {
+      _question_id: data.questionId,
+      _choice_index: data.choiceIndex,
     });
-    if (reward > 0) {
-      const { data: w } = await db.from("user_wallets").select("berries").eq("user_id", context.userId).maybeSingle();
-      await db.from("user_wallets").update({ berries: Number(w?.berries ?? 0) + reward }).eq("user_id", context.userId);
-    }
-    return { correct, reward, alreadyAnswered: false };
+    if (error) throw new Error(error.message);
+    const r: any = Array.isArray(rows) ? rows[0] : rows;
+    return {
+      correct: !!r?.correct,
+      reward: Number(r?.reward ?? 0),
+      alreadyAnswered: !!r?.already_answered,
+    };
   });
+
 
 export const resetMyAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
