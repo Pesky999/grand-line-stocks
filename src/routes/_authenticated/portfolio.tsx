@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
-import { sellShares, resetMyAccount } from "@/lib/api/wallet.functions";
+import { sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { toast } from "sonner";
