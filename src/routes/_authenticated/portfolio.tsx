@@ -34,12 +34,6 @@ function Portfolio() {
     }
   }
 
-  async function handleReset() {
-    if (!confirm("Reset wallet to ฿10,000 and clear all positions?")) return;
-    await resetMyAccount();
-    await invalidate();
-    toast.success("Account reset.");
-  }
 
   return (
     <TerminalShell>
