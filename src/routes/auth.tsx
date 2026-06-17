@@ -34,7 +34,7 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -43,8 +43,15 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        toast.success("Account created — check your email if confirmation is required.");
-        navigate({ to: "/portfolio" });
+        // If email confirmation is required, Supabase returns a user but no session.
+        if (data.session) {
+          toast.success("Account created. Welcome aboard.");
+          navigate({ to: "/portfolio" });
+        } else {
+          toast.success("Check your email to confirm your account before signing in.");
+          setMode("signin");
+          setPassword("");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -57,6 +64,7 @@ function AuthPage() {
       setBusy(false);
     }
   }
+
 
   async function handleGoogle() {
     setBusy(true);

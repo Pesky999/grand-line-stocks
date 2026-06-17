@@ -111,12 +111,9 @@ export const submitTriviaAnswer = createServerFn({ method: "POST" })
   });
 
 
-export const resetMyAccount = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const db = await admin();
-    await db.from("user_holdings").delete().eq("user_id", context.userId);
-    await db.from("trivia_attempts").delete().eq("user_id", context.userId);
-    await db.from("user_wallets").update({ berries: 10000 }).eq("user_id", context.userId);
-    return { ok: true };
-  });
+// NOTE: A self-serve account reset previously lived here, but it could not safely
+// clear derived state (user_stats, net_worth_snapshots, leaderboard_cache,
+// achievements, legacy_records, transactions history) without leaving the public
+// leaderboards and reputation system inconsistent. Removed for MVP. If users
+// need a fresh start, they can create a new account.
+

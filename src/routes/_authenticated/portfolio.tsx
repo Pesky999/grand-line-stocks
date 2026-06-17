@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
-import { sellShares, resetMyAccount } from "@/lib/api/wallet.functions";
+import { sellShares } from "@/lib/api/wallet.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { toast } from "sonner";
@@ -34,12 +34,6 @@ function Portfolio() {
     }
   }
 
-  async function handleReset() {
-    if (!confirm("Reset wallet to ฿10,000 and clear all positions?")) return;
-    await resetMyAccount();
-    await invalidate();
-    toast.success("Account reset.");
-  }
 
   return (
     <TerminalShell>
@@ -52,10 +46,10 @@ function Portfolio() {
 
       <div className="p-4">
         <div className="terminal-panel overflow-hidden">
-          <div className="terminal-header flex items-center justify-between">
+          <div className="terminal-header">
             <span>Holdings</span>
-            <button onClick={handleReset} className="text-[10px] text-muted-foreground hover:text-bear">[reset]</button>
           </div>
+
           {holdings.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No positions. <Link to="/" className="text-primary underline">Open the market</Link>.
