@@ -93,16 +93,20 @@ function Games() {
               <h2 className="mb-6 text-lg font-bold text-foreground">{batch[idx].question}</h2>
               <ul className="space-y-2">
                 {batch[idx].choices.map((c, i) => {
-                  const isAns = i === batch[idx].answer_index;
                   const picked = selected === i;
                   const showState = selected !== null;
+                  const isCorrect = correctIndex !== null && i === correctIndex;
+                  const isWrongPick = showState && picked && correctIndex !== null && i !== correctIndex;
                   const cls = !showState
                     ? "border-border hover:border-primary hover:bg-secondary"
-                    : isAns
+                    : isCorrect
                       ? "border-bull bg-bull/10 text-bull"
-                      : picked
+                      : isWrongPick
                         ? "border-bear bg-bear/10 text-bear"
-                        : "border-border opacity-60";
+                        : picked
+                          ? "border-border bg-secondary"
+                          : "border-border opacity-60";
+
                   return (
                     <li key={i}>
                       <button onClick={() => answer(i)} disabled={selected !== null} className={`flex w-full items-center gap-3 border px-4 py-3 text-left text-sm tabular transition ${cls}`}>
