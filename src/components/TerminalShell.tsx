@@ -73,7 +73,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
                 <nav className="flex flex-col">
-                  {NAV.map((item) => (
+                  {nav.map((item) => (
                     <SheetClose asChild key={item.to}>
                       <Link
                         to={item.to}
@@ -136,7 +136,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
               <span className="text-muted-foreground hidden lg:inline">/ ONE PIECE MKT</span>
             </Link>
             <nav className="hidden gap-4 md:flex">
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
