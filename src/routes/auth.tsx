@@ -17,7 +17,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -43,7 +43,6 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        // If email confirmation is required, Supabase returns a user but no session.
         if (data.session) {
           toast.success("Account created. Welcome aboard.");
           navigate({ to: "/portfolio" });
@@ -52,6 +51,13 @@ function AuthPage() {
           setMode("signin");
           setPassword("");
         }
+      } else if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+        toast.success("If that email exists, a reset link is on the way.");
+        setMode("signin");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -83,14 +89,18 @@ function AuthPage() {
       <div className="mx-auto max-w-md p-6">
         <div className="terminal-panel">
           <div className="terminal-header flex items-center justify-between">
-            <span>{mode === "signin" ? "Sign In · Terminal" : "Open Account"}</span>
-            <button
-              type="button"
-              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-              className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-            >
-              {mode === "signin" ? "[new account]" : "[have account]"}
-            </button>
+            <span>
+              {mode === "signin" ? "Sign In · Terminal" : mode === "signup" ? "Open Account" : "Reset Password"}
+            </span>
+            {mode !== "forgot" && (
+              <button
+                type="button"
+                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                {mode === "signin" ? "[new account]" : "[have account]"}
+              </button>
+            )}
           </div>
           <form onSubmit={handleSubmit} className="space-y-3 p-5 text-sm">
             {mode === "signup" && (
@@ -112,37 +122,68 @@ function AuthPage() {
                 className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
               />
             </Field>
-            <Field label="Password">
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
-              />
-            </Field>
+            {mode !== "forgot" && (
+              <Field label="Password">
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
+                />
+              </Field>
+            )}
             <button
               type="submit"
               disabled={busy}
               className="w-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground disabled:opacity-40"
             >
-              {busy ? "…" : mode === "signin" ? "Sign In ▶" : "Create Account ▶"}
+              {busy
+                ? "…"
+                : mode === "signin"
+                ? "Sign In ▶"
+                : mode === "signup"
+                ? "Create Account ▶"
+                : "Send Reset Link ▶"}
             </button>
 
-            <div className="relative my-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-              <span className="bg-card px-2">or</span>
-              <span className="absolute inset-x-0 top-1/2 -z-10 border-t border-border" />
-            </div>
+            {mode === "signin" && (
+              <button
+                type="button"
+                onClick={() => setMode("forgot")}
+                className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                Forgot password?
+              </button>
+            )}
+            {mode === "forgot" && (
+              <button
+                type="button"
+                onClick={() => setMode("signin")}
+                className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                ← Back to sign in
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={busy}
-              className="w-full border border-border px-4 py-2 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
-            >
-              Continue with Google
-            </button>
+            {mode !== "forgot" && (
+              <>
+                <div className="relative my-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <span className="bg-card px-2">or</span>
+                  <span className="absolute inset-x-0 top-1/2 -z-10 border-t border-border" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  disabled={busy}
+                  className="w-full border border-border px-4 py-2 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+                >
+                  Continue with Google
+                </button>
+              </>
+            )}
           </form>
         </div>
         <p className="mt-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">

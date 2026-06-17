@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { ReactNode, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useMe } from "@/hooks/useMe";
 import { useSignOut } from "@/hooks/useSignOut";
 import { formatBerries } from "@/lib/wallet";
+import { amIAdmin } from "@/lib/api/market.functions";
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Menu, LogOut } from "lucide-react";
 
@@ -18,7 +20,7 @@ function Clock() {
   return <span className="tabular">{t} UTC</span>;
 }
 
-type NavItem = { to: string; label: string; chip?: string; tone?: "accent" };
+type NavItem = { to: string; label: string; chip?: string; tone?: "accent"; adminOnly?: boolean };
 const NAV: NavItem[] = [
   { to: "/", label: "Market", chip: "F1" },
   { to: "/portfolio", label: "Portfolio", chip: "F2" },
@@ -27,13 +29,21 @@ const NAV: NavItem[] = [
   { to: "/news", label: "News", chip: "F5" },
   { to: "/leaderboards", label: "Ranks", chip: "F6" },
   { to: "/games", label: "Games", chip: "F7" },
-  { to: "/admin", label: "Admin", chip: "F9", tone: "accent" },
+  { to: "/admin", label: "Admin", chip: "F9", tone: "accent", adminOnly: true },
 ];
 
 export function TerminalShell({ children }: { children: ReactNode }) {
   const { data, user } = useMe();
   const signOut = useSignOut();
   const [open, setOpen] = useState(false);
+  const { data: adminInfo } = useQuery({
+    queryKey: ["am-i-admin"],
+    queryFn: () => amIAdmin(),
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+  });
+  const isAdmin = !!adminInfo?.isAdmin;
+  const nav = NAV.filter((i) => !i.adminOnly || isAdmin);
 
   return (
     <div className="relative z-10 min-h-screen">
@@ -63,7 +73,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
                 <nav className="flex flex-col">
-                  {NAV.map((item) => (
+                  {nav.map((item) => (
                     <SheetClose asChild key={item.to}>
                       <Link
                         to={item.to}
@@ -126,7 +136,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
               <span className="text-muted-foreground hidden lg:inline">/ ONE PIECE MKT</span>
             </Link>
             <nav className="hidden gap-4 md:flex">
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
