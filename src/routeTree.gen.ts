@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as MarketReportRouteImport } from './routes/market-report'
 import { Route as LeaderboardsRouteImport } from './routes/leaderboards'
@@ -25,6 +26,11 @@ import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenti
 import { Route as AuthenticatedEventsAdminRouteImport } from './routes/_authenticated/events-admin'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NewsRoute = NewsRouteImport.update({
   id: '/news',
   path: '/news',
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
   '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/leaderboards'
     | '/market-report'
     | '/news'
+    | '/reset-password'
     | '/admin'
     | '/events-admin'
     | '/market-admin'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/leaderboards'
     | '/market-report'
     | '/news'
+    | '/reset-password'
     | '/admin'
     | '/events-admin'
     | '/market-admin'
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/leaderboards'
     | '/market-report'
     | '/news'
+    | '/reset-password'
     | '/_authenticated/admin'
     | '/_authenticated/events-admin'
     | '/_authenticated/market-admin'
@@ -213,12 +225,20 @@ export interface RootRouteChildren {
   LeaderboardsRoute: typeof LeaderboardsRoute
   MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   CharacterSlugRoute: typeof CharacterSlugRoute
   UUsernameRoute: typeof UUsernameRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/news': {
       id: '/news'
       path: '/news'
@@ -355,6 +375,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeaderboardsRoute: LeaderboardsRoute,
   MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   CharacterSlugRoute: CharacterSlugRoute,
   UUsernameRoute: UUsernameRoute,
 }
