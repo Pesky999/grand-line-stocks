@@ -1247,6 +1247,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      submit_trivia_answer: {
+        Args: { _choice_index: number; _question_id: string }
+        Returns: {
+          already_answered: boolean
+          correct: boolean
+          reward: number
+        }[]
+      }
       user_equity: { Args: { _user_id: string }; Returns: number }
     }
     Enums: {
