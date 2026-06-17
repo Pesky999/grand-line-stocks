@@ -46,10 +46,10 @@ function Portfolio() {
 
       <div className="p-4">
         <div className="terminal-panel overflow-hidden">
-          <div className="terminal-header flex items-center justify-between">
+          <div className="terminal-header">
             <span>Holdings</span>
-            <button onClick={handleReset} className="text-[10px] text-muted-foreground hover:text-bear">[reset]</button>
           </div>
+
           {holdings.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No positions. <Link to="/" className="text-primary underline">Open the market</Link>.
