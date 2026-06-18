@@ -155,11 +155,10 @@ function GrandLineGuessPage() {
             {user && (
               <>
                 {/* Stats row */}
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5 text-[11px] uppercase tracking-widest">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 text-[11px] uppercase tracking-widest">
                   <Stat label="Streak" value={stats?.current_streak ?? 0} />
                   <Stat label="Best" value={stats?.best_streak ?? 0} />
                   <Stat label="Attempts" value={state?.attempts_used ?? 0} />
-                  <Stat label="Hints" value={state?.hints_used ?? 0} />
                   <Stat label={state?.solved ? "Earned" : "Next reward"} value={`฿${state?.solved ? state.reward_amount : (state?.potential_next_reward ?? 0)}`} />
                 </div>
 
