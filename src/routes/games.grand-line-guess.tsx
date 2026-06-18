@@ -104,15 +104,7 @@ function GrandLineGuessPage() {
     onError: (e: any) => toast.error(e.message ?? "Submission failed"),
   });
 
-  const hintM = useMutation({
-    mutationFn: () => useGrandLineGuessHint(),
-    onSuccess: (r: any) => {
-      toast.success(`Hint ${r.tier}: ${r.hint}`);
-      if (r.state) qc.setQueryData(["glg-state"], r.state);
-      else qc.invalidateQueries({ queryKey: ["glg-state"] });
-    },
-    onError: (e: any) => toast.error(e.message ?? "Hint not available"),
-  });
+
 
   const handlePick = (id: string) => {
     if (guessedIds.has(id)) { toast("Already guessed"); return; }
