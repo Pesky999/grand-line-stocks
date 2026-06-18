@@ -184,7 +184,7 @@ async function loadState(userId: string) {
     };
   });
   const nextAttempt = attempts.length + 1;
-  const potentialReward = applyHintPenalty(rewardForAttempt(nextAttempt), hintsUsed);
+  const potentialReward = rewardForAttempt(nextAttempt);
   return {
     puzzle_id: puzzle.id,
     puzzle_date: puzzle.puzzle_date,
