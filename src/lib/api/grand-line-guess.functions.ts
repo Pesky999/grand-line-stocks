@@ -144,29 +144,61 @@ async function ensurePuzzle(userId: string) {
   return ins.data;
 }
 
+const HINT_TIERS: { tier: number; unlock_at: number; label: string }[] = [
+  { tier: 1, unlock_at: 3, label: "Gender" },
+  { tier: 2, unlock_at: 5, label: "Affiliation" },
+  { tier: 3, unlock_at: 7, label: "Devil Fruit" },
+];
+
+function computeHintText(tier: number, target: CharRow): string {
+  if (tier === 1) return `Gender: ${target.gender?.trim() ? target.gender : "Unknown"}`;
+  if (tier === 2) return `Affiliation: ${target.affiliation?.trim() ? target.affiliation : "Unknown"}`;
+  if (tier === 3) return target.has_devil_fruit
+    ? "The mystery character HAS a Devil Fruit."
+    : "The mystery character does NOT have a Devil Fruit.";
+  return "Unknown";
+}
+
 async function loadState(userId: string) {
   const db = await admin();
   const puzzle = await ensurePuzzle(userId);
-  const [attemptsR, resultR] = await Promise.all([
+  const [attemptsR, resultR, targetR] = await Promise.all([
     db.from("grand_line_guess_attempts").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).order("attempt_number"),
     db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle(),
+    db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single(),
   ]);
   let answer: { name: string; slug: string } | null = null;
   if (puzzle.status === "solved" || puzzle.status === "expired") {
-    const c = await db.from("grand_line_guess_characters").select("name,slug").eq("id", puzzle.character_id).single();
-    if (c.data) answer = c.data;
+    if (targetR.data) answer = { name: targetR.data.name, slug: targetR.data.slug };
   }
   const attempts = attemptsR.data ?? [];
   const result = resultR.data;
+  const wrongCount = attempts.filter((a: any) => !a.is_correct).length;
+  const hintsUsed = result?.hints_used ?? 0;
+  const target = targetR.data as CharRow | null;
+  const hints = HINT_TIERS.map((t) => {
+    const revealed = hintsUsed >= t.tier;
+    return {
+      tier: t.tier,
+      label: t.label,
+      unlock_at_wrong: t.unlock_at,
+      unlocked: wrongCount >= t.unlock_at,
+      wrong_needed: Math.max(0, t.unlock_at - wrongCount),
+      revealed,
+      text: revealed && target ? computeHintText(t.tier, target) : null,
+    };
+  });
   const nextAttempt = attempts.length + 1;
-  const potentialReward = applyHintPenalty(rewardForAttempt(nextAttempt), result?.hints_used ?? 0);
+  const potentialReward = applyHintPenalty(rewardForAttempt(nextAttempt), hintsUsed);
   return {
     puzzle_id: puzzle.id,
     puzzle_date: puzzle.puzzle_date,
     status: puzzle.status,
     attempts,
     attempts_used: attempts.length,
-    hints_used: result?.hints_used ?? 0,
+    wrong_count: wrongCount,
+    hints_used: hintsUsed,
+    hints,
     solved: result?.solved ?? false,
     reward_paid: result?.reward_paid ?? false,
     reward_amount: result?.reward_amount ?? 0,
