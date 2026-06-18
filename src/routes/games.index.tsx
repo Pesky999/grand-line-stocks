@@ -69,6 +69,11 @@ function Games() {
   return (
     <TerminalShell>
       <div className="mx-auto max-w-2xl p-4">
+        <Link to="/games/grand-line-guess" className="mb-4 block border border-primary/40 bg-primary/5 p-4 hover:bg-primary/10">
+          <div className="text-[10px] uppercase tracking-widest text-primary">New · Daily</div>
+          <div className="mt-1 text-base font-bold text-foreground">Grand Line Guess</div>
+          <div className="text-xs text-muted-foreground">Deduce today's mystery character. Earn up to ฿750.</div>
+        </Link>
         {!user && (
           <div className="mb-4 border border-border bg-card/60 p-3 text-xs text-muted-foreground">
             Playing as guest. <Link to="/auth" className="text-primary underline">Sign in</Link> to earn and keep your Berries.
