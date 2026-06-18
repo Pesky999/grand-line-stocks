@@ -309,31 +309,29 @@ export const useGrandLineGuessHint = createServerFn({ method: "POST" })
     const puzzle = await ensurePuzzle(userId);
     if (puzzle.status !== "active") throw new Error("Puzzle is no longer active.");
 
-    const attempts = await db.from("grand_line_guess_attempts").select("id").eq("puzzle_id", puzzle.id).eq("user_id", userId);
-    const wrongCount = attempts.data?.length ?? 0;
+    const attempts = await db.from("grand_line_guess_attempts").select("is_correct").eq("puzzle_id", puzzle.id).eq("user_id", userId);
+    const wrongCount = (attempts.data ?? []).filter((a: any) => !a.is_correct).length;
 
     const resultR = await db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
     const used = resultR.data?.hints_used ?? 0;
 
-    const tiers = [3, 5, 7];
-    if (used >= 3) throw new Error("All hints already used.");
-    if (wrongCount < tiers[used]) throw new Error(`Need ${tiers[used]} wrong guesses to unlock hint ${used + 1}.`);
+    if (used >= HINT_TIERS.length) throw new Error("All hints already used.");
+    const tier = HINT_TIERS[used];
+    if (wrongCount < tier.unlock_at) {
+      throw new Error(`Need ${tier.unlock_at - wrongCount} more wrong guess${tier.unlock_at - wrongCount === 1 ? "" : "es"} to unlock this hint.`);
+    }
 
     const targetR = await db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single();
-    const t = targetR.data as CharRow;
-
-    let hint = "";
-    if (used === 0) hint = `Gender: ${t.gender ?? "Unknown"}`;
-    else if (used === 1) hint = t.has_devil_fruit ? "The mystery character has a Devil Fruit." : "The mystery character has no known Devil Fruit.";
-    else hint = t.has_conquerors ? "The mystery character has Conqueror's Haki." : "The mystery character does NOT have Conqueror's Haki.";
+    if (!targetR.data) throw new Error("Puzzle target missing.");
+    const hint = computeHintText(tier.tier, targetR.data as CharRow);
 
     await db.from("grand_line_guess_results").upsert({
       puzzle_id: puzzle.id, user_id: userId,
-      hints_used: used + 1, attempts_used: wrongCount,
+      hints_used: used + 1, attempts_used: attempts.data?.length ?? 0,
       updated_at: new Date().toISOString(),
     }, { onConflict: "puzzle_id,user_id" });
 
-    return { hint, hints_used: used + 1 };
+    return { hint, tier: tier.tier, label: tier.label, hints_used: used + 1, state: await loadState(userId) };
   });
 
 export const getGrandLineGuessStats = createServerFn({ method: "GET" })
