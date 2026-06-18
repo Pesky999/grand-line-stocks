@@ -207,17 +207,41 @@ function GrandLineGuessPage() {
                   </div>
                 )}
 
-                {/* Hint */}
-                {!state?.solved && state?.status === "active" && (
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Hints reduce reward by 25% each.</span>
-                    <button
-                      onClick={() => hintM.mutate()}
-                      disabled={hintM.isPending || (state?.hints_used ?? 0) >= 3}
-                      className="border border-border px-3 py-2 uppercase tracking-widest text-foreground hover:border-primary disabled:opacity-40"
-                    >
-                      Use hint
-                    </button>
+                {/* Hints */}
+                {state?.status === "active" && (
+                  <div className="mt-4 border border-border bg-card/40 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Hints · each reduces reward by 25%</span>
+                      <span className="text-[10px] text-muted-foreground">{state?.hints_used ?? 0} / 3 used</span>
+                    </div>
+                    <ul className="space-y-2">
+                      {(state?.hints ?? []).map((h: any) => {
+                        const canUse = h.unlocked && !h.revealed && !state?.solved;
+                        return (
+                          <li key={h.tier} className="flex items-start justify-between gap-3 border border-border bg-background/60 p-2 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-foreground">Hint {h.tier} · {h.label}</div>
+                              {h.revealed ? (
+                                <div className="mt-1 text-bull break-words">{h.text ?? "Unknown"}</div>
+                              ) : h.unlocked ? (
+                                <div className="mt-1 text-muted-foreground">Ready to reveal.</div>
+                              ) : (
+                                <div className="mt-1 text-muted-foreground">Locked · {h.wrong_needed} more wrong guess{h.wrong_needed === 1 ? "" : "es"} required.</div>
+                              )}
+                            </div>
+                            {!h.revealed && (
+                              <button
+                                onClick={() => hintM.mutate()}
+                                disabled={!canUse || hintM.isPending || (state?.hints_used ?? 0) !== h.tier - 1}
+                                className="shrink-0 border border-border px-3 py-2 text-[10px] uppercase tracking-widest hover:border-primary disabled:opacity-40"
+                              >
+                                {h.unlocked ? "Reveal" : "Locked"}
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
 
