@@ -231,7 +231,6 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
       // Re-check: if previous row had reward_paid=true, don't pay again.
       const alreadyPaid = existingResult.data?.reward_paid === true;
       if (!alreadyPaid && reward > 0) {
-        await db.rpc as any;
         const { data: wallet } = await db.from("user_wallets").select("berries").eq("user_id", userId).single();
         if (wallet) {
           await db.from("user_wallets").update({ berries: Number(wallet.berries) + reward, updated_at: new Date().toISOString() }).eq("user_id", userId);
