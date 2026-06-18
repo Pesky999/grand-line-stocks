@@ -144,29 +144,61 @@ async function ensurePuzzle(userId: string) {
   return ins.data;
 }
 
+const HINT_TIERS: { tier: number; unlock_at: number; label: string }[] = [
+  { tier: 1, unlock_at: 3, label: "Gender" },
+  { tier: 2, unlock_at: 5, label: "Affiliation" },
+  { tier: 3, unlock_at: 7, label: "Devil Fruit" },
+];
+
+function computeHintText(tier: number, target: CharRow): string {
+  if (tier === 1) return `Gender: ${target.gender?.trim() ? target.gender : "Unknown"}`;
+  if (tier === 2) return `Affiliation: ${target.affiliation?.trim() ? target.affiliation : "Unknown"}`;
+  if (tier === 3) return target.has_devil_fruit
+    ? "The mystery character HAS a Devil Fruit."
+    : "The mystery character does NOT have a Devil Fruit.";
+  return "Unknown";
+}
+
 async function loadState(userId: string) {
   const db = await admin();
   const puzzle = await ensurePuzzle(userId);
-  const [attemptsR, resultR] = await Promise.all([
+  const [attemptsR, resultR, targetR] = await Promise.all([
     db.from("grand_line_guess_attempts").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).order("attempt_number"),
     db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle(),
+    db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single(),
   ]);
   let answer: { name: string; slug: string } | null = null;
   if (puzzle.status === "solved" || puzzle.status === "expired") {
-    const c = await db.from("grand_line_guess_characters").select("name,slug").eq("id", puzzle.character_id).single();
-    if (c.data) answer = c.data;
+    if (targetR.data) answer = { name: targetR.data.name, slug: targetR.data.slug };
   }
   const attempts = attemptsR.data ?? [];
   const result = resultR.data;
+  const wrongCount = attempts.filter((a: any) => !a.is_correct).length;
+  const hintsUsed = result?.hints_used ?? 0;
+  const target = targetR.data as CharRow | null;
+  const hints = HINT_TIERS.map((t) => {
+    const revealed = hintsUsed >= t.tier;
+    return {
+      tier: t.tier,
+      label: t.label,
+      unlock_at_wrong: t.unlock_at,
+      unlocked: wrongCount >= t.unlock_at,
+      wrong_needed: Math.max(0, t.unlock_at - wrongCount),
+      revealed,
+      text: revealed && target ? computeHintText(t.tier, target) : null,
+    };
+  });
   const nextAttempt = attempts.length + 1;
-  const potentialReward = applyHintPenalty(rewardForAttempt(nextAttempt), result?.hints_used ?? 0);
+  const potentialReward = applyHintPenalty(rewardForAttempt(nextAttempt), hintsUsed);
   return {
     puzzle_id: puzzle.id,
     puzzle_date: puzzle.puzzle_date,
     status: puzzle.status,
     attempts,
     attempts_used: attempts.length,
-    hints_used: result?.hints_used ?? 0,
+    wrong_count: wrongCount,
+    hints_used: hintsUsed,
+    hints,
     solved: result?.solved ?? false,
     reward_paid: result?.reward_paid ?? false,
     reward_amount: result?.reward_amount ?? 0,
@@ -277,31 +309,29 @@ export const useGrandLineGuessHint = createServerFn({ method: "POST" })
     const puzzle = await ensurePuzzle(userId);
     if (puzzle.status !== "active") throw new Error("Puzzle is no longer active.");
 
-    const attempts = await db.from("grand_line_guess_attempts").select("id").eq("puzzle_id", puzzle.id).eq("user_id", userId);
-    const wrongCount = attempts.data?.length ?? 0;
+    const attempts = await db.from("grand_line_guess_attempts").select("is_correct").eq("puzzle_id", puzzle.id).eq("user_id", userId);
+    const wrongCount = (attempts.data ?? []).filter((a: any) => !a.is_correct).length;
 
     const resultR = await db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
     const used = resultR.data?.hints_used ?? 0;
 
-    const tiers = [3, 5, 7];
-    if (used >= 3) throw new Error("All hints already used.");
-    if (wrongCount < tiers[used]) throw new Error(`Need ${tiers[used]} wrong guesses to unlock hint ${used + 1}.`);
+    if (used >= HINT_TIERS.length) throw new Error("All hints already used.");
+    const tier = HINT_TIERS[used];
+    if (wrongCount < tier.unlock_at) {
+      throw new Error(`Need ${tier.unlock_at - wrongCount} more wrong guess${tier.unlock_at - wrongCount === 1 ? "" : "es"} to unlock this hint.`);
+    }
 
     const targetR = await db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single();
-    const t = targetR.data as CharRow;
-
-    let hint = "";
-    if (used === 0) hint = `Gender: ${t.gender ?? "Unknown"}`;
-    else if (used === 1) hint = t.has_devil_fruit ? "The mystery character has a Devil Fruit." : "The mystery character has no known Devil Fruit.";
-    else hint = t.has_conquerors ? "The mystery character has Conqueror's Haki." : "The mystery character does NOT have Conqueror's Haki.";
+    if (!targetR.data) throw new Error("Puzzle target missing.");
+    const hint = computeHintText(tier.tier, targetR.data as CharRow);
 
     await db.from("grand_line_guess_results").upsert({
       puzzle_id: puzzle.id, user_id: userId,
-      hints_used: used + 1, attempts_used: wrongCount,
+      hints_used: used + 1, attempts_used: attempts.data?.length ?? 0,
       updated_at: new Date().toISOString(),
     }, { onConflict: "puzzle_id,user_id" });
 
-    return { hint, hints_used: used + 1 };
+    return { hint, tier: tier.tier, label: tier.label, hints_used: used + 1, state: await loadState(userId) };
   });
 
 export const getGrandLineGuessStats = createServerFn({ method: "GET" })
