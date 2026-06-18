@@ -9,7 +9,6 @@ import {
   getGrandLineGuessAutocomplete,
   getTodayGrandLineGuessState,
   submitGrandLineGuess,
-  useGrandLineGuessHint,
   getGrandLineGuessStats,
 } from "@/lib/api/grand-line-guess.functions";
 
