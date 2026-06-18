@@ -295,38 +295,8 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     return loadState(userId);
   });
 
-export const useGrandLineGuessHint = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const db = await admin();
-    const userId = context.userId;
-    const puzzle = await ensurePuzzle(userId);
-    if (puzzle.status !== "active") throw new Error("Puzzle is no longer active.");
 
-    const attempts = await db.from("grand_line_guess_attempts").select("is_correct").eq("puzzle_id", puzzle.id).eq("user_id", userId);
-    const wrongCount = (attempts.data ?? []).filter((a: any) => !a.is_correct).length;
 
-    const resultR = await db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
-    const used = resultR.data?.hints_used ?? 0;
-
-    if (used >= HINT_TIERS.length) throw new Error("All hints already used.");
-    const tier = HINT_TIERS[used];
-    if (wrongCount < tier.unlock_at) {
-      throw new Error(`Need ${tier.unlock_at - wrongCount} more wrong guess${tier.unlock_at - wrongCount === 1 ? "" : "es"} to unlock this hint.`);
-    }
-
-    const targetR = await db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single();
-    if (!targetR.data) throw new Error("Puzzle target missing.");
-    const hint = computeHintText(tier.tier, targetR.data as CharRow);
-
-    await db.from("grand_line_guess_results").upsert({
-      puzzle_id: puzzle.id, user_id: userId,
-      hints_used: used + 1, attempts_used: attempts.data?.length ?? 0,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "puzzle_id,user_id" });
-
-    return { hint, tier: tier.tier, label: tier.label, hints_used: used + 1, state: await loadState(userId) };
-  });
 
 export const getGrandLineGuessStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
