@@ -85,11 +85,6 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
 
 const REWARDS = [750, 600, 500, 400, 300, 200, 100];
 function rewardForAttempt(n: number) { return n <= 0 ? 0 : REWARDS[Math.min(n, REWARDS.length) - 1]; }
-function applyHintPenalty(base: number, hints: number) {
-  if (base <= 0) return 0;
-  const adj = Math.round(base * Math.pow(0.75, hints));
-  return Math.max(50, adj);
-}
 
 function utcDate(): string {
   return new Date().toISOString().slice(0, 10);
