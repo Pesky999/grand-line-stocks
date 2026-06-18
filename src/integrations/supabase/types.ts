@@ -228,6 +228,274 @@ export type Database = {
           },
         ]
       }
+      grand_line_guess_attempts: {
+        Row: {
+          attempt_number: number
+          created_at: string
+          feedback: Json
+          guessed_character_id: string
+          id: string
+          is_correct: boolean
+          puzzle_id: string
+          user_id: string
+        }
+        Insert: {
+          attempt_number: number
+          created_at?: string
+          feedback: Json
+          guessed_character_id: string
+          id?: string
+          is_correct?: boolean
+          puzzle_id: string
+          user_id: string
+        }
+        Update: {
+          attempt_number?: number
+          created_at?: string
+          feedback?: Json
+          guessed_character_id?: string
+          id?: string
+          is_correct?: boolean
+          puzzle_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grand_line_guess_attempts_guessed_character_id_fkey"
+            columns: ["guessed_character_id"]
+            isOneToOne: false
+            referencedRelation: "grand_line_guess_characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grand_line_guess_attempts_puzzle_id_fkey"
+            columns: ["puzzle_id"]
+            isOneToOne: false
+            referencedRelation: "grand_line_guess_daily_puzzles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grand_line_guess_characters: {
+        Row: {
+          active: boolean
+          affiliation: string | null
+          affiliation_category: string | null
+          bounty_display: string | null
+          bounty_is_minimum: boolean
+          bounty_numeric: number | null
+          bounty_unknown: boolean
+          created_at: string
+          daily_eligible: boolean
+          data_quality_flags: Json
+          devil_fruit_display: string | null
+          devil_fruit_name: string | null
+          first_arc: string | null
+          first_arc_order: number | null
+          gender: string | null
+          haki_raw: string | null
+          has_armament: boolean
+          has_conquerors: boolean
+          has_devil_fruit: boolean
+          has_observation: boolean
+          height_cm: number | null
+          height_unknown: boolean
+          id: string
+          name: string
+          practice_eligible: boolean
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          affiliation?: string | null
+          affiliation_category?: string | null
+          bounty_display?: string | null
+          bounty_is_minimum?: boolean
+          bounty_numeric?: number | null
+          bounty_unknown?: boolean
+          created_at?: string
+          daily_eligible?: boolean
+          data_quality_flags?: Json
+          devil_fruit_display?: string | null
+          devil_fruit_name?: string | null
+          first_arc?: string | null
+          first_arc_order?: number | null
+          gender?: string | null
+          haki_raw?: string | null
+          has_armament?: boolean
+          has_conquerors?: boolean
+          has_devil_fruit?: boolean
+          has_observation?: boolean
+          height_cm?: number | null
+          height_unknown?: boolean
+          id?: string
+          name: string
+          practice_eligible?: boolean
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          affiliation?: string | null
+          affiliation_category?: string | null
+          bounty_display?: string | null
+          bounty_is_minimum?: boolean
+          bounty_numeric?: number | null
+          bounty_unknown?: boolean
+          created_at?: string
+          daily_eligible?: boolean
+          data_quality_flags?: Json
+          devil_fruit_display?: string | null
+          devil_fruit_name?: string | null
+          first_arc?: string | null
+          first_arc_order?: number | null
+          gender?: string | null
+          haki_raw?: string | null
+          has_armament?: boolean
+          has_conquerors?: boolean
+          has_devil_fruit?: boolean
+          has_observation?: boolean
+          height_cm?: number | null
+          height_unknown?: boolean
+          id?: string
+          name?: string
+          practice_eligible?: boolean
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      grand_line_guess_daily_puzzles: {
+        Row: {
+          character_id: string
+          created_at: string
+          id: string
+          puzzle_date: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          id?: string
+          puzzle_date: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          id?: string
+          puzzle_date?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grand_line_guess_daily_puzzles_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "grand_line_guess_characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grand_line_guess_results: {
+        Row: {
+          attempts_used: number
+          created_at: string
+          hints_used: number
+          id: string
+          puzzle_id: string
+          reward_amount: number
+          reward_paid: boolean
+          solved: boolean
+          solved_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts_used?: number
+          created_at?: string
+          hints_used?: number
+          id?: string
+          puzzle_id: string
+          reward_amount?: number
+          reward_paid?: boolean
+          solved?: boolean
+          solved_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts_used?: number
+          created_at?: string
+          hints_used?: number
+          id?: string
+          puzzle_id?: string
+          reward_amount?: number
+          reward_paid?: boolean
+          solved?: boolean
+          solved_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grand_line_guess_results_puzzle_id_fkey"
+            columns: ["puzzle_id"]
+            isOneToOne: false
+            referencedRelation: "grand_line_guess_daily_puzzles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grand_line_guess_stats: {
+        Row: {
+          average_attempts: number
+          best_streak: number
+          current_streak: number
+          games_played: number
+          games_won: number
+          last_played_date: string | null
+          last_win_date: string | null
+          one_shot_wins: number
+          total_rewards_earned: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          average_attempts?: number
+          best_streak?: number
+          current_streak?: number
+          games_played?: number
+          games_won?: number
+          last_played_date?: string | null
+          last_win_date?: string | null
+          one_shot_wins?: number
+          total_rewards_earned?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          average_attempts?: number
+          best_streak?: number
+          current_streak?: number
+          games_played?: number
+          games_won?: number
+          last_played_date?: string | null
+          last_win_date?: string | null
+          one_shot_wins?: number
+          total_rewards_earned?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       hype_modifier_targets: {
         Row: {
           character_id: string

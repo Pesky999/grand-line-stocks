@@ -18,7 +18,9 @@ import { Route as EventsRouteImport } from './routes/events'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GamesIndexRouteImport } from './routes/games.index'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
+import { Route as GamesGrandLineGuessRouteImport } from './routes/games.grand-line-guess'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
@@ -70,10 +72,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesIndexRoute = GamesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GamesRoute,
+} as any)
 const UUsernameRoute = UUsernameRouteImport.update({
   id: '/u/$username',
   path: '/u/$username',
   getParentRoute: () => rootRouteImport,
+} as any)
+const GamesGrandLineGuessRoute = GamesGrandLineGuessRouteImport.update({
+  id: '/grand-line-guess',
+  path: '/grand-line-guess',
+  getParentRoute: () => GamesRoute,
 } as any)
 const CharacterSlugRoute = CharacterSlugRouteImport.update({
   id: '/character/$slug',
@@ -112,7 +124,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
-  '/games': typeof GamesRoute
+  '/games': typeof GamesRouteWithChildren
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
@@ -123,13 +135,14 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
+  '/games/': typeof GamesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
-  '/games': typeof GamesRoute
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
@@ -140,7 +153,9 @@ export interface FileRoutesByTo {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
+  '/games': typeof GamesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -148,7 +163,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
-  '/games': typeof GamesRoute
+  '/games': typeof GamesRouteWithChildren
   '/leaderboards': typeof LeaderboardsRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
@@ -159,7 +174,9 @@ export interface FileRoutesById {
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
+  '/games/': typeof GamesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -178,13 +195,14 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
+    | '/games/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/events'
-    | '/games'
     | '/leaderboards'
     | '/market-report'
     | '/news'
@@ -195,7 +213,9 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
+    | '/games'
   id:
     | '__root__'
     | '/'
@@ -213,7 +233,9 @@ export interface FileRouteTypes {
     | '/_authenticated/portfolio'
     | '/_authenticated/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
+    | '/games/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -221,7 +243,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   EventsRoute: typeof EventsRoute
-  GamesRoute: typeof GamesRoute
+  GamesRoute: typeof GamesRouteWithChildren
   LeaderboardsRoute: typeof LeaderboardsRoute
   MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
@@ -295,12 +317,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/': {
+      id: '/games/'
+      path: '/'
+      fullPath: '/games/'
+      preLoaderRoute: typeof GamesIndexRouteImport
+      parentRoute: typeof GamesRoute
+    }
     '/u/$username': {
       id: '/u/$username'
       path: '/u/$username'
       fullPath: '/u/$username'
       preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/games/grand-line-guess': {
+      id: '/games/grand-line-guess'
+      path: '/grand-line-guess'
+      fullPath: '/games/grand-line-guess'
+      preLoaderRoute: typeof GamesGrandLineGuessRouteImport
+      parentRoute: typeof GamesRoute
     }
     '/character/$slug': {
       id: '/character/$slug'
@@ -366,12 +402,24 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface GamesRouteChildren {
+  GamesGrandLineGuessRoute: typeof GamesGrandLineGuessRoute
+  GamesIndexRoute: typeof GamesIndexRoute
+}
+
+const GamesRouteChildren: GamesRouteChildren = {
+  GamesGrandLineGuessRoute: GamesGrandLineGuessRoute,
+  GamesIndexRoute: GamesIndexRoute,
+}
+
+const GamesRouteWithChildren = GamesRoute._addFileChildren(GamesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   EventsRoute: EventsRoute,
-  GamesRoute: GamesRoute,
+  GamesRoute: GamesRouteWithChildren,
   LeaderboardsRoute: LeaderboardsRoute,
   MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
@@ -382,13 +430,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
