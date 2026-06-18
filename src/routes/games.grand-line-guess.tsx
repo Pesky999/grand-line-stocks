@@ -9,7 +9,6 @@ import {
   getGrandLineGuessAutocomplete,
   getTodayGrandLineGuessState,
   submitGrandLineGuess,
-  useGrandLineGuessHint,
   getGrandLineGuessStats,
 } from "@/lib/api/grand-line-guess.functions";
 
@@ -105,15 +104,7 @@ function GrandLineGuessPage() {
     onError: (e: any) => toast.error(e.message ?? "Submission failed"),
   });
 
-  const hintM = useMutation({
-    mutationFn: () => useGrandLineGuessHint(),
-    onSuccess: (r: any) => {
-      toast.success(`Hint ${r.tier}: ${r.hint}`);
-      if (r.state) qc.setQueryData(["glg-state"], r.state);
-      else qc.invalidateQueries({ queryKey: ["glg-state"] });
-    },
-    onError: (e: any) => toast.error(e.message ?? "Hint not available"),
-  });
+
 
   const handlePick = (id: string) => {
     if (guessedIds.has(id)) { toast("Already guessed"); return; }
@@ -164,11 +155,10 @@ function GrandLineGuessPage() {
             {user && (
               <>
                 {/* Stats row */}
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5 text-[11px] uppercase tracking-widest">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 text-[11px] uppercase tracking-widest">
                   <Stat label="Streak" value={stats?.current_streak ?? 0} />
                   <Stat label="Best" value={stats?.best_streak ?? 0} />
                   <Stat label="Attempts" value={state?.attempts_used ?? 0} />
-                  <Stat label="Hints" value={state?.hints_used ?? 0} />
                   <Stat label={state?.solved ? "Earned" : "Next reward"} value={`฿${state?.solved ? state.reward_amount : (state?.potential_next_reward ?? 0)}`} />
                 </div>
 
@@ -207,43 +197,8 @@ function GrandLineGuessPage() {
                   </div>
                 )}
 
-                {/* Hints */}
-                {state?.status === "active" && (
-                  <div className="mt-4 border border-border bg-card/40 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Hints · each reduces reward by 25%</span>
-                      <span className="text-[10px] text-muted-foreground">{state?.hints_used ?? 0} / 3 used</span>
-                    </div>
-                    <ul className="space-y-2">
-                      {(state?.hints ?? []).map((h: any) => {
-                        const canUse = h.unlocked && !h.revealed && !state?.solved;
-                        return (
-                          <li key={h.tier} className="flex items-start justify-between gap-3 border border-border bg-background/60 p-2 text-xs">
-                            <div className="min-w-0 flex-1">
-                              <div className="font-bold text-foreground">Hint {h.tier} · {h.label}</div>
-                              {h.revealed ? (
-                                <div className="mt-1 text-bull break-words">{h.text ?? "Unknown"}</div>
-                              ) : h.unlocked ? (
-                                <div className="mt-1 text-muted-foreground">Ready to reveal.</div>
-                              ) : (
-                                <div className="mt-1 text-muted-foreground">Locked · {h.wrong_needed} more wrong guess{h.wrong_needed === 1 ? "" : "es"} required.</div>
-                              )}
-                            </div>
-                            {!h.revealed && (
-                              <button
-                                onClick={() => hintM.mutate()}
-                                disabled={!canUse || hintM.isPending || (state?.hints_used ?? 0) !== h.tier - 1}
-                                className="shrink-0 border border-border px-3 py-2 text-[10px] uppercase tracking-widest hover:border-primary disabled:opacity-40"
-                              >
-                                {h.unlocked ? "Reveal" : "Locked"}
-                              </button>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
+
+
 
                 {/* Grid */}
                 <div className="mt-5 -mx-3 sm:mx-0 overflow-x-auto">
