@@ -242,8 +242,7 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     const hintsUsed = existingResult.data?.hints_used ?? 0;
 
     if (isCorrect) {
-      const base = rewardForAttempt(attemptNumber);
-      const reward = applyHintPenalty(base, hintsUsed);
+      const reward = rewardForAttempt(attemptNumber);
 
       // atomic-ish reward: upsert result with reward_paid guard, then credit wallet only if newly paid
       const upsertR = await db.from("grand_line_guess_results").upsert({
