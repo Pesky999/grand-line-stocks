@@ -121,7 +121,7 @@ function GrandLineGuessPage() {
 
   const state = stateQ.data;
   const stats = statsQ.data;
-  const attempts = (state?.attempts ?? []) as Array<{ feedback: Feedback; attempt_number: number; is_correct: boolean }>;
+  const attempts = ((state?.attempts ?? []) as unknown) as Array<{ feedback: Feedback; attempt_number: number; is_correct: boolean }>;
 
   const shareText = useMemo(() => {
     if (!state?.solved) return "";

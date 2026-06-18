@@ -20,6 +20,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GamesIndexRouteImport } from './routes/games.index'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
+import { Route as GamesGrandLineGuessRouteImport } from './routes/games.grand-line-guess'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
@@ -81,6 +82,11 @@ const UUsernameRoute = UUsernameRouteImport.update({
   path: '/u/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesGrandLineGuessRoute = GamesGrandLineGuessRouteImport.update({
+  id: '/grand-line-guess',
+  path: '/grand-line-guess',
+  getParentRoute: () => GamesRoute,
+} as any)
 const CharacterSlugRoute = CharacterSlugRouteImport.update({
   id: '/character/$slug',
   path: '/character/$slug',
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games/': typeof GamesIndexRoute
 }
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games': typeof GamesIndexRoute
 }
@@ -166,6 +174,7 @@ export interface FileRoutesById {
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games/': typeof GamesIndexRoute
 }
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
     | '/games/'
   fileRoutesByTo: FileRoutesByTo
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
     | '/games'
   id:
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/_authenticated/portfolio'
     | '/_authenticated/profile'
     | '/character/$slug'
+    | '/games/grand-line-guess'
     | '/u/$username'
     | '/games/'
   fileRoutesById: FileRoutesById
@@ -319,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/grand-line-guess': {
+      id: '/games/grand-line-guess'
+      path: '/grand-line-guess'
+      fullPath: '/games/grand-line-guess'
+      preLoaderRoute: typeof GamesGrandLineGuessRouteImport
+      parentRoute: typeof GamesRoute
+    }
     '/character/$slug': {
       id: '/character/$slug'
       path: '/character/$slug'
@@ -384,10 +403,12 @@ const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 interface GamesRouteChildren {
+  GamesGrandLineGuessRoute: typeof GamesGrandLineGuessRoute
   GamesIndexRoute: typeof GamesIndexRoute
 }
 
 const GamesRouteChildren: GamesRouteChildren = {
+  GamesGrandLineGuessRoute: GamesGrandLineGuessRoute,
   GamesIndexRoute: GamesIndexRoute,
 }
 
