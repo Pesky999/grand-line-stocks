@@ -16,7 +16,10 @@ export const Route = createFileRoute("/games/grand-line-guess")({
   head: () => ({
     meta: [
       { title: "Grand Line Guess — Berry Street" },
-      { name: "description", content: "Use market intelligence to identify today's mystery One Piece character." },
+      {
+        name: "description",
+        content: "Use market intelligence to identify today's mystery One Piece character.",
+      },
     ],
   }),
   component: GrandLineGuessPage,
@@ -38,14 +41,20 @@ const COLUMNS: { key: keyof Feedback; label: string }[] = [
 
 function cellClasses(result: string) {
   switch (result) {
-    case "exact": return "bg-bull/20 text-bull border-bull/40";
-    case "partial": return "bg-yellow-400/15 text-yellow-300 border-yellow-400/40";
+    case "exact":
+      return "bg-bull/20 text-bull border-bull/40";
+    case "partial":
+      return "bg-yellow-400/15 text-yellow-300 border-yellow-400/40";
     case "higher":
-    case "later": return "bg-secondary text-foreground border-border";
+    case "later":
+      return "bg-secondary text-foreground border-border";
     case "lower":
-    case "earlier": return "bg-secondary text-foreground border-border";
-    case "unknown": return "bg-muted/20 text-muted-foreground border-border";
-    default: return "bg-muted/10 text-muted-foreground border-border";
+    case "earlier":
+      return "bg-secondary text-foreground border-border";
+    case "unknown":
+      return "bg-muted/20 text-muted-foreground border-border";
+    default:
+      return "bg-muted/10 text-muted-foreground border-border";
   }
 }
 
@@ -67,13 +76,13 @@ function GrandLineGuessPage() {
   });
 
   const stateQ = useQuery({
-    queryKey: ["glg-state"],
+    queryKey: ["glg-state", user?.id],
     queryFn: () => getTodayGrandLineGuessState(),
     enabled: !!user,
   });
 
   const statsQ = useQuery({
-    queryKey: ["glg-stats"],
+    queryKey: ["glg-stats", user?.id],
     queryFn: () => getGrandLineGuessStats(),
     enabled: !!user,
   });
@@ -92,11 +101,11 @@ function GrandLineGuessPage() {
   const submitM = useMutation({
     mutationFn: (id: string) => submitGrandLineGuess({ data: { guessed_character_id: id } }),
     onSuccess: (next) => {
-      qc.setQueryData(["glg-state"], next);
+      qc.setQueryData(["glg-state", user?.id], next);
       if (next?.solved) {
         toast.success(`Solved in ${next.attempts_used}! +฿${next.reward_amount}`);
         invalidateMe();
-        qc.invalidateQueries({ queryKey: ["glg-stats"] });
+        qc.invalidateQueries({ queryKey: ["glg-stats", user?.id] });
       }
       setQuery("");
       setOpen(false);
@@ -104,30 +113,37 @@ function GrandLineGuessPage() {
     onError: (e: any) => toast.error(e.message ?? "Submission failed"),
   });
 
-
-
   const handlePick = (id: string) => {
-    if (guessedIds.has(id)) { toast("Already guessed"); return; }
+    if (guessedIds.has(id)) {
+      toast("Already guessed");
+      return;
+    }
     submitM.mutate(id);
   };
 
   const state = stateQ.data;
   const stats = statsQ.data;
-  const attempts = ((state?.attempts ?? []) as unknown) as Array<{ feedback: Feedback; attempt_number: number; is_correct: boolean }>;
+  const attempts = (state?.attempts ?? []) as unknown as Array<{
+    feedback: Feedback;
+    attempt_number: number;
+    is_correct: boolean;
+  }>;
 
   const shareText = useMemo(() => {
     if (!state?.solved) return "";
-    const grid = attempts.map(a =>
-      COLUMNS.map(c => {
-        const r = a.feedback[c.key]?.result;
-        if (r === "exact") return "🟩";
-        if (r === "partial") return "🟨";
-        if (r === "higher" || r === "later") return "⬆️";
-        if (r === "lower" || r === "earlier") return "⬇️";
-        if (r === "unknown") return "⬜";
-        return "⬛";
-      }).join("")
-    ).join("\n");
+    const grid = attempts
+      .map((a) =>
+        COLUMNS.map((c) => {
+          const r = a.feedback[c.key]?.result;
+          if (r === "exact") return "🟩";
+          if (r === "partial") return "🟨";
+          if (r === "higher" || r === "later") return "⬆️";
+          if (r === "lower" || r === "earlier") return "⬇️";
+          if (r === "unknown") return "⬜";
+          return "⬛";
+        }).join(""),
+      )
+      .join("\n");
     return `Grand Line Guess — Daily Run\nSolved in ${state.attempts_used} guesses\nReward: ${state.reward_amount} berries\nStreak: ${stats?.current_streak ?? 0}\n\n${grid}`;
   }, [state, attempts, stats]);
 
@@ -137,18 +153,24 @@ function GrandLineGuessPage() {
         <div className="terminal-panel">
           <div className="terminal-header flex items-center justify-between">
             <span>Grand Line Guess · Daily</span>
-            <span className="text-muted-foreground text-[10px]">{state?.puzzle_date ?? "—"} UTC</span>
+            <span className="text-muted-foreground text-[10px]">
+              {state?.puzzle_date ?? "—"} UTC
+            </span>
           </div>
 
           <div className="p-4 sm:p-6">
             <h1 className="text-lg sm:text-xl font-bold text-foreground">Grand Line Guess</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Use market intelligence to identify today's mystery character. Each guess returns feedback. Green = exact, yellow = partial, arrows = higher/lower or earlier/later.
+              Use market intelligence to identify today's mystery character. Each guess returns
+              feedback. Green = exact, yellow = partial, arrows = higher/lower or earlier/later.
             </p>
 
             {!user && (
               <div className="mt-4 border border-border bg-card/60 p-3 text-xs text-muted-foreground">
-                <Link to="/auth" className="text-primary underline">Sign in</Link> to play Daily Mode and earn Berries.
+                <Link to="/auth" className="text-primary underline">
+                  Sign in
+                </Link>{" "}
+                to play Daily Mode and earn Berries.
               </div>
             )}
 
@@ -159,7 +181,10 @@ function GrandLineGuessPage() {
                   <Stat label="Streak" value={stats?.current_streak ?? 0} />
                   <Stat label="Best" value={stats?.best_streak ?? 0} />
                   <Stat label="Attempts" value={state?.attempts_used ?? 0} />
-                  <Stat label={state?.solved ? "Earned" : "Next reward"} value={`฿${state?.solved ? state.reward_amount : (state?.potential_next_reward ?? 0)}`} />
+                  <Stat
+                    label={state?.solved ? "Earned" : "Next reward"}
+                    value={`฿${state?.solved ? state.reward_amount : (state?.potential_next_reward ?? 0)}`}
+                  />
                 </div>
 
                 {/* Search */}
@@ -167,7 +192,10 @@ function GrandLineGuessPage() {
                   <div className="relative mt-5">
                     <input
                       value={query}
-                      onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                      }}
                       onFocus={() => setOpen(true)}
                       placeholder="Type a character name…"
                       className="w-full h-12 border border-border bg-background px-3 text-sm outline-none focus:border-primary"
@@ -187,7 +215,9 @@ function GrandLineGuessPage() {
                                 className={`flex w-full items-center justify-between px-3 py-3 text-left text-sm hover:bg-secondary ${used ? "opacity-40 cursor-not-allowed" : ""}`}
                               >
                                 <span>{o.name}</span>
-                                {used && <span className="text-[10px] text-muted-foreground">guessed</span>}
+                                {used && (
+                                  <span className="text-[10px] text-muted-foreground">guessed</span>
+                                )}
                               </button>
                             </li>
                           );
@@ -197,30 +227,42 @@ function GrandLineGuessPage() {
                   </div>
                 )}
 
-
-
-
                 {/* Grid */}
                 <div className="mt-5 -mx-3 sm:mx-0 overflow-x-auto">
                   <table className="w-full min-w-[720px] text-xs">
                     <thead>
                       <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                        {COLUMNS.map(c => <th key={c.key} className="px-2 py-2 text-left">{c.label}</th>)}
+                        {COLUMNS.map((c) => (
+                          <th key={c.key} className="px-2 py-2 text-left">
+                            {c.label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {attempts.length === 0 && (
-                        <tr><td colSpan={COLUMNS.length} className="px-2 py-6 text-center text-muted-foreground">No guesses yet.</td></tr>
+                        <tr>
+                          <td
+                            colSpan={COLUMNS.length}
+                            className="px-2 py-6 text-center text-muted-foreground"
+                          >
+                            No guesses yet.
+                          </td>
+                        </tr>
                       )}
                       {attempts.map((a) => (
                         <tr key={a.attempt_number}>
-                          {COLUMNS.map(c => {
+                          {COLUMNS.map((c) => {
                             const cell = a.feedback[c.key];
                             return (
                               <td key={c.key} className="p-1">
-                                <div className={`border px-2 py-2 text-center ${cellClasses(cell?.result)}`}>
+                                <div
+                                  className={`border px-2 py-2 text-center ${cellClasses(cell?.result)}`}
+                                >
                                   <div className="font-bold truncate">{cell?.value}</div>
-                                  {arrow(cell?.result) && <div className="text-[10px]">{arrow(cell?.result).trim()}</div>}
+                                  {arrow(cell?.result) && (
+                                    <div className="text-[10px]">{arrow(cell?.result).trim()}</div>
+                                  )}
                                 </div>
                               </td>
                             );
@@ -234,23 +276,47 @@ function GrandLineGuessPage() {
                 {/* Legend */}
                 <div className="mt-4 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                   <LegendChip cls="bg-bull/20 text-bull border-bull/40" label="Exact" />
-                  <LegendChip cls="bg-yellow-400/15 text-yellow-300 border-yellow-400/40" label="Partial" />
-                  <LegendChip cls="bg-secondary text-foreground border-border" label="↑ higher / later" />
-                  <LegendChip cls="bg-secondary text-foreground border-border" label="↓ lower / earlier" />
-                  <LegendChip cls="bg-muted/20 text-muted-foreground border-border" label="Unknown" />
+                  <LegendChip
+                    cls="bg-yellow-400/15 text-yellow-300 border-yellow-400/40"
+                    label="Partial"
+                  />
+                  <LegendChip
+                    cls="bg-secondary text-foreground border-border"
+                    label="↑ higher / later"
+                  />
+                  <LegendChip
+                    cls="bg-secondary text-foreground border-border"
+                    label="↓ lower / earlier"
+                  />
+                  <LegendChip
+                    cls="bg-muted/20 text-muted-foreground border-border"
+                    label="Unknown"
+                  />
                 </div>
 
                 {/* Result */}
                 {state?.solved && state.answer && (
                   <div className="mt-6 border border-bull/40 bg-bull/5 p-4 text-sm">
-                    <div className="font-bold text-bull">Solved! Mystery character: {state.answer.name}</div>
-                    <div className="mt-1 text-muted-foreground">In {state.attempts_used} guesses · earned ฿{state.reward_amount} · streak {stats?.current_streak ?? 0}</div>
+                    <div className="font-bold text-bull">
+                      Solved! Mystery character: {state.answer.name}
+                    </div>
+                    <div className="mt-1 text-muted-foreground">
+                      In {state.attempts_used} guesses · earned ฿{state.reward_amount} · streak{" "}
+                      {stats?.current_streak ?? 0}
+                    </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Link to="/character/$slug" params={{ slug: state.answer.slug }} className="border border-border px-3 py-2 text-xs uppercase tracking-widest hover:border-primary">
+                      <Link
+                        to="/character/$slug"
+                        params={{ slug: state.answer.slug }}
+                        className="border border-border px-3 py-2 text-xs uppercase tracking-widest hover:border-primary"
+                      >
                         View stock
                       </Link>
                       <button
-                        onClick={() => { navigator.clipboard.writeText(shareText); toast.success("Copied!"); }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(shareText);
+                          toast.success("Copied!");
+                        }}
                         className="border border-border px-3 py-2 text-xs uppercase tracking-widest hover:border-primary"
                       >
                         Share result

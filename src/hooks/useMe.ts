@@ -7,7 +7,7 @@ export const meQueryKey = ["me"] as const;
 export function useMe() {
   const { user, loading } = useAuth();
   const q = useQuery({
-    queryKey: meQueryKey,
+    queryKey: [...meQueryKey, user?.id],
     queryFn: () => getMe(),
     enabled: !!user,
     staleTime: 10_000,
