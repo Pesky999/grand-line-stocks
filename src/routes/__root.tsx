@@ -80,44 +80,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Berry Street — The One Piece Stock Market" },
-      {
-        name: "description",
-        content:
-          "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire.",
-      },
+      { name: "description", content: "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire." },
       { property: "og:title", content: "Berry Street — The One Piece Stock Market" },
-      {
-        property: "og:description",
-        content:
-          "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire.",
-      },
+      { property: "og:description", content: "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "Berry Street — The One Piece Stock Market" },
-      {
-        name: "twitter:description",
-        content:
-          "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire.",
-      },
-      {
-        property: "og:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/41369e01-97cb-421a-8e5b-2027bcc5a8c5/id-preview-9bd420e7--6ba44a29-3bc3-45d4-b80f-41a7ad0c02e6.lovable.app-1781670279556.png",
-      },
-      {
-        name: "twitter:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/41369e01-97cb-421a-8e5b-2027bcc5a8c5/id-preview-9bd420e7--6ba44a29-3bc3-45d4-b80f-41a7ad0c02e6.lovable.app-1781670279556.png",
-      },
+      { name: "twitter:description", content: "Live stock prices for every One Piece character. Trade with Berries, play to earn, watch the wire." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/41369e01-97cb-421a-8e5b-2027bcc5a8c5/id-preview-9bd420e7--6ba44a29-3bc3-45d4-b80f-41a7ad0c02e6.lovable.app-1781670279556.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/41369e01-97cb-421a-8e5b-2027bcc5a8c5/id-preview-9bd420e7--6ba44a29-3bc3-45d4-b80f-41a7ad0c02e6.lovable.app-1781670279556.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap",
-      },
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" },
     ],
   }),
   shellComponent: RootShell,
@@ -148,11 +125,8 @@ function RootComponent() {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
-      if (event === "SIGNED_OUT") {
-        queryClient.clear();
-      } else {
-        queryClient.invalidateQueries();
-      }
+      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+      else queryClient.removeQueries({ queryKey: ["me"] });
     });
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);
@@ -160,11 +134,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
-      <Toaster
-        theme="dark"
-        position="bottom-right"
-        toastOptions={{ style: { fontFamily: "var(--font-mono)", fontSize: 12 } }}
-      />
+      <Toaster theme="dark" position="bottom-right" toastOptions={{ style: { fontFamily: "var(--font-mono)", fontSize: 12 } }} />
     </QueryClientProvider>
   );
 }
