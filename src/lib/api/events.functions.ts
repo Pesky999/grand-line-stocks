@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
 
 const EVENT_TYPES = [
   "story_event",
@@ -13,13 +15,15 @@ const EVENT_TYPES = [
   "meme_event",
 ] as const;
 
-async function admin() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return supabaseAdmin;
+function pub(): SupabaseClient<Database> {
+  return createClient<Database>(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_PUBLISHABLE_KEY!,
+    { auth: { storage: undefined, persistSession: false, autoRefreshToken: false } },
+  );
 }
 
-async function requireAdmin(userId: string) {
-  const db = await admin();
+async function requireAdmin(db: SupabaseClient<Database>, userId: string) {
   const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin role required");
@@ -30,7 +34,7 @@ async function requireAdmin(userId: string) {
 export const listRecentEvents = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ limit: z.number().int().min(1).max(50).default(15) }).parse(d ?? {}))
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = pub();
     const { data: rows, error } = await db
       .from("market_events")
       .select(
@@ -46,7 +50,7 @@ export const listRecentEvents = createServerFn({ method: "GET" })
 export const getCharacterEvents = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = pub();
     const { data: ch } = await db.from("characters").select("id").eq("slug", data.slug).maybeSingle();
     if (!ch) return [];
     const { data: rows, error } = await db
@@ -63,7 +67,7 @@ export const getCharacterEvents = createServerFn({ method: "GET" })
   });
 
 export const getMarketSentiment = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
+  const db = pub();
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString();
   const { data: events } = await db
     .from("market_events")
@@ -99,9 +103,8 @@ export const getMarketSentiment = createServerFn({ method: "GET" }).handler(asyn
 export const listAllEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { data, error } = await db
+    await requireAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
       .from("market_events")
       .select("id,title,event_type,status,default_pct_change,scheduled_for,published_at,created_at")
       .order("created_at", { ascending: false })
@@ -128,8 +131,8 @@ export const createEvent = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
+    await requireAdmin(context.supabase, context.userId);
+    const db = context.supabase;
 
     const status: "draft" | "scheduled" | "published" =
       data.publish ? "draft" : data.scheduled_for ? "scheduled" : "draft";
@@ -149,7 +152,6 @@ export const createEvent = createServerFn({ method: "POST" })
       .single();
     if (e1) throw e1;
 
-    // Resolve slugs to character ids
     const slugs = data.impacts.map((i) => i.slug);
     const { data: chars } = await db.from("characters").select("id,slug").in("slug", slugs);
     const idBySlug = new Map((chars ?? []).map((c) => [c.slug, c.id]));
@@ -171,9 +173,8 @@ export const previewEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { data: rows, error } = await db.rpc("preview_market_event", { _event_id: data.id });
+    await requireAdmin(context.supabase, context.userId);
+    const { data: rows, error } = await context.supabase.rpc("preview_market_event", { _event_id: data.id });
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
@@ -182,9 +183,8 @@ export const publishEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { error } = await db.rpc("apply_market_event", { _event_id: data.id });
+    await requireAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase.rpc("apply_market_event", { _event_id: data.id });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -193,9 +193,8 @@ export const deleteEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { error } = await db.from("market_events").delete().eq("id", data.id);
+    await requireAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase.from("market_events").delete().eq("id", data.id);
     if (error) throw error;
     return { ok: true };
   });
