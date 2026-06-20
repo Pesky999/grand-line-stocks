@@ -1339,6 +1339,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      award_grand_line_guess_reward: {
+        Args: {
+          _attempt_number: number
+          _puzzle_id: string
+          _reward_amount: number
+          _user_id: string
+        }
+        Returns: boolean
+      }
       check_achievements: { Args: { _user_id: string }; Returns: number }
       check_legacy_for_user: { Args: { _user_id: string }; Returns: undefined }
       execute_trade: {
