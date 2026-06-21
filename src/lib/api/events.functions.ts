@@ -29,6 +29,16 @@ async function requireAdmin(db: SupabaseClient<Database>, userId: string) {
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
+function isMarketEventsPermissionError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+
+  const maybeError = error as { code?: unknown; message?: unknown };
+  return (
+    maybeError.code === "42501" ||
+    (typeof maybeError.message === "string" && maybeError.message.includes("permission denied for function has_role"))
+  );
+}
+
 // ---------- Public ----------
 
 export const listRecentEvents = createServerFn({ method: "GET" })
@@ -43,6 +53,8 @@ export const listRecentEvents = createServerFn({ method: "GET" })
       .eq("status", "published")
       .order("published_at", { ascending: false })
       .limit(data.limit);
+    // Temporary compatibility fallback until the public market_events RLS policy is corrected.
+    if (error && isMarketEventsPermissionError(error)) return [];
     if (error) throw error;
     return rows ?? [];
   });

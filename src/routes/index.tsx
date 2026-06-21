@@ -9,30 +9,7 @@ import { formatBounty } from "@/lib/wallet";
 
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
-function isMarketEventsPermissionFallback(error: unknown): boolean {
-  if (error == null || typeof error !== "object") return false;
-
-  const maybeError = error as { code?: unknown; message?: unknown; cause?: unknown };
-  if (maybeError.code === "42501") return true;
-  if (typeof maybeError.message === "string" && maybeError.message.includes("permission denied for function has_role")) {
-    return true;
-  }
-
-  return isMarketEventsPermissionFallback(maybeError.cause);
-}
-
-const eventsQO = queryOptions({
-  queryKey: ["events", "recent", 6],
-  queryFn: async () => {
-    try {
-      return await listRecentEvents({ data: { limit: 6 } });
-    } catch (error) {
-      // Temporary compatibility fallback until the public market_events RLS policy is repaired.
-      if (isMarketEventsPermissionFallback(error)) return [];
-      throw error;
-    }
-  },
-});
+const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
 const reportQO = queryOptions({ queryKey: ["report", "latest"], queryFn: () => getLatestReport() });
 const rumorsQO = queryOptions({ queryKey: ["rumors", "active", 5], queryFn: () => listActiveRumors({ data: { limit: 5 } }) });
 
