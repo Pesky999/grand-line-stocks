@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -19,7 +20,7 @@ const CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
 // ---------- Public reads ----------
 
 export const getLatestReport = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
+  const db = getPublicSupabaseClient();
   const { data } = await db
     .from("daily_market_reports")
     .select(
@@ -49,7 +50,7 @@ export const listReports = createServerFn({ method: "GET" })
 export const listActiveRumors = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ limit: z.number().int().min(1).max(50).default(20) }).parse(d ?? {}))
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = getPublicSupabaseClient();
     const { data: rows, error } = await db
       .from("market_rumors")
       .select(
