@@ -130,7 +130,6 @@ export const adminPostNews = createServerFn({ method: "POST" })
 export const amIAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
-    const { data } = await db.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const { data } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     return { isAdmin: !!data };
   });

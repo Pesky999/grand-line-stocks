@@ -10,7 +10,8 @@ async function admin() {
 export const getMe = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
+    if (!context.userId) return null;
+    const db = context.supabase;
     const [{ data: profile }, { data: wallet }, { data: holdings }] = await Promise.all([
       db.from("profiles").select("id,username,display_name,created_at").eq("id", context.userId).maybeSingle(),
       db.from("user_wallets").select("berries,updated_at").eq("user_id", context.userId).maybeSingle(),
