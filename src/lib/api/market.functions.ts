@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -15,7 +16,7 @@ async function requireAdminRole(userId: string) {
 }
 
 export const listCharacters = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
+  const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
     .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at")
@@ -41,7 +42,7 @@ export const getCharacter = createServerFn({ method: "GET" })
   });
 
 export const listNews = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
+  const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("news")
     .select("id,title,body,impact,created_at,character_id,characters(name,slug)")
@@ -129,7 +130,6 @@ export const adminPostNews = createServerFn({ method: "POST" })
 export const amIAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
-    const { data } = await db.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const { data } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     return { isAdmin: !!data };
   });
