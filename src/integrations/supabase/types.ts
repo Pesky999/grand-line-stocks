@@ -1375,30 +1375,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      execute_trade_authenticated: {
-        Args: {
-          _shares: number
-          _side: string
-          _slug: string
-        }
-        Returns: {
-          balance_after: number
-          character_id: string
-          created_at: string
-          id: string
-          price: number
-          shares: number
-          side: string
-          total: number
-          user_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "transactions"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
       expire_old_rumors: { Args: never; Returns: number }
       generate_market_rumor: {
         Args: never
