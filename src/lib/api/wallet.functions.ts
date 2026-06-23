@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -50,10 +52,8 @@ export const updateProfile = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-async function executeTrade(userId: string, slug: string, side: "buy" | "sell", shares: number) {
-  const db = await admin();
-  const { data, error } = await db.rpc("execute_trade", {
-    _user_id: userId,
+async function executeTrade(db: SupabaseClient<Database>, slug: string, side: "buy" | "sell", shares: number) {
+  const { data, error } = await db.rpc("execute_trade_authenticated", {
     _slug: slug,
     _side: side,
     _shares: shares,
@@ -66,7 +66,7 @@ export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
   .handler(async ({ data, context }) => {
-    const tx = await executeTrade(context.userId, data.slug, "buy", data.shares);
+    const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares);
     return { ok: true, price: Number(tx.price), cost: Number(tx.total), balance: Number(tx.balance_after) };
   });
 
@@ -74,14 +74,14 @@ export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
   .handler(async ({ data, context }) => {
-    const tx = await executeTrade(context.userId, data.slug, "sell", data.shares);
+    const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares);
     return { ok: true, price: Number(tx.price), proceeds: Number(tx.total), balance: Number(tx.balance_after) };
   });
 
 export const listMyTransactions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
+    const db = context.supabase;
     const { data, error } = await db
       .from("transactions")
       .select("id,side,shares,price,total,balance_after,created_at,characters(name,slug)")
