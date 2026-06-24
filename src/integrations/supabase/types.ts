@@ -1376,11 +1376,7 @@ export type Database = {
         }
       }
       execute_trade_authenticated: {
-        Args: {
-          _shares: number
-          _side: string
-          _slug: string
-        }
+        Args: { _shares: number; _side: string; _slug: string }
         Returns: {
           balance_after: number
           character_id: string
