@@ -1454,48 +1454,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      get_public_character_top_holders: {
-        Args: { _limit?: number; _offset?: number; _slug: string }
-        Returns: {
-          display_name: string | null
-          rank: number
-          shares: number
-          username: string
-          value: number
-        }[]
-      }
-      get_public_leaderboard: {
-        Args: { _board_key: string; _limit?: number; _offset?: number }
-        Returns: {
-          display_name: string | null
-          prev_rank: number | null
-          rank: number
-          title: Database["public"]["Enums"]["investor_title"]
-          username: string
-          value: number
-        }[]
-      }
-      get_public_leaderboard_movers: {
-        Args: { _limit?: number }
-        Returns: {
-          delta: number
-          direction: string
-          rank: number
-          username: string
-        }[]
-      }
-      get_public_legacy_records: {
-        Args: { _limit?: number; _offset?: number; _username?: string | null }
-        Returns: {
-          achieved_at: string
-          code: string
-          description: string
-          display_name: string | null
-          title: string
-          username: string | null
-          value: number | null
-        }[]
-      }
       preview_market_event: {
         Args: { _event_id: string }
         Returns: {
