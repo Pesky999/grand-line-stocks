@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -18,49 +19,27 @@ export const BOARD_KEYS = [
 export type BoardKey = (typeof BOARD_KEYS)[number] | string;
 
 export const listLeaderboard = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ board: z.string(), limit: z.number().int().min(1).max(200).default(50) }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        board: z.enum(BOARD_KEYS),
+        limit: z.number().int().min(1).max(200).default(50),
+        offset: z.number().int().min(0).max(10000).default(0),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = getPublicSupabaseClient();
     const { data: rows, error } = await db
-      .from("leaderboard_cache")
-      .select("rank,prev_rank,value,meta,user_id,profiles:profiles!leaderboard_cache_user_id_fkey(username,display_name)")
-      .eq("board_key", data.board)
-      .order("rank", { ascending: true })
-      .limit(data.limit);
-    if (error) {
-      // fallback without join (FK name may differ)
-      const r2 = await db
-        .from("leaderboard_cache")
-        .select("rank,prev_rank,value,meta,user_id")
-        .eq("board_key", data.board)
-        .order("rank", { ascending: true })
-        .limit(data.limit);
-      if (r2.error) throw r2.error;
-      const ids = (r2.data ?? []).map((r) => r.user_id);
-      const { data: profs } = await db.from("profiles").select("id,username,display_name").in("id", ids);
-      const stats = await db.from("user_stats").select("user_id,title,specialization").in("user_id", ids);
-      const profMap = new Map((profs ?? []).map((p: any) => [p.id, p]));
-      const statMap = new Map((stats.data ?? []).map((s: any) => [s.user_id, s]));
-      return (r2.data ?? []).map((r: any) => ({
-        rank: r.rank,
-        prev_rank: r.prev_rank,
-        value: Number(r.value),
-        meta: r.meta ?? {},
-        username: profMap.get(r.user_id)?.username ?? "anon",
-        display_name: profMap.get(r.user_id)?.display_name ?? null,
-        title: statMap.get(r.user_id)?.title ?? "rookie_pirate",
-        specialization: statMap.get(r.user_id)?.specialization ?? "generalist",
-      }));
-    }
+      .rpc("get_public_leaderboard", { _board_key: data.board, _limit: data.limit, _offset: data.offset });
+    if (error) throw error;
     return (rows ?? []).map((r: any) => ({
       rank: r.rank,
       prev_rank: r.prev_rank,
       value: Number(r.value),
-      meta: r.meta ?? {},
-      username: r.profiles?.username ?? "anon",
-      display_name: r.profiles?.display_name ?? null,
-      title: "rookie_pirate",
-      specialization: "generalist",
+      username: r.username ?? "anon",
+      display_name: r.display_name ?? null,
+      title: r.title ?? "rookie_pirate",
     }));
   });
 
@@ -126,21 +105,28 @@ export const getPublicProfile = createServerFn({ method: "GET" })
     };
   });
 
-export const listLegacy = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
-  const { data, error } = await db
-    .from("legacy_records")
-    .select("code,title,description,value,achieved_at,user_id,character_id")
-    .order("achieved_at", { ascending: false })
-    .limit(50);
-  if (error) throw error;
-  const ids = (data ?? []).map((r) => r.user_id).filter(Boolean) as string[];
-  const { data: profs } = ids.length
-    ? await db.from("profiles").select("id,username").in("id", ids)
-    : { data: [] as any[] };
-  const profMap = new Map((profs ?? []).map((p: any) => [p.id, p.username]));
-  return (data ?? []).map((r: any) => ({ ...r, username: profMap.get(r.user_id) ?? null }));
-});
+export const listLegacy = createServerFn({ method: "GET" })
+  .inputValidator((d) =>
+    z
+      .object({
+        username: z.string().min(1).max(64).optional(),
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().min(0).max(10000).default(0),
+      })
+      .optional()
+      .default({})
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const db = getPublicSupabaseClient();
+    const { data: rows, error } = await db.rpc("get_public_legacy_records", {
+      _username: data.username ?? null,
+      _limit: data.limit,
+      _offset: data.offset,
+    });
+    if (error) throw error;
+    return rows ?? [];
+  });
 
 export const listAchievementsCatalog = createServerFn({ method: "GET" }).handler(async () => {
   const db = await admin();
@@ -153,51 +139,37 @@ export const listAchievementsCatalog = createServerFn({ method: "GET" }).handler
 });
 
 export const listCharacterTopHolders = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ slug: z.string(), limit: z.number().int().min(1).max(20).default(5) }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        slug: z.string().min(1),
+        limit: z.number().int().min(1).max(20).default(5),
+        offset: z.number().int().min(0).max(10000).default(0),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = getPublicSupabaseClient();
     const { data: rows, error } = await db
-      .from("leaderboard_cache")
-      .select("rank,value,meta,user_id")
-      .eq("board_key", `holder_${data.slug}`)
-      .order("rank", { ascending: true })
-      .limit(data.limit);
+      .rpc("get_public_character_top_holders", { _slug: data.slug, _limit: data.limit, _offset: data.offset });
     if (error) throw error;
-    const ids = (rows ?? []).map((r) => r.user_id);
-    const { data: profs } = ids.length
-      ? await db.from("profiles").select("id,username,display_name").in("id", ids)
-      : { data: [] as any[] };
-    const profMap = new Map((profs ?? []).map((p: any) => [p.id, p]));
     return (rows ?? []).map((r: any) => ({
       rank: r.rank,
-      shares: Number(r.value),
-      value: Number(r.meta?.value ?? 0),
-      username: profMap.get(r.user_id)?.username ?? "anon",
-      display_name: profMap.get(r.user_id)?.display_name ?? null,
+      shares: Number(r.shares),
+      value: Number(r.value),
+      username: r.username ?? "anon",
+      display_name: r.display_name ?? null,
     }));
   });
 
 export const listClimbersAndFallers = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
-  const { data: rows, error } = await db
-    .from("leaderboard_cache")
-    .select("rank,prev_rank,value,user_id")
-    .eq("board_key", "net_worth_all_time")
-    .not("prev_rank", "is", null)
-    .limit(500);
+  const db = getPublicSupabaseClient();
+  const { data: rows, error } = await db.rpc("get_public_leaderboard_movers", { _limit: 5 });
   if (error) throw error;
-  const enriched = (rows ?? [])
-    .map((r: any) => ({ ...r, delta: (r.prev_rank ?? r.rank) - r.rank }))
-    .filter((r: any) => r.delta !== 0);
-  const ids = enriched.map((r) => r.user_id);
-  const { data: profs } = ids.length
-    ? await db.from("profiles").select("id,username").in("id", ids)
-    : { data: [] as any[] };
-  const map = new Map((profs ?? []).map((p: any) => [p.id, p.username]));
-  const climbers = [...enriched].sort((a, b) => b.delta - a.delta).slice(0, 5);
-  const fallers = [...enriched].sort((a, b) => a.delta - b.delta).slice(0, 5);
+  const climbers = (rows ?? []).filter((r) => r.direction === "climber");
+  const fallers = (rows ?? []).filter((r) => r.direction === "faller");
   return {
-    climbers: climbers.map((r) => ({ username: map.get(r.user_id) ?? "anon", rank: r.rank, delta: r.delta, value: Number(r.value) })),
-    fallers: fallers.map((r) => ({ username: map.get(r.user_id) ?? "anon", rank: r.rank, delta: r.delta, value: Number(r.value) })),
+    climbers: climbers.map((r) => ({ username: r.username ?? "anon", rank: r.rank, delta: r.delta })),
+    fallers: fallers.map((r) => ({ username: r.username ?? "anon", rank: r.rank, delta: r.delta })),
   };
 });

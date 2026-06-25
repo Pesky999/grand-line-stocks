@@ -1443,6 +1443,48 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_public_character_top_holders: {
+        Args: { _limit?: number; _offset?: number; _slug: string }
+        Returns: {
+          display_name: string
+          rank: number
+          shares: number
+          username: string
+          value: number
+        }[]
+      }
+      get_public_leaderboard: {
+        Args: { _board_key: string; _limit?: number; _offset?: number }
+        Returns: {
+          display_name: string
+          prev_rank: number
+          rank: number
+          title: Database["public"]["Enums"]["investor_title"]
+          username: string
+          value: number
+        }[]
+      }
+      get_public_leaderboard_movers: {
+        Args: { _limit?: number }
+        Returns: {
+          delta: number
+          direction: string
+          rank: number
+          username: string
+        }[]
+      }
+      get_public_legacy_records: {
+        Args: { _limit?: number; _offset?: number; _username?: string }
+        Returns: {
+          achieved_at: string
+          code: string
+          description: string
+          display_name: string
+          title: string
+          username: string
+          value: number
+        }[]
+      }
       grant_achievement: {
         Args: { _code: string; _user_id: string }
         Returns: boolean
