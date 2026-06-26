@@ -120,7 +120,7 @@ export const listLegacy = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const db = getPublicSupabaseClient();
     const { data: rows, error } = await db.rpc("get_public_legacy_records", {
-      _username: data.username ?? null,
+      _username: data.username ?? undefined,
       _limit: data.limit,
       _offset: data.offset,
     });
