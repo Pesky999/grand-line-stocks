@@ -91,7 +91,7 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Track live stock prices for every One Piece character." },
     ],
   }),
-  validateSearch: zodValidator(searchSchema),
+  validateSearch: (s: Record<string, unknown>): MarketSearch => searchSchema.parse(s),
   loaderDeps: ({ search }) => ({
     page: search.page,
     q: search.q,
