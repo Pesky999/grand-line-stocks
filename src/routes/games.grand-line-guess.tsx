@@ -36,22 +36,31 @@ const COLUMNS: { key: keyof Feedback; label: string }[] = [
   { key: "first_arc", label: "First Arc" },
 ];
 
-function cellClasses(result: string) {
-  switch (result) {
-    case "exact": return "bg-bull/20 text-bull border-bull/40";
-    case "partial": return "bg-yellow-400/15 text-yellow-300 border-yellow-400/40";
-    case "higher":
-    case "later": return "bg-secondary text-foreground border-border";
-    case "lower":
-    case "earlier": return "bg-secondary text-foreground border-border";
-    case "unknown": return "bg-muted/20 text-muted-foreground border-border";
-    default: return "bg-muted/10 text-muted-foreground border-border";
+const GREEN = "bg-bull/20 text-bull border-bull/40";
+const RED = "bg-bear/20 text-bear border-bear/40";
+const YELLOW = "bg-yellow-400/15 text-yellow-300 border-yellow-400/40";
+const UNKNOWN_CLS = "bg-muted/20 text-muted-foreground border-border";
+const NEUTRAL_CLS = "bg-muted/10 text-muted-foreground border-border";
+
+function cellClasses(columnKey: string, result: string) {
+  if (!result) return NEUTRAL_CLS;
+  if (result === "exact") return GREEN;
+  if (result === "unknown") return UNKNOWN_CLS;
+  // Haki is the only column that uses yellow for partial matches
+  if (columnKey === "haki") {
+    if (result === "partial") return YELLOW;
+    return RED;
   }
+  // All other columns: anything not exact reads as incorrect (red),
+  // including partial/wrong/higher/lower/earlier/later.
+  return RED;
 }
 
-function arrow(result: string) {
-  if (result === "higher" || result === "later") return " ↑";
-  if (result === "lower" || result === "earlier") return " ↓";
+function arrow(columnKey: string, result: string) {
+  // Directional arrows only on Bounty and Height
+  if (columnKey !== "bounty" && columnKey !== "height") return "";
+  if (result === "higher") return "↑";
+  if (result === "lower") return "↓";
   return "";
 }
 
