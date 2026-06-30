@@ -57,8 +57,13 @@ function cellClasses(columnKey: string, result: string) {
 }
 
 function arrow(columnKey: string, result: string) {
-  // Directional arrows only on Bounty and Height
-  if (columnKey !== "bounty" && columnKey !== "height") return "";
+  // Directional arrows on Bounty, Height, and First Arc
+  if (columnKey !== "bounty" && columnKey !== "height" && columnKey !== "first_arc") return "";
+  if (columnKey === "first_arc") {
+    if (result === "earlier") return "↓";
+    if (result === "later") return "↑";
+    return "";
+  }
   if (result === "higher") return "↑";
   if (result === "lower") return "↓";
   return "";
