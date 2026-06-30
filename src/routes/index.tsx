@@ -161,7 +161,7 @@ function Market() {
 
   function updateSearch(patch: Partial<typeof search>, resetPage = true) {
     navigate({
-      search: (prev) => ({ ...prev, ...patch, ...(resetPage ? { page: 1 } : {}) }),
+      search: (prev: MarketSearch) => ({ ...prev, ...patch, ...(resetPage ? { page: 1 } : {}) }),
       replace: false,
     });
   }
