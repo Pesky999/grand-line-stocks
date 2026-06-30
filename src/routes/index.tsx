@@ -45,12 +45,13 @@ const CATEGORY_LABEL: Record<(typeof MARKET_CATEGORIES)[number], string> = {
 const ALL = "__all__";
 
 const searchSchema = z.object({
-  page: fallback(z.number().int().min(1).max(1000), 1).default(1),
-  q: fallback(z.string().max(80), "").default(""),
-  aff: fallback(z.string().max(80), "").default(""),
-  cat: fallback(z.enum([...MARKET_CATEGORIES, ""]), "").default(""),
-  sort: fallback(z.enum(MARKET_SORTS), "price_desc").default("price_desc"),
+  page: z.coerce.number().int().min(1).max(1000).catch(1).default(1),
+  q: z.string().max(80).catch("").default(""),
+  aff: z.string().max(80).catch("").default(""),
+  cat: z.enum([...MARKET_CATEGORIES, ""] as const).catch("").default(""),
+  sort: z.enum(MARKET_SORTS).catch("price_desc").default("price_desc"),
 });
+type MarketSearch = z.infer<typeof searchSchema>;
 
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
