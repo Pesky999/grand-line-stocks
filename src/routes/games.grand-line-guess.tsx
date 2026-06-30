@@ -227,9 +227,9 @@ function GrandLineGuessPage() {
                             const cell = a.feedback[c.key];
                             return (
                               <td key={c.key} className="p-1">
-                                <div className={`border px-2 py-2 text-center ${cellClasses(cell?.result)}`}>
+                                <div className={`border px-2 py-2 text-center ${cellClasses(c.key as string, cell?.result)}`}>
                                   <div className="font-bold truncate">{cell?.value}</div>
-                                  {arrow(cell?.result) && <div className="text-[10px]">{arrow(cell?.result).trim()}</div>}
+                                  {arrow(c.key as string, cell?.result) && <div className="text-base font-bold leading-none">{arrow(c.key as string, cell?.result)}</div>}
                                 </div>
                               </td>
                             );
