@@ -287,7 +287,7 @@ function Market() {
         <PaginationBar
           page={currentPage}
           totalPages={totalPages}
-          onChange={(p) => navigate({ search: (prev) => ({ ...prev, page: p }) })}
+          onChange={(p) => navigate({ search: (prev: MarketSearch) => ({ ...prev, page: p }) })}
         />
       </section>
 
