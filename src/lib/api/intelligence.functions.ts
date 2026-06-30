@@ -1,18 +1,41 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
+function clampScore(value: number): number {
+  const finite = Number.isFinite(value) ? value : 50;
+  return Math.min(100, Math.max(0, Math.round(finite)));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  const finite = Number.isFinite(value) ? value : 0;
+  return Math.min(max, Math.max(min, finite));
+}
+
+function average(values: number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sentimentScore(sentiment: string): number {
+  if (sentiment === "extremely_bullish") return 14;
+  if (sentiment === "bullish") return 8;
+  if (sentiment === "bearish") return -8;
+  if (sentiment === "extremely_bearish") return -14;
+  return 0;
+}
+
 export const getCharacterIntel = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const db = await admin();
+    const db = getPublicSupabaseClient();
     const { data: ch, error } = await db
       .from("characters")
-      .select("id,slug,name,category,momentum,current_price,previous_price,character_attributes(narrative_potential,hype_rating,investor_confidence,volatility_rating)")
+      .select("id,slug,name,category,momentum,current_price,previous_price")
       .eq("slug", data.slug)
       .maybeSingle();
     if (error) throw error;
@@ -40,36 +63,64 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
         .maybeSingle(),
     ]);
 
-    // Investor intelligence — derived from REAL factors only
-    const a: any = (ch as any).character_attributes ?? { narrative_potential: 50, hype_rating: 50, investor_confidence: 50, volatility_rating: 50 };
-    const momentum = Number((ch as any).momentum ?? 0);
+    const momentum = Number(ch.momentum ?? 0);
+    const currentPrice = Number(ch.current_price ?? 0);
+    const previousPrice = Number(ch.previous_price ?? 0);
+    const priceMovePct = previousPrice > 0 ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0;
+    const recentMoves = (explanations.data ?? []).map((row: any) => Number(row.pct_change)).filter(Number.isFinite);
+    const avgRecentMove = average(recentMoves);
+    const avgRecentAbsMove = average(recentMoves.map(Math.abs));
+    const rumorMoves = (rumors.data ?? []).map((row: any) => Number(row.pct_change)).filter(Number.isFinite);
+    const totalRumorMove = rumorMoves.reduce((sum, value) => sum + value, 0);
+    const avgRumorAbsMove = average(rumorMoves.map(Math.abs));
+    const reportSentiment = latestReport.data?.sentiment ?? "neutral";
+    const reportAvgChange = Number(latestReport.data?.avg_change_pct ?? 0);
+
     const bullish: string[] = [];
     const bearish: string[] = [];
 
-    if (a.investor_confidence >= 65) bullish.push(`Investor confidence elevated (${a.investor_confidence}/100)`);
-    if (a.investor_confidence <= 35) bearish.push(`Investor confidence weak (${a.investor_confidence}/100)`);
-    if (a.hype_rating >= 65) bullish.push(`Community hype trending up (${a.hype_rating}/100)`);
-    if (a.hype_rating <= 30) bearish.push(`Community attention fading (${a.hype_rating}/100)`);
-    if (a.narrative_potential >= 65) bullish.push(`Strong narrative potential (${a.narrative_potential}/100)`);
     if (momentum > 0.5) bullish.push(`Positive momentum (+${momentum.toFixed(2)})`);
     if (momentum < -0.5) bearish.push(`Negative momentum (${momentum.toFixed(2)})`);
-    if ((rumors.data ?? []).some((r: any) => Number(r.pct_change) > 0)) bullish.push("Active bullish rumor in circulation");
-    if ((rumors.data ?? []).some((r: any) => Number(r.pct_change) < 0)) bearish.push("Active bearish rumor in circulation");
+    if (priceMovePct >= 2) bullish.push(`Observable price strength (+${priceMovePct.toFixed(2)}%)`);
+    if (priceMovePct <= -2) bearish.push(`Observable price weakness (${priceMovePct.toFixed(2)}%)`);
+    if (rumorMoves.some((pct) => pct > 0)) bullish.push("Active bullish rumor in circulation");
+    if (rumorMoves.some((pct) => pct < 0)) bearish.push("Active bearish rumor in circulation");
+    if (avgRecentMove >= 2) bullish.push(`Recent public moves trending positive (+${avgRecentMove.toFixed(2)}%)`);
+    if (avgRecentMove <= -2) bearish.push(`Recent public moves trending negative (${avgRecentMove.toFixed(2)}%)`);
+    if (reportSentiment === "bullish" || reportSentiment === "extremely_bullish") bullish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
+    if (reportSentiment === "bearish" || reportSentiment === "extremely_bearish") bearish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
 
-    const confidence = Math.round(a.investor_confidence * 0.6 + a.narrative_potential * 0.4);
-    const risk = Math.round(a.volatility_rating * 0.7 + (ch.category === "meme" ? 30 : ch.category === "speculative" ? 18 : ch.category === "growth" ? 8 : 2));
+    // Deterministic public scores combine visible trend, event, rumor, and report data.
+    const confidence = clampScore(
+      50
+        + clamp(momentum * 8, -20, 20)
+        + clamp(priceMovePct * 2, -15, 15)
+        + clamp(totalRumorMove * 2, -10, 10)
+        + clamp(avgRecentMove, -10, 10)
+        + clamp(reportAvgChange, -10, 10)
+        + sentimentScore(String(reportSentiment)),
+    );
+    const categoryBaseRisk = ch.category === "meme" ? 70 : ch.category === "speculative" ? 55 : ch.category === "growth" ? 35 : 22;
+    const risk = clampScore(
+      categoryBaseRisk
+        + clamp(Math.abs(momentum) * 6, 0, 20)
+        + clamp(Math.abs(priceMovePct) * 2, 0, 18)
+        + clamp(avgRecentAbsMove, 0, 20)
+        + clamp(avgRumorAbsMove * 2, 0, 12)
+        + clamp(Math.abs(reportAvgChange), 0, 10),
+    );
 
     return {
       character: ch,
       explanations: explanations.data ?? [],
       rumors: rumors.data ?? [],
-      sentiment: latestReport.data?.sentiment ?? "neutral",
-      avg_change_pct: latestReport.data?.avg_change_pct ?? 0,
+      sentiment: reportSentiment,
+      avg_change_pct: reportAvgChange,
       intel: {
         bullish,
         bearish,
-        confidence: Math.min(100, Math.max(0, confidence)),
-        risk: Math.min(100, Math.max(0, risk)),
+        confidence,
+        risk,
       },
     };
   });
