@@ -86,6 +86,21 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
 const REWARDS = [750, 600, 500, 400, 300, 200, 100];
 function rewardForAttempt(n: number) { return n <= 0 ? 0 : REWARDS[Math.min(n, REWARDS.length) - 1]; }
 
+type GuessAdminClient = Awaited<ReturnType<typeof admin>>;
+
+async function awardGrandLineGuessReward(
+  db: GuessAdminClient,
+  args: { puzzleId: string; userId: string; attemptNumber: number; rewardAmount: number },
+) {
+  const { error } = await db.rpc("award_grand_line_guess_reward", {
+    _puzzle_id: args.puzzleId,
+    _user_id: args.userId,
+    _attempt_number: args.attemptNumber,
+    _reward_amount: args.rewardAmount,
+  });
+  if (error) throw new Error("Could not award Grand Line Guess reward. Please refresh and try again.");
+}
+
 function utcDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -224,8 +239,24 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     const guess = guessR.data as CharRow;
 
     // count existing attempts to compute attempt_number
-    const existing = await db.from("grand_line_guess_attempts").select("id,guessed_character_id").eq("puzzle_id", puzzle.id).eq("user_id", userId);
-    if (existing.data?.some(a => a.guessed_character_id === guess.id)) throw new Error("You already guessed that character.");
+    const existing = await db
+      .from("grand_line_guess_attempts")
+      .select("id,guessed_character_id,attempt_number,is_correct")
+      .eq("puzzle_id", puzzle.id)
+      .eq("user_id", userId);
+    const duplicateAttempt = existing.data?.find(a => a.guessed_character_id === guess.id);
+    if (duplicateAttempt) {
+      if (guess.id === target.id && duplicateAttempt.is_correct) {
+        await awardGrandLineGuessReward(db, {
+          puzzleId: puzzle.id,
+          userId,
+          attemptNumber: duplicateAttempt.attempt_number,
+          rewardAmount: rewardForAttempt(duplicateAttempt.attempt_number),
+        });
+        return loadState(userId);
+      }
+      throw new Error("You already guessed that character.");
+    }
     const attemptNumber = (existing.data?.length ?? 0) + 1;
 
     const feedback = computeFeedback(guess, target);
@@ -235,56 +266,43 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
       puzzle_id: puzzle.id, user_id: userId, guessed_character_id: guess.id,
       attempt_number: attemptNumber, feedback, is_correct: isCorrect,
     }).select().single();
-    if (ins.error) throw new Error("Could not record guess. Please try again.");
-
-    // ensure result row
-    const existingResult = await db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
-    const hintsUsed = existingResult.data?.hints_used ?? 0;
+    if (ins.error) {
+      if (ins.error.code === "23505") {
+        const retry = await db
+          .from("grand_line_guess_attempts")
+          .select("id,guessed_character_id,attempt_number,is_correct")
+          .eq("puzzle_id", puzzle.id)
+          .eq("user_id", userId)
+          .eq("guessed_character_id", guess.id)
+          .maybeSingle();
+        if (retry.data) {
+          if (guess.id === target.id && retry.data.is_correct) {
+            await awardGrandLineGuessReward(db, {
+              puzzleId: puzzle.id,
+              userId,
+              attemptNumber: retry.data.attempt_number,
+              rewardAmount: rewardForAttempt(retry.data.attempt_number),
+            });
+            return loadState(userId);
+          }
+          throw new Error("You already guessed that character.");
+        }
+      }
+      throw new Error("Could not record guess. Please try again.");
+    }
 
     if (isCorrect) {
       const reward = rewardForAttempt(attemptNumber);
-
-      // atomic-ish reward: upsert result with reward_paid guard, then credit wallet only if newly paid
-      const upsertR = await db.from("grand_line_guess_results").upsert({
-        puzzle_id: puzzle.id, user_id: userId, solved: true,
-        attempts_used: attemptNumber, hints_used: hintsUsed,
-        reward_paid: true, reward_amount: reward, solved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "puzzle_id,user_id" }).select().single();
-      if (upsertR.error) throw upsertR.error;
-
-      // Only pay if this transition is the one that flipped reward_paid.
-      // Re-check: if previous row had reward_paid=true, don't pay again.
-      const alreadyPaid = existingResult.data?.reward_paid === true;
-      if (!alreadyPaid && reward > 0) {
-        const { data: wallet } = await db.from("user_wallets").select("berries").eq("user_id", userId).single();
-        if (wallet) {
-          await db.from("user_wallets").update({ berries: Number(wallet.berries) + reward, updated_at: new Date().toISOString() }).eq("user_id", userId);
-        }
-      }
-
-      await db.from("grand_line_guess_daily_puzzles").update({ status: "solved", updated_at: new Date().toISOString() }).eq("id", puzzle.id);
-
-      // update stats
-      const today = utcDate();
-      const statsR = await db.from("grand_line_guess_stats").select("*").eq("user_id", userId).maybeSingle();
-      const s = statsR.data;
-      const gp = (s?.games_played ?? 0) + (s?.last_played_date === today ? 0 : 1);
-      const gw = (s?.games_won ?? 0) + 1;
-      const isConsecutive = s?.last_win_date && (new Date(today).getTime() - new Date(s.last_win_date).getTime()) <= 86400000 * 1.5;
-      const cs = isConsecutive ? (s?.current_streak ?? 0) + 1 : 1;
-      const bs = Math.max(s?.best_streak ?? 0, cs);
-      const totalAttempts = (Number(s?.average_attempts ?? 0) * (s?.games_won ?? 0)) + attemptNumber;
-      const avg = totalAttempts / gw;
-      const oneShot = (s?.one_shot_wins ?? 0) + (attemptNumber === 1 ? 1 : 0);
-      const totalRewards = (s?.total_rewards_earned ?? 0) + (alreadyPaid ? 0 : reward);
-      await db.from("grand_line_guess_stats").upsert({
-        user_id: userId, games_played: gp, games_won: gw,
-        current_streak: cs, best_streak: bs, average_attempts: avg,
-        one_shot_wins: oneShot, total_rewards_earned: totalRewards,
-        last_played_date: today, last_win_date: today, updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
+      await awardGrandLineGuessReward(db, {
+        puzzleId: puzzle.id,
+        userId,
+        attemptNumber,
+        rewardAmount: reward,
+      });
     } else {
+      // ensure result row
+      const existingResult = await db.from("grand_line_guess_results").select("hints_used").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
+      const hintsUsed = existingResult.data?.hints_used ?? 0;
       await db.from("grand_line_guess_results").upsert({
         puzzle_id: puzzle.id, user_id: userId,
         attempts_used: attemptNumber, hints_used: hintsUsed,
