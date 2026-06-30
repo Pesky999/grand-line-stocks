@@ -24,6 +24,32 @@ type Feedback = {
   bounty: Cell; height: Cell; first_arc: Cell;
 };
 
+// Classify a character's Devil Fruit into its type per the source spreadsheet.
+// Returns one of: "Paramecia" | "Logia" | "Zoan" | "Paramecia/Logia" | "N/A".
+function devilFruitType(c: CharRow): string {
+  if (!c.has_devil_fruit) return "N/A";
+  const name = (c.devil_fruit_name ?? "").trim();
+  // Blackbeard — explicit dual type per source document.
+  if (/Yami Yami no Mi\s*\/\s*Gura Gura no Mi/i.test(name)) return "Paramecia/Logia";
+  // Logia fruits (canonical set present in the source document).
+  const LOGIA = new Set([
+    "Mera Mera no Mi", "Hie Hie no Mi", "Pika Pika no Mi", "Magu Magu no Mi",
+    "Goro Goro no Mi", "Suna Suna no Mi", "Moku Moku no Mi", "Gasu Gasu no Mi",
+    "Mori Mori no Mi", "Yami Yami no Mi", "Yuki Yuki no Mi", "Numa Numa no Mi",
+  ]);
+  if (LOGIA.has(name)) return "Logia";
+  // Zoan: natural (Hito/Ryu/Neko/Ushi/Uo/Tori/Kumo/Hebi/Zou/Inu/Sara/Mushi/Kame),
+  // mythical/ancient via Model:, artificial SMILE fruits, and Artificial Zoan prefixes.
+  if (/\bSMILE\b/i.test(name)) return "Zoan";
+  if (/^Artificial\s+/i.test(name)) return "Zoan";
+  if (/^(Hito Hito|Ryu Ryu|Neko Neko|Ushi Ushi|Uo Uo|Tori Tori|Kumo Kumo|Hebi Hebi|Zou Zou|Inu Inu|Sara Sara|Mushi Mushi|Kame Kame)\b/i.test(name)) {
+    return "Zoan";
+  }
+  // Everything else categorised as Paramecia (covers Mochi Mochi/Special Paramecia
+  // and any unmapped fruit name in the source document).
+  return "Paramecia";
+}
+
 function computeFeedback(guess: CharRow, target: CharRow): Feedback {
   const fb: Feedback = {
     character: { value: guess.name, result: guess.id === target.id ? "exact" : "wrong" },
@@ -35,13 +61,11 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
       return { value: guess.affiliation, result: "wrong" as const };
     })(),
     devil_fruit: (() => {
-      const gd = guess.devil_fruit_display ?? "No Known Devil Fruit";
-      if (guess.has_devil_fruit && target.has_devil_fruit) {
-        if (guess.devil_fruit_name && target.devil_fruit_name && guess.devil_fruit_name === target.devil_fruit_name) return { value: gd, result: "exact" as const };
-        return { value: gd, result: "partial" as const };
-      }
-      if (!guess.has_devil_fruit && !target.has_devil_fruit) return { value: gd, result: "exact" as const };
-      return { value: gd, result: "wrong" as const };
+      // Display & comparison are based on Devil Fruit TYPE only — never the fruit name.
+      const guessType = devilFruitType(guess);
+      const targetType = devilFruitType(target);
+      const result = guessType === targetType ? ("exact" as const) : ("wrong" as const);
+      return { value: guessType, result };
     })(),
     haki: (() => {
       const g = [guess.has_armament, guess.has_observation, guess.has_conquerors];
