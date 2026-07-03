@@ -96,7 +96,7 @@ function Market() {
   // Clamp page beyond total
   useEffect(() => {
     if (pageData.page !== page) {
-      navigate({ search: (prev) => ({ ...prev, page: pageData.page }), replace: true });
+      navigate({ search: (prev: MarketSearch) => ({ ...prev, page: pageData.page }), replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageData.page, page]);
@@ -122,7 +122,7 @@ function Market() {
     .slice(0, PAGE_SIZE);
 
   const goToPage = (p: number) => {
-    navigate({ search: (prev) => ({ ...prev, page: p }) });
+    navigate({ search: (prev: MarketSearch) => ({ ...prev, page: p }) });
     setTimeout(() => tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
