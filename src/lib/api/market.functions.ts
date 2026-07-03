@@ -19,11 +19,49 @@ export const listCharacters = createServerFn({ method: "GET" }).handler(async ()
   const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
-    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at")
+    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,display_order")
     .order("current_price", { ascending: false });
   if (error) throw error;
   return data ?? [];
 });
+
+const marketPageInput = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(29),
+  q: z.string().max(80).optional().default(""),
+});
+
+export const listMarketPage = createServerFn({ method: "GET" })
+  .inputValidator((d) => marketPageInput.parse(d))
+  .handler(async ({ data }) => {
+    const db = getPublicSupabaseClient();
+    const { data: rows, error } = await db
+      .from("characters")
+      .select("id,slug,name,crew,bounty,current_price,previous_price,category,momentum,display_order")
+      .order("display_order", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true });
+    if (error) throw error;
+    const all = rows ?? [];
+    const q = data.q.trim().toLowerCase();
+    const filtered = q
+      ? all.filter((c) => {
+          const hay = `${c.name} ${c.slug} ${c.crew ?? ""}`.toLowerCase();
+          return hay.includes(q);
+        })
+      : all;
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / data.pageSize));
+    const page = Math.min(Math.max(1, data.page), totalPages);
+    const start = (page - 1) * data.pageSize;
+    return {
+      rows: filtered.slice(start, start + data.pageSize),
+      page,
+      pageSize: data.pageSize,
+      total,
+      totalPages,
+    };
+  });
+
 
 export const getCharacter = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string() }).parse(d))
