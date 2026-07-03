@@ -15,12 +15,35 @@ async function requireAdminRole(userId: string) {
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
+type CharacterRow = {
+  id: string;
+  slug: string;
+  name: string;
+  crew: string | null;
+  role: string | null;
+  bounty: number | null;
+  image_url: string | null;
+  description: string | null;
+  current_price: number;
+  previous_price: number;
+  category: "blue_chip" | "growth" | "speculative" | "meme";
+  momentum: number;
+  updated_at: string;
+  display_order: number | null;
+};
+
+type MarketPageRow = Pick<
+  CharacterRow,
+  "id" | "slug" | "name" | "crew" | "bounty" | "current_price" | "previous_price" | "category" | "momentum" | "display_order"
+>;
+
 export const listCharacters = createServerFn({ method: "GET" }).handler(async () => {
   const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
     .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,display_order")
-    .order("current_price", { ascending: false });
+    .order("current_price", { ascending: false })
+    .returns<CharacterRow[]>();
   if (error) throw error;
   return data ?? [];
 });
@@ -39,9 +62,10 @@ export const listMarketPage = createServerFn({ method: "GET" })
       .from("characters")
       .select("id,slug,name,crew,bounty,current_price,previous_price,category,momentum,display_order")
       .order("display_order", { ascending: true, nullsFirst: false })
-      .order("name", { ascending: true });
+      .order("name", { ascending: true })
+      .returns<MarketPageRow[]>();
     if (error) throw error;
-    const all = rows ?? [];
+    const all: MarketPageRow[] = rows ?? [];
     const q = data.q.trim().toLowerCase();
     const filtered = q
       ? all.filter((c) => {
@@ -61,6 +85,7 @@ export const listMarketPage = createServerFn({ method: "GET" })
       totalPages,
     };
   });
+
 
 
 export const getCharacter = createServerFn({ method: "GET" })
