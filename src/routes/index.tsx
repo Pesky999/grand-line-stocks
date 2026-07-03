@@ -23,13 +23,17 @@ const marketPageQO = (page: number, q: string) =>
     queryFn: () => listMarketPage({ data: { page, pageSize: PAGE_SIZE, q } }),
   });
 
-const searchSchema = z.object({
-  page: fallback(z.number().int().min(1), 1).default(1),
-  q: fallback(z.string().max(80), "").default(""),
-});
+type MarketSearch = { page: number; q: string };
 
 export const Route = createFileRoute("/")({
-  validateSearch: zodValidator(searchSchema),
+  validateSearch: (raw: Record<string, unknown>): MarketSearch => {
+    const rawPage = Number(raw.page);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const rawQ = typeof raw.q === "string" ? raw.q : "";
+    const q = rawQ.slice(0, 80);
+    return { page, q };
+  },
+
   loaderDeps: ({ search }) => ({ page: search.page, q: search.q }),
   head: () => ({
     meta: [
