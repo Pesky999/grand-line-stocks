@@ -73,6 +73,14 @@ function CharacterPage() {
   const up = diff >= 0;
   const held = me?.holdings.find((h) => h.slug === slug);
 
+  const quoteMetadata = [
+    c.crew?.trim() || "Independent",
+    c.role?.trim() || null,
+    c.epithet?.trim() ? `"${c.epithet.trim()}"` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const chartData = history.map((h) => ({
     t: new Date(h.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     price: Number(h.price),
@@ -118,7 +126,9 @@ function CharacterPage() {
             </div>
             <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto]">
               <div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground">{c.crew ?? "Independent"} · {c.role ?? ""}</div>
+                <div className="text-xs uppercase tracking-widest text-muted-foreground">
+                  {quoteMetadata}
+                </div>
                 <h1 className="mt-1 text-2xl font-bold text-foreground">{c.name}</h1>
                 <div className="mt-1 text-xs text-muted-foreground">SYM <span className="text-accent">{slug.toUpperCase()}</span> · BOUNTY <span className="text-foreground">{formatBounty(Number(c.bounty))}</span></div>
                 {c.description && <p className="mt-3 max-w-prose text-sm text-muted-foreground">{c.description}</p>}

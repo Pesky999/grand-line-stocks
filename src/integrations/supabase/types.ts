@@ -97,6 +97,7 @@ export type Database = {
           current_price: number
           description: string | null
           display_order: number | null
+          epithet: string | null;
           id: string
           image_url: string | null
           momentum: number
@@ -114,6 +115,7 @@ export type Database = {
           current_price?: number
           description?: string | null
           display_order?: number | null
+          epithet?: string | null;
           id?: string
           image_url?: string | null
           momentum?: number
@@ -131,6 +133,7 @@ export type Database = {
           current_price?: number
           description?: string | null
           display_order?: number | null
+          epithet?: string | null;
           id?: string
           image_url?: string | null
           momentum?: number

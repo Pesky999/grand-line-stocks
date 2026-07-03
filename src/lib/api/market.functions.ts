@@ -19,6 +19,7 @@ type CharacterRow = {
   id: string;
   slug: string;
   name: string;
+  epithet: string | null;
   crew: string | null;
   role: string | null;
   bounty: number | null;
@@ -41,7 +42,9 @@ export const listCharacters = createServerFn({ method: "GET" }).handler(async ()
   const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
-    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,display_order")
+    .select(
+      "id,slug,name,epithet,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,display_order",
+    )
     .order("current_price", { ascending: false })
     .returns<CharacterRow[]>();
   if (error) throw error;
@@ -158,6 +161,78 @@ export const adminUpdatePrice = createServerFn({ method: "POST" })
     if (e2) throw e2;
     await db.from("price_history").insert({ character_id: existing.id, price: data.newPrice, note: data.note ?? null });
     return { ok: true };
+  });
+
+const stockCategorySchema = z.enum(["blue_chip", "growth", "speculative", "meme"]);
+
+function normalizeOptionalText(value: unknown, options?: { stripQuotes?: boolean }) {
+  if (value == null) return null;
+  if (typeof value !== "string") return value;
+  let text = value.trim();
+  if (options?.stripQuotes) {
+    text = text.replace(/^[\u201c\u201d"']+|[\u201c\u201d"']+$/g, "").trim();
+  }
+  return text === "" ? null : text;
+}
+
+const optionalTextSchema = (max: number, options?: { stripQuotes?: boolean }) =>
+  z.preprocess((value) => normalizeOptionalText(value, options), z.string().max(max).nullable());
+
+const adminUpdateCharacterInfoInput = z
+  .object({
+    slug: z.preprocess(
+      (value) => (typeof value === "string" ? value.trim() : value),
+      z.string().min(1).max(80),
+    ),
+    name: z.preprocess(
+      (value) => (typeof value === "string" ? value.trim() : value),
+      z.string().min(1).max(120),
+    ),
+    epithet: optionalTextSchema(120, { stripQuotes: true }),
+    crew: optionalTextSchema(120),
+    role: optionalTextSchema(120),
+    bounty: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
+    description: optionalTextSchema(2000),
+    category: stockCategorySchema,
+  })
+  .strict();
+
+export const adminUpdateCharacterInfo = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => adminUpdateCharacterInfoInput.parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
+    const db = await admin();
+    const { data: existing, error: lookupError } = await db
+      .from("characters")
+      .select("id")
+      .eq("slug", data.slug)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!existing) throw new Error("Character not found");
+
+    const { data: updated, error } = await db
+      .from("characters")
+      .update({
+        name: data.name,
+        epithet: data.epithet,
+        crew: data.crew,
+        role: data.role,
+        bounty: data.bounty,
+        description: data.description,
+        category: data.category,
+      })
+      .eq("id", existing.id)
+      .select("name,epithet,crew,role,bounty,description,category")
+      .single();
+    if (error) throw error;
+    return updated;
   });
 
 export const adminPostNews = createServerFn({ method: "POST" })
