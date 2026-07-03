@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-// no external zod-adapter — inline validateSearch below
-import { z } from "zod";
+// URL search state validated inline in validateSearch below
+
 
 import { listCharacters, listMarketPage, listNews } from "@/lib/api/market.functions";
 import { listRecentEvents } from "@/lib/api/events.functions";
