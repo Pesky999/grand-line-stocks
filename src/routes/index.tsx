@@ -1,19 +1,41 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { listCharacters, listNews } from "@/lib/api/market.functions";
+import { useEffect, useRef, useState } from "react";
+// URL search state validated inline in validateSearch below
+
+
+import { listCharacters, listMarketPage, listNews } from "@/lib/api/market.functions";
 import { listRecentEvents } from "@/lib/api/events.functions";
 import { getLatestReport, listActiveRumors } from "@/lib/api/living-market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
 
+const PAGE_SIZE = 29;
+
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
 const newsQO = queryOptions({ queryKey: ["news"], queryFn: () => listNews() });
 const eventsQO = queryOptions({ queryKey: ["events", "recent", 6], queryFn: () => listRecentEvents({ data: { limit: 6 } }) });
 const reportQO = queryOptions({ queryKey: ["report", "latest"], queryFn: () => getLatestReport() });
 const rumorsQO = queryOptions({ queryKey: ["rumors", "active", 5], queryFn: () => listActiveRumors({ data: { limit: 5 } }) });
+const marketPageQO = (page: number, q: string) =>
+  queryOptions({
+    queryKey: ["market", "page", page, q],
+    queryFn: () => listMarketPage({ data: { page, pageSize: PAGE_SIZE, q } }),
+  });
+
+type MarketSearch = { page: number; q: string };
 
 export const Route = createFileRoute("/")({
+  validateSearch: (raw: Record<string, unknown>): MarketSearch => {
+    const rawPage = Number(raw.page);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const rawQ = typeof raw.q === "string" ? raw.q : "";
+    const q = rawQ.slice(0, 80);
+    return { page, q };
+  },
+
+  loaderDeps: ({ search }) => ({ page: search.page, q: search.q }),
   head: () => ({
     meta: [
       { title: "Berry Street — The One Piece Stock Market" },
@@ -22,13 +44,14 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Track live stock prices for every One Piece character." },
     ],
   }),
-  loader: ({ context }) =>
+  loader: ({ context, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(charsQO),
       context.queryClient.ensureQueryData(newsQO),
       context.queryClient.ensureQueryData(eventsQO),
       context.queryClient.ensureQueryData(reportQO),
       context.queryClient.ensureQueryData(rumorsQO),
+      context.queryClient.ensureQueryData(marketPageQO(deps.page, deps.q)),
     ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
@@ -50,6 +73,35 @@ function Market() {
   const { data: report } = useSuspenseQuery(reportQO);
   const { data: rumors } = useSuspenseQuery(rumorsQO);
 
+  const { page, q } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [qInput, setQInput] = useState(q);
+  const tableTopRef = useRef<HTMLDivElement>(null);
+
+  // Debounce search input → URL
+  useEffect(() => {
+    setQInput(q);
+  }, [q]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const trimmed = qInput.trim().slice(0, 80);
+      if (trimmed === q) return;
+      navigate({ search: () => ({ q: trimmed, page: 1 }), replace: true });
+    }, 200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qInput]);
+
+  const { data: pageData } = useSuspenseQuery(marketPageQO(page, q));
+
+  // Clamp page beyond total
+  useEffect(() => {
+    if (pageData.page !== page) {
+      navigate({ search: (prev: MarketSearch) => ({ ...prev, page: pageData.page }), replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageData.page, page]);
+
   const movers = [...characters].sort((a, b) => {
     const da = (a.current_price - a.previous_price) / a.previous_price;
     const db = (b.current_price - b.previous_price) / b.previous_price;
@@ -60,9 +112,29 @@ function Market() {
 
   const totalMcap = characters.reduce((s, c) => s + Number(c.current_price), 0);
 
+  // Ticker: first 29 by display_order (fall back to price order if display_order null)
+  const tickerItems = [...characters]
+    .sort((a, b) => {
+      const ao = a.display_order ?? Number.MAX_SAFE_INTEGER;
+      const bo = b.display_order ?? Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, PAGE_SIZE);
+
+  const goToPage = (p: number) => {
+    navigate({ search: (prev: MarketSearch) => ({ ...prev, page: p }) });
+    setTimeout(() => tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const rows = pageData.rows;
+  const totalPages = pageData.totalPages;
+  const rangeStart = pageData.total === 0 ? 0 : (pageData.page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(pageData.page * PAGE_SIZE, pageData.total);
+
   return (
     <TerminalShell>
-      <Ticker items={characters} />
+      <Ticker items={tickerItems} />
 
       {report && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 px-4 py-2 text-xs">
@@ -78,7 +150,7 @@ function Market() {
         </div>
       )}
 
-      {/* Top stats strip */}
+      {/* Top stats strip — uses all characters, not paginated */}
       <div className="grid grid-cols-2 gap-px border-b border-border bg-border md:grid-cols-4">
         <Stat label="MKT INDEX" value={(totalMcap / characters.length).toFixed(2)} sub="avg price" />
         <Stat label="LISTED" value={characters.length.toString()} sub="characters" />
@@ -88,11 +160,39 @@ function Market() {
 
       <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
         {/* Market table */}
-        <section className="terminal-panel overflow-hidden">
-          <div className="terminal-header flex items-center justify-between">
+        <section ref={tableTopRef} className="terminal-panel overflow-hidden">
+          <div className="terminal-header flex items-center justify-between gap-2">
             <span>● Live Quotes</span>
-            <span className="text-muted-foreground">{characters.length} symbols</span>
+            <span className="text-muted-foreground tabular">
+              {q ? `${pageData.total} match${pageData.total === 1 ? "" : "es"}` : `${characters.length} symbols`}
+            </span>
           </div>
+
+          {/* Search bar */}
+          <div className="flex items-center gap-2 border-b border-border bg-card/40 px-3 py-2">
+            <input
+              type="text"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value.slice(0, 80))}
+              placeholder="Search character, symbol, or crew..."
+              maxLength={80}
+              className="flex-1 bg-transparent px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent border border-border rounded-none"
+              aria-label="Search characters"
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQInput("");
+                  navigate({ search: () => ({ q: "", page: 1 }), replace: true });
+                }}
+                className="text-xs text-muted-foreground hover:text-primary px-2 py-1 border border-border"
+              >
+                CLEAR ✕
+              </button>
+            )}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-xs tabular">
               <thead className="text-muted-foreground">
@@ -107,7 +207,14 @@ function Market() {
                 </tr>
               </thead>
               <tbody>
-                {characters.map((c) => {
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                      No symbols match “{q}”.
+                    </td>
+                  </tr>
+                )}
+                {rows.map((c) => {
                   const diff = Number(c.current_price) - Number(c.previous_price);
                   const p = (diff / Number(c.previous_price)) * 100;
                   const up = diff >= 0;
@@ -129,12 +236,22 @@ function Market() {
                       <td className={`px-3 py-2 text-right ${up ? "text-bull" : "text-bear"}`}>
                         {up ? "▲" : "▼"} {Math.abs(p).toFixed(2)}%
                       </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground hidden lg:table-cell">{formatBounty(Number(c.bounty))}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground hidden lg:table-cell">
+                        {c.bounty == null ? "—" : formatBounty(Number(c.bounty))}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card/40 px-3 py-2 text-xs">
+            <span className="text-muted-foreground tabular">
+              Showing {rangeStart}–{rangeEnd} of {pageData.total} symbols
+            </span>
+            <Pagination page={pageData.page} totalPages={totalPages} onGo={goToPage} />
           </div>
         </section>
 
@@ -225,6 +342,38 @@ function Market() {
         </aside>
       </div>
     </TerminalShell>
+  );
+}
+
+function Pagination({ page, totalPages, onGo }: { page: number; totalPages: number; onGo: (p: number) => void }) {
+  const prevDisabled = page <= 1;
+  const nextDisabled = page >= totalPages;
+  const btn = "px-2 py-1 border border-border tabular text-xs hover:bg-secondary/60 disabled:opacity-40 disabled:cursor-not-allowed";
+  const active = "bg-accent/20 text-accent border-accent";
+  const pages: number[] = [];
+  for (let i = 1; i <= totalPages; i++) pages.push(i);
+  return (
+    <div className="flex items-center gap-1">
+      <button className={btn} disabled={prevDisabled} onClick={() => onGo(page - 1)}>← PREV</button>
+      {/* Desktop numbered pages */}
+      <div className="hidden sm:flex items-center gap-1">
+        {pages.map((p) => (
+          <button
+            key={p}
+            className={`${btn} ${p === page ? active : ""}`}
+            onClick={() => onGo(p)}
+            aria-current={p === page ? "page" : undefined}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      {/* Mobile compact indicator */}
+      <span className="sm:hidden px-2 text-muted-foreground tabular">
+        PAGE {page} OF {totalPages}
+      </span>
+      <button className={btn} disabled={nextDisabled} onClick={() => onGo(page + 1)}>NEXT →</button>
+    </div>
   );
 }
 
