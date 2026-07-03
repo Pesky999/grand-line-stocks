@@ -96,6 +96,7 @@ export type Database = {
           crew: string | null
           current_price: number
           description: string | null
+          display_order: number | null
           id: string
           image_url: string | null
           momentum: number
@@ -112,6 +113,7 @@ export type Database = {
           crew?: string | null
           current_price?: number
           description?: string | null
+          display_order?: number | null
           id?: string
           image_url?: string | null
           momentum?: number
@@ -128,6 +130,7 @@ export type Database = {
           crew?: string | null
           current_price?: number
           description?: string | null
+          display_order?: number | null
           id?: string
           image_url?: string | null
           momentum?: number
