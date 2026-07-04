@@ -6,8 +6,6 @@ import { TerminalShell } from "@/components/TerminalShell";
 import { amIAdmin } from "@/lib/api/market.functions";
 import {
   adminListAttributes,
-  adminRunDailyCycle,
-  adminGenerateRumor,
   adminUpdateAttributes,
 } from "@/lib/api/living-market.functions";
 
@@ -30,38 +28,18 @@ const CATS = ["blue_chip", "growth", "speculative", "meme"] as const;
 function MarketAdmin() {
   const { data: chars } = useSuspenseQuery(attrsQO);
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
-
-  async function run(fn: () => Promise<unknown>, label: string) {
-    setBusy(true);
-    try {
-      await fn();
-      toast.success(label);
-      router.invalidate();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <TerminalShell>
       <div className="mx-auto max-w-5xl space-y-4 p-4">
         <section className="terminal-panel">
-          <div className="terminal-header text-warn">⚡ Living Market Controls</div>
-          <div className="flex flex-wrap gap-3 p-4">
-            <button disabled={busy} onClick={() => run(() => adminRunDailyCycle(), "Daily cycle executed")}
-              className="bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40">
-              ▶ Run Daily Cycle
-            </button>
-            <button disabled={busy} onClick={() => run(() => adminGenerateRumor(), "Rumor generated")}
-              className="bg-accent px-4 py-2 text-xs font-bold uppercase tracking-widest text-accent-foreground hover:opacity-90 disabled:opacity-40">
-              ◆ Generate Rumor
-            </button>
-          </div>
-          <div className="px-4 pb-4 text-[10px] text-muted-foreground">
-            Daily cycle is idempotent per UTC day. Schedule runs automatically; use these to trigger manually.
+          <div className="terminal-header text-warn">Living Market Automation</div>
+          <div className="space-y-2 p-4 text-xs text-muted-foreground">
+            <p className="text-foreground">Market movements are currently human-directed.</p>
+            <p>
+              Automatic random market movement is disabled from the application interface. Use
+              manual price updates or reviewed market events for approved changes.
+            </p>
           </div>
         </section>
 

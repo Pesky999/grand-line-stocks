@@ -65,26 +65,6 @@ export const listActiveRumors = createServerFn({ method: "GET" })
 
 // ---------- Admin actions ----------
 
-export const adminRunDailyCycle = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { data, error } = await db.rpc("run_daily_market_cycle");
-    if (error) throw new Error(error.message);
-    return data;
-  });
-
-export const adminGenerateRumor = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
-    const { data, error } = await db.rpc("generate_market_rumor");
-    if (error) throw new Error(error.message);
-    return data;
-  });
-
 export const adminListAttributes = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
