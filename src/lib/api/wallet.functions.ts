@@ -92,26 +92,6 @@ export const listMyTransactions = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
-export const submitTriviaAnswer = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ questionId: z.string().uuid(), choiceIndex: z.number().int().min(0).max(10) }).parse(d))
-  .handler(async ({ data, context }) => {
-    // Atomic RPC: validates user, dedupes attempts, and credits wallet in one transaction.
-    // Runs as the authenticated user (auth.uid() inside the function).
-    const { data: rows, error } = await context.supabase.rpc("submit_trivia_answer", {
-      _question_id: data.questionId,
-      _choice_index: data.choiceIndex,
-    });
-    if (error) throw new Error(error.message);
-    const r: any = Array.isArray(rows) ? rows[0] : rows;
-    return {
-      correct: !!r?.correct,
-      reward: Number(r?.reward ?? 0),
-      alreadyAnswered: !!r?.already_answered,
-    };
-  });
-
-
 // NOTE: A self-serve account reset previously lived here, but it could not safely
 // clear derived state (user_stats, net_worth_snapshots, leaderboard_cache,
 // achievements, legacy_records, transactions history) without leaving the public
