@@ -3,6 +3,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { listCharacters, adminUpdatePrice, adminPostNews, amIAdmin } from "@/lib/api/market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
+import { CharacterManagementPanel } from "@/components/admin/CharacterManagementPanel";
 import { toast } from "sonner";
 
 const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
@@ -63,7 +64,7 @@ function Admin() {
         <div className="terminal-panel">
           <div className="terminal-header text-warn">⚡ Editor Console — Admin Role Verified</div>
           <div className="space-y-3 p-4 text-xs text-muted-foreground">
-            <p>You are signed in with the <span className="text-accent">admin</span> role. All actions are logged against your account.</p>
+            <p>You are signed in with the <span className="text-accent">admin</span> role. Administrative actions require the admin role.</p>
             <div className="flex flex-wrap gap-2">
               <Link to="/events-admin" className="inline-block bg-accent px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-accent-foreground hover:opacity-90">
                 → Event Editor (catalysts)
@@ -74,6 +75,8 @@ function Admin() {
             </div>
           </div>
         </div>
+
+        <CharacterManagementPanel characters={characters} />
 
         <form onSubmit={submitPrice} className="terminal-panel">
           <div className="terminal-header">Set Stock Price</div>

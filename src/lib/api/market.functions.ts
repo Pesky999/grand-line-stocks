@@ -15,7 +15,7 @@ async function requireAdminRole(userId: string) {
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
-type CharacterRow = {
+export type CharacterRow = {
   id: string;
   slug: string;
   name: string;
@@ -28,6 +28,7 @@ type CharacterRow = {
   previous_price: number;
   category: "blue_chip" | "growth" | "speculative" | "meme";
   momentum: number;
+  created_at: string;
   updated_at: string;
   display_order: number | null;
 };
@@ -41,7 +42,9 @@ export const listCharacters = createServerFn({ method: "GET" }).handler(async ()
   const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
-    .select("id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,display_order")
+    .select(
+      "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,created_at,updated_at,display_order",
+    )
     .order("current_price", { ascending: false })
     .returns<CharacterRow[]>();
   if (error) throw error;
@@ -158,6 +161,214 @@ export const adminUpdatePrice = createServerFn({ method: "POST" })
     if (e2) throw e2;
     await db.from("price_history").insert({ character_id: existing.id, price: data.newPrice, note: data.note ?? null });
     return { ok: true };
+  });
+
+const stockCategorySchema = z.enum(["blue_chip", "growth", "speculative", "meme"]);
+const nullableText = (max: number) =>
+  z.preprocess((value) => {
+    if (value == null) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? null : trimmed;
+  }, z.string().max(max).nullable());
+
+const nullableHttpUrl = z.preprocess(
+  (value) => {
+    if (value == null) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? null : trimmed;
+  },
+  z
+    .string()
+    .max(1000)
+    .url()
+    .refine((value) => {
+      try {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "Image URL must use http or https")
+    .nullable(),
+);
+
+const nullableSafeInteger = z.preprocess(
+  (value) => {
+    if (value == null) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
+  }, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable()
+);
+
+const nullableDisplayOrder = z.preprocess(
+  (value) => {
+    if (value == null) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
+  }, z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
+);
+
+const slugSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim().toLowerCase().replace(/-+/g, "-") : value),
+  z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/,
+      "Slug must use lowercase letters, numbers, and hyphens",
+    ),
+);
+
+const nameSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim() : value),
+  z.string().min(1).max(120),
+);
+
+const priceSchema = z
+  .number()
+  .finite()
+  .min(0.01)
+  .max(99999)
+  .refine((value) => {
+    const cents = Math.round(value * 100);
+    return Math.abs(value - cents / 100) < 1e-9;
+  }, "Price may use at most two decimals");
+
+const momentumSchema = z.number().finite().min(-5).max(5);
+
+const characterSelect =
+  "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,created_at,display_order";
+
+const adminCreateCharacterInput = z
+  .object({
+    slug: slugSchema,
+    name: nameSchema,
+    crew: nullableText(120),
+    role: nullableText(120),
+    bounty: nullableSafeInteger,
+    image_url: nullableHttpUrl,
+    description: nullableText(2000),
+    initialPrice: priceSchema,
+    category: stockCategorySchema,
+    display_order: nullableDisplayOrder,
+  })
+  .strict();
+
+const adminUpdateCharacterInput = z
+  .object({
+    slug: slugSchema,
+    name: nameSchema,
+    crew: nullableText(120),
+    role: nullableText(120),
+    bounty: nullableSafeInteger,
+    image_url: nullableHttpUrl,
+    description: nullableText(2000),
+    category: stockCategorySchema,
+    momentum: momentumSchema,
+    display_order: nullableDisplayOrder,
+  })
+  .strict();
+
+export const adminCreateCharacter = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => adminCreateCharacterInput.parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
+    const db = await admin();
+    const { data: duplicate, error: duplicateError } = await db
+      .from("characters")
+      .select("id")
+      .eq("slug", data.slug)
+      .maybeSingle();
+    if (duplicateError) throw duplicateError;
+    if (duplicate) throw new Error("Character slug already exists");
+
+    const initialPrice = data.initialPrice;
+    const { data: created, error: createError } = await db
+      .from("characters")
+      .insert({
+        slug: data.slug,
+        name: data.name,
+        crew: data.crew,
+        role: data.role,
+        bounty: data.bounty,
+        image_url: data.image_url,
+        description: data.description,
+        current_price: initialPrice,
+        previous_price: initialPrice,
+        category: data.category,
+        momentum: 0,
+        display_order: data.display_order,
+      })
+      .select(characterSelect)
+      .single();
+    if (createError) {
+      if (createError.code === "23505") throw new Error("Character slug already exists");
+      throw createError;
+    }
+    if (!created) throw new Error("Character creation failed");
+
+    const { error: historyError } = await db.from("price_history").insert({
+      character_id: created.id,
+      price: initialPrice,
+      note: "IPO",
+      source: "seed",
+    });
+
+    if (historyError) {
+      const { error: cleanupError } = await db.from("characters").delete().eq("id", created.id);
+      if (cleanupError) {
+        throw new Error(
+          "Character creation failed while writing IPO price history, and cleanup failed. No existing character was deleted.",
+        );
+      }
+      throw new Error(
+        "Character creation failed while writing IPO price history. The new character was removed.",
+      );
+    }
+
+    return created as CharacterRow;
+  });
+
+export const adminUpdateCharacter = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => adminUpdateCharacterInput.parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.userId);
+    const db = await admin();
+    const { data: existing, error: lookupError } = await db
+      .from("characters")
+      .select("id")
+      .eq("slug", data.slug)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!existing) throw new Error("Character not found");
+
+    const { data: updated, error } = await db
+      .from("characters")
+      .update({
+        name: data.name,
+        crew: data.crew,
+        role: data.role,
+        bounty: data.bounty,
+        image_url: data.image_url,
+        description: data.description,
+        category: data.category,
+        momentum: data.momentum,
+        display_order: data.display_order,
+      })
+      .eq("id", existing.id)
+      .select(characterSelect)
+      .single();
+    if (error) throw error;
+    return updated as CharacterRow;
   });
 
 export const adminPostNews = createServerFn({ method: "POST" })
