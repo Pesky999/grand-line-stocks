@@ -1,8 +1,8 @@
 # Berry Street Market Pricing V1
 
 This document describes the isolated deterministic core for Berry Street V1 character valuation and IPO pricing.
-This phase is application-code and test-code only. It does not change live prices, connect to an external database,
-or require Supabase access.
+Movement and simulation exist in separate modules. This formula calibration does not change live prices, connect to
+an external database, require Supabase access, or modify movement and simulation behavior.
 
 ## Purpose
 
@@ -39,15 +39,18 @@ weightedScore =
 ```
 
 Volatility does not affect fundamental fair value because it describes expected movement risk, not intrinsic
-character value. It will be used later for movement limits and classification.
+character value.
 
 ## Fair Value Formula
 
 The base fair value is:
 
 ```text
-baseFairValue = 25 * Math.exp(0.025 * weightedScore)
+baseFairValue = 50 * Math.exp(0.035835 * weightedScore)
 ```
+
+This produces a theoretical base fair-value range from Berry 50.00 at weighted score 0 to approximately Berry
+1,799.97 at weighted score 100.
 
 Calculations use full internal precision. Public Berry values are rounded to two decimal places only when returned
 for display. Later calculation stages do not use previously rounded display values.
@@ -63,7 +66,7 @@ Category remains a human-selected input. The model does not automatically assign
 | speculative | 12% | 25% |
 | meme | 18% | 30% |
 
-These movement limits are configuration only in this phase. There is no price-movement engine here.
+These movement limits are consumed by the separate movement engine.
 
 Returned movement limits are safe copies. Modifying a calculated result cannot mutate the shared category
 configuration or affect later calculations.
@@ -117,12 +120,12 @@ Warnings are returned when:
 - confidence is low
 - comparable adjustment is below `0.85` or above `1.15`
 - absolute launch catalyst exceeds `15`
-- suggested opening price is below Berry 25
-- suggested opening price exceeds Berry 350
+- suggested opening price is below Berry 40
+- suggested opening price exceeds Berry 2,000
 
 ## Algorithm Versioning
 
-The current algorithm version is `1.0.0`.
+The current algorithm version is `1.1.0`.
 
 Changing weights, formulas, validation ranges, rounding, or warning thresholds should increment the algorithm version
 and add migration or release notes in a later integration phase.
@@ -160,9 +163,11 @@ These examples use fictional placeholders, not One Piece characters.
 
 ## Current Limitations
 
-- No live character data is read.
+- No live character data is read or modified.
+- No ratings are persisted.
+- No official price is published.
 - No database prices, momentum, reports, events, news, cron jobs, or attributes are changed.
-- No market movement engine is included.
+- Movement and simulation behavior live in separate modules and are not modified by this formula.
 - Category assignment remains manual.
 - Launch catalyst handling is advisory only.
-- Final price publication remains a human/admin decision.
+- Final approval and price publication remain human/admin controlled.

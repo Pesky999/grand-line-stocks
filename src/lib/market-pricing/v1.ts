@@ -1,4 +1,6 @@
-export const MARKET_PRICING_ALGORITHM_VERSION = "1.0.0" as const;
+export const MARKET_PRICING_ALGORITHM_VERSION = "1.1.0" as const;
+export const MARKET_PRICING_BASE_FAIR_VALUE_MULTIPLIER = 50;
+export const MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT = 0.035835;
 
 export type MarketPricingAlgorithmVersion = typeof MARKET_PRICING_ALGORITHM_VERSION;
 
@@ -126,7 +128,10 @@ export function calculateWeightedScore(ratings: CharacterValuationRatings): numb
 
 function calculateRawBaseFairValue(weightedScore: number): number {
   assertRange(weightedScore, "weightedScore", 0, 100);
-  return 25 * Math.exp(0.025 * weightedScore);
+  return (
+    MARKET_PRICING_BASE_FAIR_VALUE_MULTIPLIER *
+    Math.exp(MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT * weightedScore)
+  );
 }
 
 export function calculateBaseFairValue(weightedScore: number): number {
@@ -177,11 +182,11 @@ export function calculateIpoPricing(input: IpoPricingInput): IpoPricingResult {
   if (Math.abs(input.launchCatalystPct) > 15) {
     warnings.push("Launch catalyst exceeds 15%; avoid double-counting the same event.");
   }
-  if (suggestedOpeningPrice < 25) {
-    warnings.push("Suggested opening price is below Berry 25.");
+  if (suggestedOpeningPrice < 40) {
+    warnings.push("Suggested opening price is below Berry 40.");
   }
-  if (suggestedOpeningPrice > 350) {
-    warnings.push("Suggested opening price exceeds Berry 350.");
+  if (suggestedOpeningPrice > 2000) {
+    warnings.push("Suggested opening price exceeds Berry 2,000.");
   }
 
   return {
