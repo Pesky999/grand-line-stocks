@@ -23,6 +23,7 @@ import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as GamesGrandLineGuessRouteImport } from './routes/games.grand-line-guess'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedPricingAdminRouteImport } from './routes/_authenticated/pricing-admin'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
 import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenticated/market-admin'
 import { Route as AuthenticatedEventsAdminRouteImport } from './routes/_authenticated/events-admin'
@@ -97,6 +98,12 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPricingAdminRoute =
+  AuthenticatedPricingAdminRouteImport.update({
+    id: '/pricing-admin',
+    path: '/pricing-admin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPortfolioRoute = AuthenticatedPortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -133,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
+  '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
@@ -151,6 +159,7 @@ export interface FileRoutesByTo {
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
+  '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
@@ -172,6 +181,7 @@ export interface FileRoutesById {
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
   '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
+  '/_authenticated/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/events-admin'
     | '/market-admin'
     | '/portfolio'
+    | '/pricing-admin'
     | '/profile'
     | '/character/$slug'
     | '/games/grand-line-guess'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/events-admin'
     | '/market-admin'
     | '/portfolio'
+    | '/pricing-admin'
     | '/profile'
     | '/character/$slug'
     | '/games/grand-line-guess'
@@ -231,6 +243,7 @@ export interface FileRouteTypes {
     | '/_authenticated/events-admin'
     | '/_authenticated/market-admin'
     | '/_authenticated/portfolio'
+    | '/_authenticated/pricing-admin'
     | '/_authenticated/profile'
     | '/character/$slug'
     | '/games/grand-line-guess'
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/pricing-admin': {
+      id: '/_authenticated/pricing-admin'
+      path: '/pricing-admin'
+      fullPath: '/pricing-admin'
+      preLoaderRoute: typeof AuthenticatedPricingAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/portfolio': {
       id: '/_authenticated/portfolio'
       path: '/portfolio'
@@ -388,6 +408,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedEventsAdminRoute: typeof AuthenticatedEventsAdminRoute
   AuthenticatedMarketAdminRoute: typeof AuthenticatedMarketAdminRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
+  AuthenticatedPricingAdminRoute: typeof AuthenticatedPricingAdminRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
 }
 
@@ -396,6 +417,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedEventsAdminRoute: AuthenticatedEventsAdminRoute,
   AuthenticatedMarketAdminRoute: AuthenticatedMarketAdminRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
+  AuthenticatedPricingAdminRoute: AuthenticatedPricingAdminRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
 }
 
