@@ -72,6 +72,12 @@ function Admin() {
               <Link to="/market-admin" className="inline-block bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90">
                 → Living Market Console
               </Link>
+              <Link
+                to="/pricing-admin"
+                className="inline-block border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
+              >
+                → Market Pricing Preview
+              </Link>
             </div>
           </div>
         </div>
