@@ -88,6 +88,83 @@ export type Database = {
           },
         ]
       }
+      character_pricing_ratings: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          character_id: string
+          comparable_adjustment: number
+          created_at: string
+          created_by: string | null
+          current_relevance: number
+          future_potential: number
+          investor_confidence: number
+          launch_catalyst_pct: number
+          narrative_importance: number
+          popularity: number
+          pricing_algorithm_version: string
+          ratings_status: string
+          stock_category: Database["public"]["Enums"]["stock_category"]
+          strength_status: number
+          uncertainty_discount_pct: number
+          updated_at: string
+          updated_by: string | null
+          volatility: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          character_id: string
+          comparable_adjustment: number
+          created_at?: string
+          created_by?: string | null
+          current_relevance: number
+          future_potential: number
+          investor_confidence: number
+          launch_catalyst_pct: number
+          narrative_importance: number
+          popularity: number
+          pricing_algorithm_version: string
+          ratings_status: string
+          stock_category: Database["public"]["Enums"]["stock_category"]
+          strength_status: number
+          uncertainty_discount_pct: number
+          updated_at?: string
+          updated_by?: string | null
+          volatility: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          character_id?: string
+          comparable_adjustment?: number
+          created_at?: string
+          created_by?: string | null
+          current_relevance?: number
+          future_potential?: number
+          investor_confidence?: number
+          launch_catalyst_pct?: number
+          narrative_importance?: number
+          popularity?: number
+          pricing_algorithm_version?: string
+          ratings_status?: string
+          stock_category?: Database["public"]["Enums"]["stock_category"]
+          strength_status?: number
+          uncertainty_discount_pct?: number
+          updated_at?: string
+          updated_by?: string | null
+          volatility?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_pricing_ratings_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: true
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       characters: {
         Row: {
           bounty: number | null
@@ -1320,6 +1397,37 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_character_pricing_ratings: {
+        Args: { _character_id: string; _expected_pricing_algorithm_version: string }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          character_id: string
+          comparable_adjustment: number
+          created_at: string
+          created_by: string | null
+          current_relevance: number
+          future_potential: number
+          investor_confidence: number
+          launch_catalyst_pct: number
+          narrative_importance: number
+          popularity: number
+          pricing_algorithm_version: string
+          ratings_status: string
+          stock_category: Database["public"]["Enums"]["stock_category"]
+          strength_status: number
+          uncertainty_discount_pct: number
+          updated_at: string
+          updated_by: string | null
+          volatility: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "character_pricing_ratings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       apply_market_event: {
         Args: { _event_id: string }
         Returns: {
@@ -1561,6 +1669,10 @@ export type Database = {
         Returns: undefined
       }
       refresh_leaderboards: { Args: never; Returns: undefined }
+      reset_character_pricing_ratings: {
+        Args: { _character_id: string }
+        Returns: boolean
+      }
       run_daily_market_cycle: {
         Args: never
         Returns: {
@@ -1585,6 +1697,51 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "daily_market_reports"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      save_character_pricing_draft: {
+        Args: {
+          _character_id: string
+          _comparable_adjustment: number
+          _current_relevance: number
+          _future_potential: number
+          _investor_confidence: number
+          _launch_catalyst_pct: number
+          _narrative_importance: number
+          _popularity: number
+          _pricing_algorithm_version: string
+          _stock_category: Database["public"]["Enums"]["stock_category"]
+          _strength_status: number
+          _uncertainty_discount_pct: number
+          _volatility: number
+        }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          character_id: string
+          comparable_adjustment: number
+          created_at: string
+          created_by: string | null
+          current_relevance: number
+          future_potential: number
+          investor_confidence: number
+          launch_catalyst_pct: number
+          narrative_importance: number
+          popularity: number
+          pricing_algorithm_version: string
+          ratings_status: string
+          stock_category: Database["public"]["Enums"]["stock_category"]
+          strength_status: number
+          uncertainty_discount_pct: number
+          updated_at: string
+          updated_by: string | null
+          volatility: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "character_pricing_ratings"
           isOneToOne: true
           isSetofReturn: false
         }
