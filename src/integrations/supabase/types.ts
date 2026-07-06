@@ -1397,8 +1397,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_market_event: {
+        Args: { _event_id: string }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          default_pct_change: number
+          description: string
+          event_type: Database["public"]["Enums"]["event_type"]
+          id: string
+          published_at: string | null
+          scheduled_for: string | null
+          status: Database["public"]["Enums"]["event_status"]
+          title: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_events"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       approve_character_pricing_ratings: {
-        Args: { _character_id: string; _expected_pricing_algorithm_version: string }
+        Args: {
+          _character_id: string
+          _expected_pricing_algorithm_version: string
+        }
         Returns: {
           approved_at: string | null
           approved_by: string | null
@@ -1424,28 +1449,6 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "character_pricing_ratings"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      apply_market_event: {
-        Args: { _event_id: string }
-        Returns: {
-          created_at: string
-          created_by: string | null
-          default_pct_change: number
-          description: string
-          event_type: Database["public"]["Enums"]["event_type"]
-          id: string
-          published_at: string | null
-          scheduled_for: string | null
-          status: Database["public"]["Enums"]["event_status"]
-          title: string
-          updated_at: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "market_events"
           isOneToOne: true
           isSetofReturn: false
         }
