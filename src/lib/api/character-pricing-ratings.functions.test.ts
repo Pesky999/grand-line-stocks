@@ -20,7 +20,7 @@ test("every ratings server function requires authenticated middleware and admin 
     "getCharacterPricingRatings",
     "listCharacterPricingRatings",
     "saveCharacterPricingDraft",
-    "approveCharacterPricingRatings",
+    "saveAndApplyCharacterPricing",
     "resetCharacterPricingRatings",
   ]) {
     const body = functionSource(name);
@@ -58,18 +58,56 @@ test("reads use authenticated context.supabase and no row maps to unrated", () =
 
 test("writes call only the approved RPCs with server-owned algorithm version", () => {
   const save = functionSource("saveCharacterPricingDraft");
-  const approve = functionSource("approveCharacterPricingRatings");
+  const apply = functionSource("saveAndApplyCharacterPricing");
   const reset = functionSource("resetCharacterPricingRatings");
+  const inputShape = source.slice(
+    source.indexOf("const persistentRatingsInput"),
+    source.indexOf("async function requireAdminRole"),
+  );
 
   assert.match(save, /\.rpc\("save_character_pricing_draft"/);
-  assert.match(approve, /\.rpc\("approve_character_pricing_ratings"/);
+  assert.match(apply, /\.rpc\(\s*"save_and_apply_character_pricing"/);
   assert.match(reset, /\.rpc\("reset_character_pricing_ratings"/);
   assert.match(save, /_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
-  assert.match(approve, /_expected_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
+  assert.match(apply, /_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
+  assert.doesNotMatch(source, /approve_character_pricing_ratings/);
+  assert.doesNotMatch(source, /approve_and_apply_character_pricing_ratings/);
   assert.doesNotMatch(
-    source,
+    inputShape,
     /pricingAlgorithmVersion|ratingsStatus|createdBy|updatedBy|approvedBy/,
   );
+});
+
+test("apply workflow accepts current persistent inputs and does not submit a price", () => {
+  const apply = functionSource("saveAndApplyCharacterPricing");
+
+  assert.match(apply, /\.inputValidator\(\(input\) => persistentRatingsInput\.parse\(input\)\)/);
+  assert.match(
+    apply,
+    /calculateIpoPricing\(\{[\s\S]*ratings: data\.ratings[\s\S]*category: data\.category[\s\S]*comparableAdjustment: data\.comparableAdjustment[\s\S]*uncertaintyDiscountPct: data\.uncertaintyDiscountPct[\s\S]*launchCatalystPct: data\.launchCatalystPct[\s\S]*\}\)/,
+    "server calculates from the current persistent form input",
+  );
+  assert.match(apply, /const previewAppliedPrice = calculation\.suggestedPostCatalystPrice/);
+  assert.doesNotMatch(apply, /_applied_price/);
+  assert.match(apply, /_stock_category: data\.category/);
+  assert.doesNotMatch(apply, /\.from\("character_pricing_ratings"\)[\s\S]*\.select\("\*"\)/);
+  assert.doesNotMatch(
+    apply,
+    /data\.(appliedPrice|newPrice|price|pricingAlgorithmVersion|status|userId|approvedBy|updatedAt|calculationSnapshot)/,
+    "client input cannot supply market application metadata or calculated prices",
+  );
+});
+
+test("apply workflow treats the RPC-returned price as authoritative", () => {
+  const mapResult = source.slice(
+    source.indexOf("function mapApplyRpcResult"),
+    source.indexOf("export const getCharacterPricingRatings"),
+  );
+
+  assert.match(mapResult, /newLivePrice: result\.newLivePrice/);
+  assert.match(mapResult, /previousLivePrice: result\.previousLivePrice/);
+  assert.match(mapResult, /percentageChange: result\.percentageChange/);
+  assert.doesNotMatch(mapResult, /previewAppliedPrice|suggestedPostCatalystPrice/);
 });
 
 test("strict input validation accepts only persistent rating fields", () => {

@@ -1,6 +1,6 @@
 import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -18,8 +18,6 @@ import {
   type CharacterRow,
 } from "@/lib/api/market.functions";
 
-const STOCK_CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
-type StockCategory = (typeof STOCK_CATEGORIES)[number];
 type Mode = "add" | "edit";
 
 type CharacterForm = {
@@ -30,9 +28,6 @@ type CharacterForm = {
   bounty: string;
   imageUrl: string;
   description: string;
-  initialPrice: string;
-  category: StockCategory;
-  momentum: string;
   displayOrder: string;
 };
 
@@ -44,8 +39,6 @@ type CreatePayload = {
   bounty: number | null;
   image_url: string | null;
   description: string | null;
-  initialPrice: number;
-  category: StockCategory;
   display_order: number | null;
 };
 
@@ -57,8 +50,6 @@ type UpdatePayload = {
   bounty: number | null;
   image_url: string | null;
   description: string | null;
-  category: StockCategory;
-  momentum: number;
   display_order: number | null;
 };
 
@@ -75,9 +66,6 @@ const emptyAddForm: CharacterForm = {
   bounty: "",
   imageUrl: "",
   description: "",
-  initialPrice: "",
-  category: "growth",
-  momentum: "0",
   displayOrder: "",
 };
 
@@ -103,9 +91,6 @@ function characterToForm(character: CharacterRow): CharacterForm {
     bounty: character.bounty == null ? "" : String(character.bounty),
     imageUrl: character.image_url ?? "",
     description: character.description ?? "",
-    initialPrice: Number(character.current_price).toFixed(2),
-    category: character.category,
-    momentum: String(Number(character.momentum ?? 0)),
     displayOrder: character.display_order == null ? "" : String(character.display_order),
   };
 }
@@ -121,26 +106,6 @@ function parseNullableInteger(value: string, label: string, positiveOnly = false
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${label} is too large.`);
   if (positiveOnly && parsed < 1) throw new Error(`${label} must be positive.`);
-  return parsed;
-}
-
-function parsePrice(value: string) {
-  const trimmed = value.trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
-    throw new Error("Initial stock price must use at most two decimal places.");
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed < 0.01 || parsed > 99999) {
-    throw new Error("Initial stock price must be between 0.01 and 99999.");
-  }
-  return parsed;
-}
-
-function parseMomentum(value: string) {
-  const parsed = Number(value.trim());
-  if (!Number.isFinite(parsed) || parsed < -5 || parsed > 5) {
-    throw new Error("Momentum must be between -5 and 5.");
-  }
   return parsed;
 }
 
@@ -174,8 +139,6 @@ function changedRows(before: CharacterForm, after: CharacterForm) {
     ["bounty", "Bounty"],
     ["imageUrl", "Image URL"],
     ["description", "Description"],
-    ["category", "Stock category"],
-    ["momentum", "Momentum"],
     ["displayOrder", "Display order"],
   ];
   return labels
@@ -205,8 +168,6 @@ function toCreatePayload(form: CharacterForm, existingSlugs: Set<string>): Creat
     bounty: parseNullableInteger(form.bounty, "Bounty"),
     image_url: validateUrl(form.imageUrl),
     description: textOrNull(assertLength(form.description, "Description", 2000)),
-    initialPrice: parsePrice(form.initialPrice),
-    category: form.category,
     display_order: parseNullableInteger(form.displayOrder, "Display order", true),
   };
 }
@@ -220,8 +181,6 @@ function toUpdatePayload(form: CharacterForm): UpdatePayload {
     bounty: parseNullableInteger(form.bounty, "Bounty"),
     image_url: validateUrl(form.imageUrl),
     description: textOrNull(assertLength(form.description, "Description", 2000)),
-    category: form.category,
-    momentum: parseMomentum(form.momentum),
     display_order: parseNullableInteger(form.displayOrder, "Display order", true),
   };
 }
@@ -241,6 +200,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
   const [savedEditForm, setSavedEditForm] = useState(editForm);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [creationNotice, setCreationNotice] = useState<string | null>(null);
 
   const existingSlugs = useMemo(
     () => new Set(characters.map((character) => character.slug)),
@@ -290,8 +250,6 @@ export function CharacterManagementPanel({ characters }: { characters: Character
         rows: [
           ["Name", payload.name],
           ["Slug", payload.slug.toUpperCase()],
-          ["Initial price", `฿${payload.initialPrice.toFixed(2)}`],
-          ["Category", payload.category],
           ["Display order", formatNullable(payload.display_order)],
         ],
       });
@@ -329,10 +287,13 @@ export function CharacterManagementPanel({ characters }: { characters: Character
     try {
       if (confirm.type === "create") {
         const created = await adminCreateCharacter({ data: confirm.payload });
-        toast.success(`Created ${created.name}`);
+        toast.success(
+          "Character created. Complete the official valuation in Market Pricing Preview.",
+        );
         setAddForm(emptyAddForm);
         setMode("edit");
         setSelectedSlug(created.slug);
+        setCreationNotice(created.name);
         const nextForm = characterToForm(created);
         setEditForm(nextForm);
         setSavedEditForm(nextForm);
@@ -340,6 +301,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
       } else {
         const updated = await adminUpdateCharacter({ data: confirm.payload });
         toast.success(`Saved ${updated.name}`);
+        setCreationNotice(null);
         const nextForm = characterToForm(updated);
         setEditForm(nextForm);
         setSavedEditForm(nextForm);
@@ -388,6 +350,18 @@ export function CharacterManagementPanel({ characters }: { characters: Character
         ) : (
           <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
             <div className="space-y-3">
+              {creationNotice && (
+                <div className="border border-accent bg-accent/10 p-3 text-xs text-foreground">
+                  <div className="font-bold text-accent">{creationNotice} created</div>
+                  <p className="mt-1 text-muted-foreground">
+                    Complete the official valuation in{" "}
+                    <Link to="/pricing-admin" className="text-accent underline">
+                      Market Pricing Preview
+                    </Link>
+                    .
+                  </p>
+                </div>
+              )}
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value.slice(0, 80))}
@@ -409,7 +383,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
                       <span className="truncate">{character.crew ?? "Independent"}</span>
-                      <span className="tabular">฿{Number(character.current_price).toFixed(2)}</span>
+                      <span>{character.role ?? "No role"}</span>
                     </div>
                   </button>
                 ))}
@@ -421,14 +395,6 @@ export function CharacterManagementPanel({ characters }: { characters: Character
                 <div className="grid gap-2 border border-border bg-card/30 p-3 text-[10px] uppercase tracking-widest text-muted-foreground md:grid-cols-2">
                   <ReadOnly label="Database ID" value={selectedCharacter.id} />
                   <ReadOnly label="Slug" value={selectedCharacter.slug} />
-                  <ReadOnly
-                    label="Current price"
-                    value={`฿${Number(selectedCharacter.current_price).toFixed(2)}`}
-                  />
-                  <ReadOnly
-                    label="Previous price"
-                    value={`฿${Number(selectedCharacter.previous_price).toFixed(2)}`}
-                  />
                   <ReadOnly
                     label="Created"
                     value={new Date(selectedCharacter.created_at).toLocaleString()}
@@ -469,7 +435,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
               {confirm?.type === "update"
                 ? "Review the changed fields before saving."
                 : confirm?.type === "create"
-                  ? "Review the IPO details before creating the character."
+                  ? "Review the metadata before creating the character."
                   : "Your current edit form has unsaved changes."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -581,32 +547,6 @@ function CharacterFormFields({
           onChange={(event) => update({ bounty: event.target.value })}
           className="mt-1 w-full border border-border bg-input px-3 py-2 tabular focus:border-primary outline-none"
         />
-      </Field>
-      <Field label={mode === "add" ? "Initial stock price" : "Momentum"}>
-        <input
-          required={mode === "add"}
-          inputMode="decimal"
-          value={mode === "add" ? form.initialPrice : form.momentum}
-          onChange={(event) =>
-            mode === "add"
-              ? update({ initialPrice: event.target.value })
-              : update({ momentum: event.target.value })
-          }
-          className="mt-1 w-full border border-border bg-input px-3 py-2 tabular focus:border-primary outline-none"
-        />
-      </Field>
-      <Field label="Stock category">
-        <select
-          value={form.category}
-          onChange={(event) => update({ category: event.target.value as StockCategory })}
-          className="mt-1 w-full border border-border bg-input px-2 py-2 text-sm"
-        >
-          {STOCK_CATEGORIES.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
       </Field>
       <Field label="Display order">
         <input

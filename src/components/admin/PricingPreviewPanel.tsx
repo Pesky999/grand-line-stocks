@@ -15,10 +15,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import type { CharacterRow } from "@/lib/api/market.functions";
 import {
-  approveCharacterPricingRatings,
   getCharacterPricingRatings,
   listCharacterPricingRatings,
   resetCharacterPricingRatings,
+  saveAndApplyCharacterPricing,
   saveCharacterPricingDraft,
 } from "@/lib/api/character-pricing-ratings.functions";
 import {
@@ -36,6 +36,7 @@ import {
   hydratePersistentPricingDraftFields,
   persistentPricingInputToDraftFields,
   validatePersistentPricingDraft,
+  type CharacterPricingApplicationResult,
   type CharacterPricingRatingsModel,
   type PersistentPricingInput,
 } from "@/lib/market-pricing/character-pricing-ratings";
@@ -49,9 +50,10 @@ type CalculationState = {
   error: string | null;
 };
 
-type Operation = "save" | "approve" | "reset" | null;
+type Operation = "save" | "apply" | "reset" | null;
 
 const STOCK_CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
+const LARGE_REPRICE_WARNING_PCT = 25;
 
 const RATING_LABELS: Record<(typeof RATING_KEYS)[number], string> = {
   narrativeImportance: "Narrative importance",
@@ -79,6 +81,38 @@ function formatCategory(value: string) {
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "not recorded";
   return new Date(value).toLocaleString();
+}
+
+function calculateSignedPriceChangePct(previousPrice: number, nextPrice: number) {
+  if (!Number.isFinite(previousPrice) || previousPrice === 0) return 0;
+  return ((nextPrice - previousPrice) / previousPrice) * 100;
+}
+
+function buildApplyConfirmation(
+  character: CharacterRow,
+  calculation: NonNullable<CalculationState["calculation"]>,
+) {
+  const currentPrice = Number(character.current_price);
+  const proposedPrice = calculation.ipo.suggestedPostCatalystPrice;
+  const changePct = calculateSignedPriceChangePct(currentPrice, proposedPrice);
+  const largeWarning =
+    Math.abs(changePct) >= LARGE_REPRICE_WARNING_PCT
+      ? ["", `Large repricing warning: this changes the live price by ${formatPct(changePct)}.`]
+      : [];
+
+  return [
+    `Save Ratings & Apply Price for ${character.name}?`,
+    "",
+    `Current live price: ${formatBerry(currentPrice)}`,
+    `Calculated new live price: ${formatBerry(proposedPrice)}`,
+    `Signed percentage change: ${formatPct(changePct)}`,
+    `Current category: ${formatCategory(character.category)}`,
+    `New category: ${formatCategory(calculation.ipo.category)}`,
+    `Pricing algorithm version: ${calculation.ipo.algorithmVersion}`,
+    "",
+    "This will immediately update the live market price, stock category, and portfolio market values. Share quantities, wallet balances, average costs, and transaction history will not change.",
+    ...largeWarning,
+  ].join("\n");
 }
 
 function statusLabel(state: CharacterPricingRatingsModel | undefined, loadFailed = false) {
@@ -353,6 +387,30 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     await queryClient.invalidateQueries({ queryKey: ["character-pricing-ratings"] });
   }
 
+  async function refreshAppliedMarketState(
+    characterId: string,
+    characterSlug: string,
+    result: CharacterPricingApplicationResult,
+  ) {
+    queryClient.setQueryData<CharacterRow[]>(["characters"], (current) =>
+      current?.map((character) =>
+        character.id === characterId
+          ? {
+              ...character,
+              previous_price: result.previousLivePrice,
+              current_price: result.newLivePrice,
+              category: result.newCategory,
+            }
+          : character,
+      ),
+    );
+    await queryClient.invalidateQueries({ queryKey: ["characters"] });
+    await queryClient.invalidateQueries({ queryKey: ["market", "page"] });
+    await queryClient.invalidateQueries({ queryKey: ["character", characterSlug] });
+    await queryClient.invalidateQueries({ queryKey: ["character", characterSlug, "intel"] });
+    await queryClient.invalidateQueries({ queryKey: ["top-holders", characterSlug] });
+  }
+
   async function saveDraft() {
     if (!selectedCharacter || operation) return;
     if (!ratingsReady || !ratingsQuery.data) {
@@ -378,7 +436,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
       if (selectedCharacterIdRef.current !== operationCharacterId) return;
       setBaselinePersistent(persistentSnapshot);
       await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
-      toast.success("Pricing ratings draft saved. Live prices were not changed.");
+      toast.success("Draft saved. The live market was not changed.");
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Could not save pricing ratings draft."));
     } finally {
@@ -386,45 +444,53 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     }
   }
 
-  async function approveDraft() {
+  async function saveAndApplyPrice() {
     if (!selectedCharacter || operation) return;
     if (!ratingsReady || !ratingsQuery.data) {
-      toast.error("Saved ratings must load before approval. Use Retry Load, then try again.");
+      toast.error("Saved ratings must load before applying. Use Retry Load, then try again.");
       return;
     }
-    if (!ratingsQuery.data || ratingsQuery.data.databaseStatus !== "draft") {
-      toast.error("Approval requires a saved draft.");
+    if (!persistentValidation.ok) {
+      toast.error(validationSummary(persistentValidation.errors));
       return;
     }
-    if (ratingsQuery.data.isStale) {
-      toast.error("Stale ratings must be saved under the current algorithm before approval.");
-      return;
-    }
-    if (persistentDirty) {
-      toast.error("Save persistent rating changes before approving.");
+    if (!calculationState.calculation) {
+      toast.error(calculationState.error ?? "Valid pricing output is required before applying.");
       return;
     }
     if (
-      !window.confirm(
-        "Approve this saved pricing draft? This records approval metadata only and will not change live prices.",
-      )
+      calculationState.calculation.ipo.algorithmVersion !==
+      ratingsQuery.data.currentAlgorithmVersion
     ) {
+      toast.error("The current pricing algorithm must match before applying.");
+      return;
+    }
+    if (!window.confirm(buildApplyConfirmation(selectedCharacter, calculationState.calculation))) {
       return;
     }
 
     const operationCharacterId = selectedCharacter.id;
     const operationQueryKey = selectedRatingsQueryKey;
-    setOperation("approve");
+    const persistentSnapshot = persistentValidation.value;
+    setOperation("apply");
     try {
-      const nextState = await approveCharacterPricingRatings({
-        data: { characterId: operationCharacterId },
+      const result = await saveAndApplyCharacterPricing({
+        data: {
+          characterId: operationCharacterId,
+          ...persistentSnapshot,
+        },
       });
       if (selectedCharacterIdRef.current !== operationCharacterId) return;
-      if (nextState.persistent) setBaselinePersistent(nextState.persistent);
-      await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
-      toast.success("Pricing ratings approved. Live prices were not changed.");
+      setBaselinePersistent(persistentSnapshot);
+      await refreshRatingsState(operationQueryKey, operationCharacterId, result.ratings);
+      await refreshAppliedMarketState(operationCharacterId, selectedCharacter.slug, result);
+      toast.success(
+        `Ratings saved and live price updated to ${formatBerry(result.newLivePrice)} (${formatPct(
+          result.percentageChange,
+        )}).`,
+      );
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Could not approve pricing ratings."));
+      toast.error(getErrorMessage(error, "Could not save and apply pricing ratings."));
     } finally {
       setOperation(null);
     }
@@ -438,7 +504,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     }
     if (
       !window.confirm(
-        "Reset this character to unrated? This removes saved pricing ratings only and will not change live market data.",
+        "This removes the saved ratings. It does not reverse a price already applied to the market, and existing price-history records remain intact.",
       )
     ) {
       return;
@@ -457,7 +523,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
       setBaselinePersistent(getDefaultPersistentBaseline(selectedCharacter));
       eventIdRef.current = 1;
       await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
-      toast.success("Pricing ratings reset to unrated. Live prices were not changed.");
+      toast.success("Pricing ratings reset to unrated. The current live price was not reversed.");
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Could not reset pricing ratings."));
     } finally {
@@ -480,13 +546,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
   const calculation = calculationState.calculation;
   const ratingsState = ratingsQuery.data;
   const savedRatingsCount = ratingsListQuery.data?.length ?? 0;
-  const canApprove =
-    ratingsReady &&
-    Boolean(ratingsState) &&
-    ratingsState?.databaseStatus === "draft" &&
-    !ratingsState.isStale &&
-    !persistentDirty &&
-    !isBusy;
+  const canApply = ratingsReady && persistentValidation.ok && Boolean(calculation) && !isBusy;
 
   return (
     <div className="space-y-4">
@@ -497,11 +557,12 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
         </div>
         <div className="space-y-3 p-4 text-xs text-muted-foreground">
           <Alert className="border-accent/40 bg-accent/10">
-            <AlertTitle>Persistent ratings workflow - market prices stay untouched.</AlertTitle>
+            <AlertTitle>Character valuation and live pricing</AlertTitle>
             <AlertDescription>
-              Ratings and IPO inputs can be saved for later review. Calculations remain derived, and
-              movement or simulation inputs stay temporary. Saving or approving ratings never
-              changes live market prices.
+              Save Draft stores ratings without changing the market. Save Ratings & Apply Price
+              saves the current ratings and updates the character&apos;s live price and stock
+              category using the calculated final valuation. Movement and simulation inputs remain
+              temporary.
             </AlertDescription>
           </Alert>
           <div className="grid gap-2 md:grid-cols-3">
@@ -600,7 +661,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
               <AlertTitle>{statusLabel(ratingsState)} requires resaving</AlertTitle>
               <AlertDescription>
                 Stored algorithm {ratingsState.storedAlgorithmVersion}; current algorithm{" "}
-                {ratingsState.currentAlgorithmVersion}. Save a new draft before approval.
+                {ratingsState.currentAlgorithmVersion}. Save current ratings before applying.
               </AlertDescription>
             </Alert>
           </div>
@@ -690,18 +751,14 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
           </button>
           <button
             type="button"
-            onClick={() => void approveDraft()}
-            disabled={!canApprove}
+            onClick={() => void saveAndApplyPrice()}
+            disabled={!canApply}
             className="border border-accent px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-accent hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
             title={
-              persistentDirty
-                ? "Save persistent changes before approving"
-                : ratingsState?.isStale
-                  ? "Save stale ratings under the current algorithm before approving"
-                  : undefined
+              !persistentValidation.ok ? "Fix persistent rating inputs before applying" : undefined
             }
           >
-            {operation === "approve" ? "Approving..." : "Approve"}
+            {operation === "apply" ? "Applying..." : "Save Ratings & Apply Price"}
           </button>
           <button
             type="button"
@@ -725,8 +782,8 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
       <section className="terminal-panel">
         <div className="terminal-header">3. IPO Preview</div>
         <p className="border-b border-border p-4 text-xs text-muted-foreground">
-          Base fair value drives movement and simulation previews. Comparable adjustment,
-          uncertainty discount, and launch catalyst are separate hypothetical launch values.
+          Base fair value drives movement and simulation previews. The post-catalyst price is the
+          final valuation used by Save Ratings & Apply Price.
         </p>
         {renderBlockedOutput(validation, calculationState)}
         {calculation && (
@@ -1095,9 +1152,9 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
             <p>No pricing or movement warnings for the current temporary inputs.</p>
           )}
           <p>
-            This page saves only persistent ratings and IPO inputs. It does not save movement
-            fields, simulation events, calculated outputs, publish events, change prices, or modify
-            hidden attributes.
+            Save Draft stores only persistent ratings and IPO inputs. Save Ratings & Apply Price
+            updates only the selected character&apos;s live price, category, ratings approval
+            metadata, and price history. Movement and simulation inputs are never persisted.
           </p>
         </div>
       </section>
