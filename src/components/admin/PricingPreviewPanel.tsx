@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CartesianGrid,
   Line,
@@ -9,9 +10,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import type { CharacterRow } from "@/lib/api/market.functions";
+import {
+  approveCharacterPricingRatings,
+  getCharacterPricingRatings,
+  listCharacterPricingRatings,
+  resetCharacterPricingRatings,
+  saveCharacterPricingDraft,
+} from "@/lib/api/character-pricing-ratings.functions";
 import {
   RATING_KEYS,
   calculatePricingPreview,
@@ -21,6 +30,15 @@ import {
   type PreviewSimulationEventDraft,
   type PricingPreviewDraft,
 } from "@/lib/market-pricing/admin-preview";
+import {
+  createDefaultPersistentPricingInput,
+  hasPersistentPricingDraftChanges,
+  hydratePersistentPricingDraftFields,
+  persistentPricingInputToDraftFields,
+  validatePersistentPricingDraft,
+  type CharacterPricingRatingsModel,
+  type PersistentPricingInput,
+} from "@/lib/market-pricing/character-pricing-ratings";
 
 type PricingPreviewPanelProps = {
   characters: CharacterRow[];
@@ -30,6 +48,8 @@ type CalculationState = {
   calculation: ReturnType<typeof calculatePricingPreview> | null;
   error: string | null;
 };
+
+type Operation = "save" | "approve" | "reset" | null;
 
 const STOCK_CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
 
@@ -56,6 +76,50 @@ function formatCategory(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "not recorded";
+  return new Date(value).toLocaleString();
+}
+
+function statusLabel(state: CharacterPricingRatingsModel | undefined, loadFailed = false) {
+  if (loadFailed) return "Load failed";
+  if (!state) return "Loading";
+  switch (state.state) {
+    case "unrated":
+      return "Unrated";
+    case "draft":
+      return "Draft";
+    case "approved":
+      return "Approved";
+    case "stale_draft":
+      return "Stale draft";
+    case "stale_approved":
+      return "Stale approved";
+  }
+}
+
+function statusTone(state: CharacterPricingRatingsModel | undefined, loadFailed = false) {
+  if (loadFailed) return "text-bear";
+  if (!state) return "text-muted-foreground";
+  if (state.state === "approved") return "text-bull";
+  if (state.state === "draft") return "text-warn";
+  if (state.isStale) return "text-bear";
+  return "text-muted-foreground";
+}
+
+function validationSummary(errors: Record<string, string>) {
+  const first = Object.values(errors)[0];
+  return first ?? "Persistent rating inputs need attention.";
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function getDefaultPersistentBaseline(character: CharacterRow | undefined): PersistentPricingInput {
+  return createDefaultPersistentPricingInput(character?.category ?? "growth");
+}
+
 function updateDraftField<K extends keyof PricingPreviewDraft>(
   draft: PricingPreviewDraft,
   key: K,
@@ -78,17 +142,49 @@ function updateEvent(
 }
 
 export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
+  const queryClient = useQueryClient();
   const firstCharacter = characters[0];
   const [selectedSlug, setSelectedSlug] = useState(firstCharacter?.slug ?? "");
   const selectedCharacter =
     characters.find((character) => character.slug === selectedSlug) ?? firstCharacter;
   const [draft, setDraft] = useState(() => createDefaultPricingPreviewDraft(firstCharacter));
+  const [baselinePersistent, setBaselinePersistent] = useState<PersistentPricingInput>(() =>
+    getDefaultPersistentBaseline(firstCharacter),
+  );
+  const [operation, setOperation] = useState<Operation>(null);
   const [resetNotice, setResetNotice] = useState(
-    "Temporary scratch inputs start at safe defaults and are discarded on refresh.",
+    "Persistent rating inputs start at safe defaults until saved ratings are loaded.",
   );
   const eventIdRef = useRef(1);
+  const selectedCharacterIdRef = useRef<string | null>(selectedCharacter?.id ?? null);
+  const hydratedRatingsRef = useRef<{
+    characterId: string | null;
+    state: CharacterPricingRatingsModel | null;
+  }>({ characterId: null, state: null });
+
+  const selectedRatingsQueryKey = [
+    "character-pricing-ratings",
+    selectedCharacter?.id ?? "none",
+  ] as const;
+  const ratingsQuery = useQuery({
+    queryKey: selectedRatingsQueryKey,
+    queryFn: () =>
+      getCharacterPricingRatings({ data: { characterId: selectedCharacter?.id ?? "" } }),
+    enabled: Boolean(selectedCharacter?.id),
+    refetchOnWindowFocus: false,
+  });
+  const ratingsListQuery = useQuery({
+    queryKey: ["character-pricing-ratings", "all"],
+    queryFn: () => listCharacterPricingRatings(),
+    refetchOnWindowFocus: false,
+  });
 
   const validation = useMemo(() => validatePricingPreviewDraft(draft), [draft]);
+  const persistentValidation = useMemo(() => validatePersistentPricingDraft(draft), [draft]);
+  const persistentDirty = useMemo(
+    () => hasPersistentPricingDraftChanges(draft, baselinePersistent),
+    [baselinePersistent, draft],
+  );
   const calculationState = useMemo<CalculationState>(() => {
     if (!selectedCharacter) return { calculation: null, error: "No character is available." };
     if (!validation.ok) return { calculation: null, error: null };
@@ -119,21 +215,115 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     );
   }, [calculationState.calculation]);
 
+  const ratingsReady = ratingsQuery.isSuccess && Boolean(ratingsQuery.data);
+  const ratingsLoadBlocked = !ratingsReady || ratingsQuery.isError || ratingsQuery.isLoading;
+  const isBusy = operation != null;
+  const persistentInputsDisabled = isBusy || ratingsLoadBlocked;
+
+  useEffect(() => {
+    selectedCharacterIdRef.current = selectedCharacter?.id ?? null;
+  }, [selectedCharacter?.id]);
+
+  useEffect(() => {
+    if (!selectedCharacter || !ratingsQuery.data) return;
+    const alreadyProcessed =
+      hydratedRatingsRef.current.characterId === selectedCharacter.id &&
+      hydratedRatingsRef.current.state === ratingsQuery.data;
+    if (alreadyProcessed) return;
+
+    const isInitialCharacterLoad = hydratedRatingsRef.current.characterId !== selectedCharacter.id;
+    const nextBaseline =
+      ratingsQuery.data.persistent ?? getDefaultPersistentBaseline(selectedCharacter);
+
+    if (!isInitialCharacterLoad && persistentDirty) {
+      hydratedRatingsRef.current = { characterId: selectedCharacter.id, state: ratingsQuery.data };
+      setResetNotice(
+        `${selectedCharacter.name} saved ratings refreshed; unsaved persistent edits were kept.`,
+      );
+      return;
+    }
+
+    setDraft((currentDraft) => {
+      const baseDraft = isInitialCharacterLoad
+        ? createDefaultPricingPreviewDraft(selectedCharacter)
+        : currentDraft;
+      return hydratePersistentPricingDraftFields(baseDraft, ratingsQuery.data);
+    });
+    setBaselinePersistent(nextBaseline);
+    hydratedRatingsRef.current = { characterId: selectedCharacter.id, state: ratingsQuery.data };
+    if (isInitialCharacterLoad) eventIdRef.current = 1;
+    setResetNotice(
+      ratingsQuery.data.persistent
+        ? `${selectedCharacter.name} selected. Saved persistent ratings were loaded.`
+        : `${selectedCharacter.name} selected. No saved ratings found; defaults are ready.`,
+    );
+  }, [persistentDirty, ratingsQuery.data, selectedCharacter]);
+
+  useEffect(() => {
+    if (!persistentDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [persistentDirty]);
+
   function resetForCharacter(character: CharacterRow | undefined) {
-    setDraft(createDefaultPricingPreviewDraft(character));
+    const nextDraft = createDefaultPricingPreviewDraft(character);
+    hydratedRatingsRef.current = { characterId: null, state: null };
+    setDraft(nextDraft);
+    setBaselinePersistent(getDefaultPersistentBaseline(character));
     eventIdRef.current = 1;
     if (character) {
-      setResetNotice(`${character.name} selected. Temporary preview inputs were reset.`);
+      setResetNotice(`${character.name} selected. Loading saved persistent ratings...`);
     }
   }
 
   function handleCharacterChange(slug: string) {
+    if (operation) {
+      toast.error("Wait for the current ratings operation to finish before switching characters.");
+      return;
+    }
+    if (slug === selectedSlug) return;
+    if (
+      persistentDirty &&
+      !window.confirm("Discard unsaved persistent rating changes and switch characters?")
+    ) {
+      return;
+    }
     setSelectedSlug(slug);
     resetForCharacter(characters.find((character) => character.slug === slug));
   }
 
   function resetCurrentDraft() {
-    resetForCharacter(selectedCharacter);
+    if (!selectedCharacter) return;
+    if (operation) {
+      toast.error("Wait for the current ratings operation to finish before resetting the form.");
+      return;
+    }
+    if (!ratingsReady || !ratingsQuery.data) {
+      toast.error("Saved ratings must load before resetting persistent fields.");
+      return;
+    }
+    if (
+      persistentDirty &&
+      !window.confirm("Reset this form to the last loaded persistent values?")
+    ) {
+      return;
+    }
+    const loadedPersistent =
+      ratingsQuery.data.persistent ?? getDefaultPersistentBaseline(selectedCharacter);
+    const fields = persistentPricingInputToDraftFields(loadedPersistent);
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      ...fields,
+      ratings: fields.ratings,
+    }));
+    setBaselinePersistent(loadedPersistent);
+    setResetNotice(
+      "Persistent fields were restored to loaded values. Movement and simulation inputs were kept.",
+    );
   }
 
   function addSimulationEvent() {
@@ -152,6 +342,129 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     });
   }
 
+  async function refreshRatingsState(
+    queryKey: typeof selectedRatingsQueryKey,
+    characterId: string,
+    nextState: CharacterPricingRatingsModel,
+  ) {
+    if (selectedCharacterIdRef.current !== characterId) return;
+    hydratedRatingsRef.current = { characterId, state: nextState };
+    queryClient.setQueryData(queryKey, nextState);
+    await queryClient.invalidateQueries({ queryKey: ["character-pricing-ratings"] });
+  }
+
+  async function saveDraft() {
+    if (!selectedCharacter || operation) return;
+    if (!ratingsReady || !ratingsQuery.data) {
+      toast.error("Saved ratings must load before saving. Use Retry Load, then try again.");
+      return;
+    }
+    if (!persistentValidation.ok) {
+      toast.error(validationSummary(persistentValidation.errors));
+      return;
+    }
+
+    const operationCharacterId = selectedCharacter.id;
+    const operationQueryKey = selectedRatingsQueryKey;
+    const persistentSnapshot = persistentValidation.value;
+    setOperation("save");
+    try {
+      const nextState = await saveCharacterPricingDraft({
+        data: {
+          characterId: operationCharacterId,
+          ...persistentSnapshot,
+        },
+      });
+      if (selectedCharacterIdRef.current !== operationCharacterId) return;
+      setBaselinePersistent(persistentSnapshot);
+      await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
+      toast.success("Pricing ratings draft saved. Live prices were not changed.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not save pricing ratings draft."));
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function approveDraft() {
+    if (!selectedCharacter || operation) return;
+    if (!ratingsReady || !ratingsQuery.data) {
+      toast.error("Saved ratings must load before approval. Use Retry Load, then try again.");
+      return;
+    }
+    if (!ratingsQuery.data || ratingsQuery.data.databaseStatus !== "draft") {
+      toast.error("Approval requires a saved draft.");
+      return;
+    }
+    if (ratingsQuery.data.isStale) {
+      toast.error("Stale ratings must be saved under the current algorithm before approval.");
+      return;
+    }
+    if (persistentDirty) {
+      toast.error("Save persistent rating changes before approving.");
+      return;
+    }
+    if (
+      !window.confirm(
+        "Approve this saved pricing draft? This records approval metadata only and will not change live prices.",
+      )
+    ) {
+      return;
+    }
+
+    const operationCharacterId = selectedCharacter.id;
+    const operationQueryKey = selectedRatingsQueryKey;
+    setOperation("approve");
+    try {
+      const nextState = await approveCharacterPricingRatings({
+        data: { characterId: operationCharacterId },
+      });
+      if (selectedCharacterIdRef.current !== operationCharacterId) return;
+      if (nextState.persistent) setBaselinePersistent(nextState.persistent);
+      await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
+      toast.success("Pricing ratings approved. Live prices were not changed.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not approve pricing ratings."));
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function resetToUnrated() {
+    if (!selectedCharacter || operation) return;
+    if (!ratingsReady || !ratingsQuery.data) {
+      toast.error("Saved ratings must load before resetting. Use Retry Load, then try again.");
+      return;
+    }
+    if (
+      !window.confirm(
+        "Reset this character to unrated? This removes saved pricing ratings only and will not change live market data.",
+      )
+    ) {
+      return;
+    }
+
+    const operationCharacterId = selectedCharacter.id;
+    const operationQueryKey = selectedRatingsQueryKey;
+    setOperation("reset");
+    try {
+      const nextState = await resetCharacterPricingRatings({
+        data: { characterId: operationCharacterId },
+      });
+      if (selectedCharacterIdRef.current !== operationCharacterId) return;
+      const nextDraft = createDefaultPricingPreviewDraft(selectedCharacter);
+      setDraft(nextDraft);
+      setBaselinePersistent(getDefaultPersistentBaseline(selectedCharacter));
+      eventIdRef.current = 1;
+      await refreshRatingsState(operationQueryKey, operationCharacterId, nextState);
+      toast.success("Pricing ratings reset to unrated. Live prices were not changed.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not reset pricing ratings."));
+    } finally {
+      setOperation(null);
+    }
+  }
+
   if (!selectedCharacter) {
     return (
       <section className="terminal-panel">
@@ -165,6 +478,15 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
 
   const fieldErrors = validation.errors;
   const calculation = calculationState.calculation;
+  const ratingsState = ratingsQuery.data;
+  const savedRatingsCount = ratingsListQuery.data?.length ?? 0;
+  const canApprove =
+    ratingsReady &&
+    Boolean(ratingsState) &&
+    ratingsState?.databaseStatus === "draft" &&
+    !ratingsState.isStale &&
+    !persistentDirty &&
+    !isBusy;
 
   return (
     <div className="space-y-4">
@@ -175,13 +497,43 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
         </div>
         <div className="space-y-3 p-4 text-xs text-muted-foreground">
           <Alert className="border-accent/40 bg-accent/10">
-            <AlertTitle>Temporary preview - no data will be saved or applied.</AlertTitle>
+            <AlertTitle>Persistent ratings workflow - market prices stay untouched.</AlertTitle>
             <AlertDescription>
-              These values are scratch inputs for local calculation only. They are not official, and
-              leaving or refreshing this page discards them.
+              Ratings and IPO inputs can be saved for later review. Calculations remain derived, and
+              movement or simulation inputs stay temporary. Saving or approving ratings never
+              changes live market prices.
             </AlertDescription>
           </Alert>
+          <div className="grid gap-2 md:grid-cols-3">
+            <Metric
+              label="Selected status"
+              value={`${statusLabel(ratingsState, ratingsQuery.isError)}${
+                persistentDirty && ratingsReady ? " (dirty)" : ""
+              }`}
+            />
+            <Metric
+              label="Saved records"
+              value={ratingsListQuery.isLoading ? "loading" : String(savedRatingsCount)}
+            />
+            <Metric label="Algorithm" value={ratingsState?.currentAlgorithmVersion ?? "loading"} />
+          </div>
           <p>{resetNotice}</p>
+          {ratingsQuery.isError && (
+            <div className="flex flex-wrap items-center gap-2 text-bear">
+              <p>
+                Saved ratings could not be loaded:{" "}
+                {getErrorMessage(ratingsQuery.error, "Unknown load failure.")}
+              </p>
+              <button
+                type="button"
+                onClick={() => void ratingsQuery.refetch()}
+                disabled={ratingsQuery.isFetching || isBusy}
+                className="border border-bear px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-bear hover:text-background disabled:opacity-40"
+              >
+                {ratingsQuery.isFetching ? "Retrying..." : "Retry Load"}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -195,7 +547,8 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
             <select
               value={selectedCharacter.slug}
               onChange={(event) => handleCharacterChange(event.target.value)}
-              className="mt-1 w-full border border-border bg-input px-2 py-2 text-sm outline-none focus:border-primary"
+              disabled={isBusy}
+              className="mt-1 w-full border border-border bg-input px-2 py-2 text-sm outline-none focus:border-primary disabled:opacity-40"
             >
               {characters.map((character) => (
                 <option key={character.id} value={character.slug}>
@@ -217,80 +570,154 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
       </section>
 
       <section className="terminal-panel">
-        <div className="terminal-header">2. Temporary Ratings</div>
-        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-          {RATING_KEYS.map((key) => (
+        <div className="terminal-header flex items-center justify-between gap-2">
+          <span>2. Persistent Ratings and IPO Inputs</span>
+          <span
+            className={`text-[10px] uppercase tracking-widest ${statusTone(
+              ratingsState,
+              ratingsQuery.isError,
+            )}`}
+          >
+            {ratingsQuery.isLoading ? "Loading" : statusLabel(ratingsState, ratingsQuery.isError)}
+          </span>
+        </div>
+        <div className="grid gap-3 border-b border-border p-4 text-xs md:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Persistent dirty" value={persistentDirty ? "yes" : "no"} />
+          <Metric label="Stored algorithm" value={ratingsState?.storedAlgorithmVersion ?? "none"} />
+          <Metric
+            label="Current algorithm"
+            value={ratingsState?.currentAlgorithmVersion ?? "loading"}
+          />
+          <Metric label="Saved" value={formatDateTime(ratingsState?.audit?.updatedAt)} />
+          <Metric label="Created by" value={ratingsState?.audit?.createdBy ?? "not recorded"} />
+          <Metric label="Updated by" value={ratingsState?.audit?.updatedBy ?? "not recorded"} />
+          <Metric label="Approved" value={formatDateTime(ratingsState?.audit?.approvedAt)} />
+          <Metric label="Approved by" value={ratingsState?.audit?.approvedBy ?? "not recorded"} />
+        </div>
+        {ratingsState?.isStale && (
+          <div className="border-b border-border p-4">
+            <Alert variant="destructive">
+              <AlertTitle>{statusLabel(ratingsState)} requires resaving</AlertTitle>
+              <AlertDescription>
+                Stored algorithm {ratingsState.storedAlgorithmVersion}; current algorithm{" "}
+                {ratingsState.currentAlgorithmVersion}. Save a new draft before approval.
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+        <fieldset disabled={persistentInputsDisabled} className="disabled:opacity-60">
+          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+            {RATING_KEYS.map((key) => (
+              <NumberField
+                key={key}
+                label={RATING_LABELS[key]}
+                value={draft.ratings[key]}
+                min={0}
+                max={100}
+                step="1"
+                error={fieldErrors[`ratings.${key}`]}
+                onChange={(value) =>
+                  setDraft({
+                    ...draft,
+                    ratings: { ...draft.ratings, [key]: value },
+                  })
+                }
+              />
+            ))}
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Persistent stock category
+              </span>
+              <select
+                value={draft.category}
+                onChange={(event) =>
+                  setDraft(
+                    updateDraftField(
+                      draft,
+                      "category",
+                      event.target.value as typeof draft.category,
+                    ),
+                  )
+                }
+                className="mt-1 w-full border border-border bg-input px-2 py-2 text-sm outline-none focus:border-primary"
+              >
+                {STOCK_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {formatCategory(category)}
+                  </option>
+                ))}
+              </select>
+            </label>
             <NumberField
-              key={key}
-              label={RATING_LABELS[key]}
-              value={draft.ratings[key]}
+              label="Comparable adjustment"
+              value={draft.comparableAdjustment}
+              min={0.75}
+              max={1.25}
+              step="0.01"
+              error={fieldErrors.comparableAdjustment}
+              onChange={(value) => setDraft(updateDraftField(draft, "comparableAdjustment", value))}
+            />
+            <NumberField
+              label="Uncertainty discount %"
+              value={draft.uncertaintyDiscountPct}
               min={0}
-              max={100}
-              step="1"
-              error={fieldErrors[`ratings.${key}`]}
+              max={25}
+              step="0.1"
+              error={fieldErrors.uncertaintyDiscountPct}
               onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  ratings: { ...draft.ratings, [key]: value },
-                })
+                setDraft(updateDraftField(draft, "uncertaintyDiscountPct", value))
               }
             />
-          ))}
-          <label className="block">
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-              Temporary category
-            </span>
-            <select
-              value={draft.category}
-              onChange={(event) =>
-                setDraft(
-                  updateDraftField(draft, "category", event.target.value as typeof draft.category),
-                )
-              }
-              className="mt-1 w-full border border-border bg-input px-2 py-2 text-sm outline-none focus:border-primary"
-            >
-              {STOCK_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {formatCategory(category)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <NumberField
-            label="Comparable adjustment"
-            value={draft.comparableAdjustment}
-            min={0.75}
-            max={1.25}
-            step="0.01"
-            error={fieldErrors.comparableAdjustment}
-            onChange={(value) => setDraft(updateDraftField(draft, "comparableAdjustment", value))}
-          />
-          <NumberField
-            label="Uncertainty discount %"
-            value={draft.uncertaintyDiscountPct}
-            min={0}
-            max={25}
-            step="0.1"
-            error={fieldErrors.uncertaintyDiscountPct}
-            onChange={(value) => setDraft(updateDraftField(draft, "uncertaintyDiscountPct", value))}
-          />
-          <NumberField
-            label="Launch catalyst %"
-            value={draft.launchCatalystPct}
-            min={-30}
-            max={30}
-            step="0.1"
-            error={fieldErrors.launchCatalystPct}
-            onChange={(value) => setDraft(updateDraftField(draft, "launchCatalystPct", value))}
-          />
-        </div>
-        <div className="border-t border-border p-4">
+            <NumberField
+              label="Launch catalyst %"
+              value={draft.launchCatalystPct}
+              min={-30}
+              max={30}
+              step="0.1"
+              error={fieldErrors.launchCatalystPct}
+              onChange={(value) => setDraft(updateDraftField(draft, "launchCatalystPct", value))}
+            />
+          </div>
+        </fieldset>
+        <div className="flex flex-wrap gap-2 border-t border-border p-4">
+          <button
+            type="button"
+            onClick={() => void saveDraft()}
+            disabled={persistentInputsDisabled}
+            className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
+          >
+            {operation === "save" ? "Saving..." : "Save Draft"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void approveDraft()}
+            disabled={!canApprove}
+            className="border border-accent px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-accent hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
+            title={
+              persistentDirty
+                ? "Save persistent changes before approving"
+                : ratingsState?.isStale
+                  ? "Save stale ratings under the current algorithm before approving"
+                  : undefined
+            }
+          >
+            {operation === "approve" ? "Approving..." : "Approve"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void resetToUnrated()}
+            disabled={persistentInputsDisabled}
+            className="border border-bear px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-bear hover:bg-bear hover:text-background disabled:opacity-40"
+          >
+            {operation === "reset" ? "Resetting..." : "Reset to Unrated"}
+          </button>
           <button
             type="button"
             onClick={resetCurrentDraft}
-            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary"
+            disabled={persistentInputsDisabled}
+            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40"
           >
-            Reset temporary inputs
+            Reset persistent fields to loaded values
           </button>
         </div>
       </section>
@@ -335,6 +762,9 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
 
       <section className="terminal-panel">
         <div className="terminal-header">4. One-Day Movement Preview</div>
+        <p className="border-b border-border p-4 text-xs text-muted-foreground">
+          These preview-only fields are never saved to character pricing ratings.
+        </p>
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberField
             label="Current momentum %"
@@ -665,9 +1095,9 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
             <p>No pricing or movement warnings for the current temporary inputs.</p>
           )}
           <p>
-            This page reads existing public character quotes and runs deterministic calculations in
-            the browser. It does not save ratings, send preview inputs to a server function, change
-            prices, publish events, or modify hidden attributes.
+            This page saves only persistent ratings and IPO inputs. It does not save movement
+            fields, simulation events, calculated outputs, publish events, change prices, or modify
+            hidden attributes.
           </p>
         </div>
       </section>

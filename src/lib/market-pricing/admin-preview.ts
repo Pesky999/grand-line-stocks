@@ -5,6 +5,12 @@ import {
   type StockCategory,
 } from "./v1.js";
 import {
+  RATING_KEYS,
+  STOCK_CATEGORIES,
+  validatePersistentPricingDraft,
+  type RatingKey,
+} from "./character-pricing-ratings.js";
+import {
   calculateDailyMovement,
   type DailyMovementResult,
   type SimulationDayResult,
@@ -24,19 +30,7 @@ export type PricingPreviewCharacter = {
   momentum: number;
 };
 
-export const RATING_KEYS = [
-  "narrativeImportance",
-  "currentRelevance",
-  "strengthStatus",
-  "popularity",
-  "futurePotential",
-  "investorConfidence",
-  "volatility",
-] as const;
-
-export type RatingKey = (typeof RATING_KEYS)[number];
-
-const STOCK_CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
+export { RATING_KEYS, STOCK_CATEGORIES, type RatingKey };
 
 export type PreviewSimulationEventDraft = {
   id: string;
@@ -170,66 +164,16 @@ function readNumber(
   return parsed;
 }
 
-function readInteger(
-  value: string,
-  field: string,
-  label: string,
-  min: number,
-  max: number,
-  errors: Record<string, string>,
-): number | undefined {
-  const parsed = readNumber(value, field, label, min, max, errors);
-  if (parsed === undefined) return undefined;
-  if (!Number.isInteger(parsed)) {
-    errors[field] = `${label} must be a whole number.`;
-    return undefined;
-  }
-  return parsed;
-}
-
 function normalizeLabel(label: string): string | undefined {
   const trimmed = label.trim();
   return trimmed === "" ? undefined : trimmed;
 }
 
 export function validatePricingPreviewDraft(draft: PricingPreviewDraft): PreviewValidationResult {
-  const errors: Record<string, string> = {};
-  const ratings = {} as CharacterValuationRatings;
-  const category = draft.category as string;
-
-  for (const key of RATING_KEYS) {
-    const parsed = readNumber(draft.ratings[key], `ratings.${key}`, key, 0, 100, errors);
-    ratings[key] = parsed ?? 0;
-  }
-
-  if (!STOCK_CATEGORIES.includes(category as StockCategory)) {
-    errors.category = "Category must be blue_chip, growth, speculative, or meme.";
-  }
-
-  const comparableAdjustment = readNumber(
-    draft.comparableAdjustment,
-    "comparableAdjustment",
-    "Comparable adjustment",
-    0.75,
-    1.25,
-    errors,
-  );
-  const uncertaintyDiscountPct = readNumber(
-    draft.uncertaintyDiscountPct,
-    "uncertaintyDiscountPct",
-    "Uncertainty discount",
-    0,
-    25,
-    errors,
-  );
-  const launchCatalystPct = readNumber(
-    draft.launchCatalystPct,
-    "launchCatalystPct",
-    "Launch catalyst",
-    -30,
-    30,
-    errors,
-  );
+  const persistentValidation = validatePersistentPricingDraft(draft);
+  const errors: Record<string, string> = persistentValidation.ok
+    ? {}
+    : { ...persistentValidation.errors };
   const currentMomentumPct = readNumber(
     draft.currentMomentumPct,
     "currentMomentumPct",
@@ -256,7 +200,7 @@ export function validatePricingPreviewDraft(draft: PricingPreviewDraft): Preview
   );
 
   const simulationEvents = draft.simulationEvents.map((event) => {
-    const day = readInteger(
+    const day = readNumber(
       event.day,
       `simulationEvents.${event.id}.day`,
       "Simulation event day",
@@ -264,6 +208,9 @@ export function validatePricingPreviewDraft(draft: PricingPreviewDraft): Preview
       SIMULATION_DAYS,
       errors,
     );
+    if (day !== undefined && !Number.isInteger(day)) {
+      errors[`simulationEvents.${event.id}.day`] = "Simulation event day must be a whole number.";
+    }
     const impactPct = readNumber(
       event.impactPct,
       `simulationEvents.${event.id}.impactPct`,
@@ -280,17 +227,19 @@ export function validatePricingPreviewDraft(draft: PricingPreviewDraft): Preview
     };
   });
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || !persistentValidation.ok) {
+    return { ok: false, errors };
+  }
 
   return {
     ok: true,
     errors: {},
     value: {
-      ratings,
-      category: draft.category,
-      comparableAdjustment: comparableAdjustment ?? 1,
-      uncertaintyDiscountPct: uncertaintyDiscountPct ?? 0,
-      launchCatalystPct: launchCatalystPct ?? 0,
+      ratings: persistentValidation.value.ratings,
+      category: persistentValidation.value.category,
+      comparableAdjustment: persistentValidation.value.comparableAdjustment,
+      uncertaintyDiscountPct: persistentValidation.value.uncertaintyDiscountPct,
+      launchCatalystPct: persistentValidation.value.launchCatalystPct,
       currentMomentumPct: currentMomentumPct ?? 0,
       approvedEventImpactPct: approvedEventImpactPct ?? 0,
       isMajorEvent: draft.isMajorEvent,
