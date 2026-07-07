@@ -118,36 +118,6 @@ export const listNews = createServerFn({ method: "GET" }).handler(async () => {
   return data ?? [];
 });
 
-export const adminUpdatePrice = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z
-      .object({
-        slug: z.string(),
-        newPrice: z.number().positive().max(99999),
-        note: z.string().max(200).optional(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await requireAdminRole(context.userId);
-    const db = await admin();
-    const { data: existing, error: e1 } = await db
-      .from("characters")
-      .select("id,current_price")
-      .eq("slug", data.slug)
-      .maybeSingle();
-    if (e1 || !existing) throw new Error("Character not found");
-    const { error: e2 } = await db
-      .from("characters")
-      .update({ previous_price: existing.current_price, current_price: data.newPrice })
-      .eq("id", existing.id);
-    if (e2) throw e2;
-    await db.from("price_history").insert({ character_id: existing.id, price: data.newPrice, note: data.note ?? null });
-    return { ok: true };
-  });
-
-const stockCategorySchema = z.enum(["blue_chip", "growth", "speculative", "meme"]);
 const nullableText = (max: number) =>
   z.preprocess((value) => {
     if (value == null) return null;
@@ -215,18 +185,6 @@ const nameSchema = z.preprocess(
   z.string().min(1).max(120),
 );
 
-const priceSchema = z
-  .number()
-  .finite()
-  .min(0.01)
-  .max(99999)
-  .refine((value) => {
-    const cents = Math.round(value * 100);
-    return Math.abs(value - cents / 100) < 1e-9;
-  }, "Price may use at most two decimals");
-
-const momentumSchema = z.number().finite().min(-5).max(5);
-
 const characterSelect =
   "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,created_at,display_order";
 
@@ -239,8 +197,6 @@ const adminCreateCharacterInput = z
     bounty: nullableSafeInteger,
     image_url: nullableHttpUrl,
     description: nullableText(2000),
-    initialPrice: priceSchema,
-    category: stockCategorySchema,
     display_order: nullableDisplayOrder,
   })
   .strict();
@@ -254,8 +210,6 @@ const adminUpdateCharacterInput = z
     bounty: nullableSafeInteger,
     image_url: nullableHttpUrl,
     description: nullableText(2000),
-    category: stockCategorySchema,
-    momentum: momentumSchema,
     display_order: nullableDisplayOrder,
   })
   .strict();
@@ -274,7 +228,6 @@ export const adminCreateCharacter = createServerFn({ method: "POST" })
     if (duplicateError) throw duplicateError;
     if (duplicate) throw new Error("Character slug already exists");
 
-    const initialPrice = data.initialPrice;
     const { data: created, error: createError } = await db
       .from("characters")
       .insert({
@@ -285,10 +238,6 @@ export const adminCreateCharacter = createServerFn({ method: "POST" })
         bounty: data.bounty,
         image_url: data.image_url,
         description: data.description,
-        current_price: initialPrice,
-        previous_price: initialPrice,
-        category: data.category,
-        momentum: 0,
         display_order: data.display_order,
       })
       .select(characterSelect)
@@ -298,25 +247,6 @@ export const adminCreateCharacter = createServerFn({ method: "POST" })
       throw createError;
     }
     if (!created) throw new Error("Character creation failed");
-
-    const { error: historyError } = await db.from("price_history").insert({
-      character_id: created.id,
-      price: initialPrice,
-      note: "IPO",
-      source: "seed",
-    });
-
-    if (historyError) {
-      const { error: cleanupError } = await db.from("characters").delete().eq("id", created.id);
-      if (cleanupError) {
-        throw new Error(
-          "Character creation failed while writing IPO price history, and cleanup failed. No existing character was deleted.",
-        );
-      }
-      throw new Error(
-        "Character creation failed while writing IPO price history. The new character was removed.",
-      );
-    }
 
     return created as CharacterRow;
   });
@@ -344,8 +274,6 @@ export const adminUpdateCharacter = createServerFn({ method: "POST" })
         bounty: data.bounty,
         image_url: data.image_url,
         description: data.description,
-        category: data.category,
-        momentum: data.momentum,
         display_order: data.display_order,
       })
       .eq("id", existing.id)

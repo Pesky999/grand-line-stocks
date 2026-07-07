@@ -66,6 +66,18 @@ export type CharacterPricingRatingsModel = {
   audit: CharacterPricingAudit | null;
 };
 
+export type CharacterPricingApplicationResult = {
+  ratings: CharacterPricingRatingsModel;
+  appliedAt: string;
+  priceHistoryId: string;
+  pricingAlgorithmVersion: typeof MARKET_PRICING_ALGORITHM_VERSION;
+  previousLivePrice: number;
+  newLivePrice: number;
+  percentageChange: number;
+  previousCategory: StockCategory;
+  newCategory: StockCategory;
+};
+
 export type PersistentPricingValidationResult =
   | { ok: true; value: PersistentPricingInput; errors: Record<string, never> }
   | { ok: false; errors: Record<string, string> };
