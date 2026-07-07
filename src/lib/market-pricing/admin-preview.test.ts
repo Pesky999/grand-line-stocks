@@ -141,6 +141,20 @@ test("invalid temporary inputs are reported without calculating output", () => {
   assert.match(validation.errors["simulationEvents.event-1.impactPct"], /-30 and 30/);
 });
 
+test("rating decimals are rejected before preview calculation", () => {
+  const draft = createDefaultPricingPreviewDraft(character);
+  const validation = validatePricingPreviewDraft({
+    ...draft,
+    ratings: {
+      ...draft.ratings,
+      investorConfidence: "50.5",
+    },
+  });
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors["ratings.investorConfidence"], /whole number/);
+});
+
 test("invalid runtime category is a field-level validation error", () => {
   const draft = createDefaultPricingPreviewDraft(character);
   const validation = validatePricingPreviewDraft({
