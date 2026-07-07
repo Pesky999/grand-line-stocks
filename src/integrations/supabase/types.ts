@@ -1704,6 +1704,24 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      save_and_apply_character_pricing: {
+        Args: {
+          _character_id: string
+          _comparable_adjustment: number
+          _current_relevance: number
+          _future_potential: number
+          _investor_confidence: number
+          _launch_catalyst_pct: number
+          _narrative_importance: number
+          _popularity: number
+          _pricing_algorithm_version: string
+          _stock_category: Database["public"]["Enums"]["stock_category"]
+          _strength_status: number
+          _uncertainty_discount_pct: number
+          _volatility: number
+        }
+        Returns: Json
+      }
       save_character_pricing_draft: {
         Args: {
           _character_id: string
