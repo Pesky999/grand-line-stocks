@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+const migrationsDir = join(process.cwd(), "supabase", "migrations");
 const migrationPath = join(
-  process.cwd(),
-  "supabase",
-  "migrations",
-  "20260705010000_character_pricing_ratings.sql",
+  migrationsDir,
+  "20260706024147_91f9dd9e-0b70-4939-96f1-950cbd8caa73.sql",
 );
 const sql = readFileSync(migrationPath, "utf8");
 const compactSql = sql.replace(/\s+/g, " ").toLowerCase();
-const sqlWithoutComments = sql.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+function stripSqlComments(source: string): string {
+  return source.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+const sqlWithoutComments = stripSqlComments(sql);
 
 function expectSql(pattern: RegExp, message: string): void {
   assert.match(sql, pattern, message);
@@ -20,6 +24,23 @@ function expectSql(pattern: RegExp, message: string): void {
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
+
+test("only one migration defines the character pricing ratings base table", () => {
+  const matchingMigrations = readdirSync(migrationsDir)
+    .filter((filename) => filename.endsWith(".sql"))
+    .filter((filename) => {
+      const migrationSql = readFileSync(join(migrationsDir, filename), "utf8");
+      return /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\.character_pricing_ratings\b/i.test(
+        stripSqlComments(migrationSql),
+      );
+    });
+
+  assert.deepEqual(
+    matchingMigrations,
+    ["20260706024147_91f9dd9e-0b70-4939-96f1-950cbd8caa73.sql"],
+    `expected exactly one base character_pricing_ratings migration, found: ${matchingMigrations.join(", ")}`,
+  );
+});
 
 test("character pricing ratings table stores only persisted rating inputs and audit metadata", () => {
   expectSql(/CREATE TABLE IF NOT EXISTS public\.character_pricing_ratings/i, "table is created");
