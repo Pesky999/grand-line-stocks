@@ -10,7 +10,7 @@ const migrationPath = join(
 );
 const applyMigrationPath = join(
   migrationsDir,
-  "20260707010000_save_and_apply_character_pricing.sql",
+  "20260707173704_save_and_apply_character_pricing.sql",
 );
 const pricingSource = readFileSync(join(process.cwd(), "src/lib/market-pricing/v1.ts"), "utf8");
 const sql = readFileSync(migrationPath, "utf8");
