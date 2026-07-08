@@ -25,6 +25,48 @@ export const Route = createFileRoute("/u/$username")({
   component: PublicProfile,
 });
 
+const STARTING_WALLET_BALANCE = 25_000;
+
+type PublicProfileStats = {
+  title?: string | null;
+  specialization?: string | null;
+  days_active?: number | null;
+  reputation_score?: number | null;
+  wins?: number | null;
+  losses?: number | null;
+  total_trades?: number | null;
+  realized_pnl?: number | null;
+  avg_holding_days?: number | null;
+  best_trade_slug?: string | null;
+  best_trade_pnl?: number | null;
+  worst_trade_slug?: string | null;
+  worst_trade_pnl?: number | null;
+  largest_position_slug?: string | null;
+  largest_position_value?: number | null;
+  highest_rank?: number | null;
+};
+
+type PublicProfileSnapshot = {
+  net_worth: number | string | null;
+};
+
+type PublicProfileAchievement = {
+  achievements: {
+    code: string;
+    name: string;
+    description: string;
+    tier: keyof typeof TIER_TONE;
+    icon: string | null;
+  };
+};
+
+type PublicLegacyRecord = {
+  username: string | null;
+  code: string;
+  title: string;
+  description: string;
+};
+
 function PublicProfile() {
   const { username } = Route.useParams();
   const q = useQuery({
@@ -46,23 +88,25 @@ function PublicProfile() {
     throw notFound();
   }
   const d = q.data;
-  const s: any = d.stats ?? {};
-  const totalReturn = ((d.net_worth - 10000) * 100) / 10000;
+  const s = (d.stats ?? {}) as PublicProfileStats;
+  const totalReturn = ((d.net_worth - STARTING_WALLET_BALANCE) * 100) / STARTING_WALLET_BALANCE;
   const closed = (s.wins ?? 0) + (s.losses ?? 0);
   const winRate = closed > 0 ? ((s.wins ?? 0) * 100) / closed : 0;
   const delta = rankDeltaLabel(d.prev_rank, d.rank ?? 9999);
-  const userLegacy = (legacy.data ?? []).filter((l: any) => l.username === username);
+  const userLegacy = ((legacy.data ?? []) as PublicLegacyRecord[]).filter((l) => l.username === username);
+  const title = s.title ?? "rookie_pirate";
+  const specialization = s.specialization ?? "generalist";
 
   return (
     <TerminalShell>
       <div className="border-b border-border bg-card/60 px-4 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="text-2xl font-bold tracking-widest text-primary">@{d.profile.username}</h1>
-          <span className={`border px-2 py-1 text-[10px] uppercase tracking-widest ${TITLE_TONE[s.title] ?? ""}`}>
-            {TITLE_LABEL[s.title] ?? "Rookie Pirate"}
+          <span className={`border px-2 py-1 text-[10px] uppercase tracking-widest ${TITLE_TONE[title] ?? ""}`}>
+            {TITLE_LABEL[title] ?? "Rookie Pirate"}
           </span>
           <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-            {SPEC_LABEL[s.specialization] ?? "Generalist"}
+            {SPEC_LABEL[specialization] ?? "Generalist"}
           </span>
           {d.rank && (
             <span className="border border-accent/60 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">
@@ -91,9 +135,9 @@ function PublicProfile() {
               <Cell label="Win Rate" value={`${winRate.toFixed(1)}% (${s.wins ?? 0}W / ${s.losses ?? 0}L)`} />
               <Cell label="Realized P/L" value={`${(s.realized_pnl ?? 0) >= 0 ? "+" : ""}฿${formatBerries(s.realized_pnl ?? 0)}`} />
               <Cell label="Avg Holding" value={`${(s.avg_holding_days ?? 0).toFixed(1)} days`} />
-              <Cell label="Best Trade" value={s.best_trade_slug ? `${s.best_trade_slug.toUpperCase()} (+฿${formatBerries(s.best_trade_pnl)})` : "—"} />
-              <Cell label="Worst Trade" value={s.worst_trade_slug ? `${s.worst_trade_slug.toUpperCase()} (฿${formatBerries(s.worst_trade_pnl)})` : "—"} />
-              <Cell label="Largest Position" value={s.largest_position_slug ? `${s.largest_position_slug.toUpperCase()} (฿${formatBerries(s.largest_position_value)})` : "—"} />
+              <Cell label="Best Trade" value={s.best_trade_slug ? `${s.best_trade_slug.toUpperCase()} (+฿${formatBerries(s.best_trade_pnl ?? 0)})` : "—"} />
+              <Cell label="Worst Trade" value={s.worst_trade_slug ? `${s.worst_trade_slug.toUpperCase()} (฿${formatBerries(s.worst_trade_pnl ?? 0)})` : "—"} />
+              <Cell label="Largest Position" value={s.largest_position_slug ? `${s.largest_position_slug.toUpperCase()} (฿${formatBerries(s.largest_position_value ?? 0)})` : "—"} />
               <Cell label="Highest Rank" value={s.highest_rank ? `#${s.highest_rank}` : "—"} />
             </div>
           </div>
@@ -103,7 +147,7 @@ function PublicProfile() {
             {d.snapshots.length === 0 ? (
               <div className="p-4 text-xs text-muted-foreground">Not enough history yet. Snapshots accumulate daily.</div>
             ) : (
-              <Sparkline points={d.snapshots.map((s: any) => Number(s.net_worth))} />
+              <Sparkline points={(d.snapshots as PublicProfileSnapshot[]).map((snapshot) => Number(snapshot.net_worth))} />
             )}
           </div>
 
@@ -133,7 +177,7 @@ function PublicProfile() {
               <div className="p-4 text-xs text-muted-foreground">No achievements unlocked yet.</div>
             ) : (
               <ul className="divide-y divide-border">
-                {d.achievements.map((ua: any) => (
+                {(d.achievements as PublicProfileAchievement[]).map((ua) => (
                   <li key={ua.achievements.code} className="px-3 py-2">
                     <div className="flex items-baseline justify-between">
                       <span className="text-sm font-bold">{ua.achievements.icon} {ua.achievements.name}</span>
@@ -150,7 +194,7 @@ function PublicProfile() {
             <div className="terminal-panel">
               <div className="terminal-header">Legacy Records</div>
               <ul className="divide-y divide-border text-xs">
-                {userLegacy.map((l: any) => (
+                {userLegacy.map((l) => (
                   <li key={l.code} className="px-3 py-2">
                     <div className="font-bold text-yellow-400">{l.title}</div>
                     <div className="text-[11px] text-muted-foreground">{l.description}</div>
