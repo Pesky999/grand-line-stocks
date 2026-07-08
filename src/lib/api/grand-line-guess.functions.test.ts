@@ -64,13 +64,23 @@ test("duplicate correct submissions retry the idempotent award path without trus
 
 test("new migration replaces the authoritative RPC formula and accepts reward 0", () => {
   assert.match(migration, /CREATE OR REPLACE FUNCTION public\.award_grand_line_guess_reward/);
+  assert.match(migration, /_reward_amount integer/);
   assert.match(migration, /SECURITY DEFINER/);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/);
   assert.match(migration, /v_wrong_guesses := pg_catalog\.GREATEST\(v_attempt_number - 1, 0\)/);
   assert.match(migration, /v_computed_reward := pg_catalog\.GREATEST\(0, 1000 - \(100 \* v_wrong_guesses\)\)/);
-  assert.match(migration, /_reward_amount IS DISTINCT FROM v_computed_reward/);
   assert.doesNotMatch(migration, /WHEN v_attempt_number = 1 THEN 750|WHEN v_attempt_number = 2 THEN 600|WHEN v_attempt_number = 3 THEN 500/);
   assert.doesNotMatch(migration, /_reward_amount\s*(?:<=|<)\s*0|v_computed_reward\s*(?:<=|<)\s*0/);
+});
+
+test("new migration ignores client reward amounts and pays the database-calculated reward", () => {
+  assert.doesNotMatch(migration, /_reward_amount\s+IS\s+DISTINCT\s+FROM/);
+  assert.doesNotMatch(migration, /reward_amount\s*=\s*_reward_amount/);
+  assert.doesNotMatch(migration, /berries\s*=\s*berries\s*\+\s*_reward_amount/);
+  assert.doesNotMatch(migration, /total_rewards_earned\s*[,=][\s\S]*_reward_amount/);
+  assert.match(migration, /SET berries = berries \+ v_computed_reward/);
+  assert.match(migration, /reward_amount = v_computed_reward/);
+  assert.match(migration, /total_rewards_earned,[\s\S]*v_computed_reward/);
 });
 
 test("new migration keeps duplicate-payout protection and service-role-only execution", () => {

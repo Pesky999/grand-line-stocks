@@ -1,5 +1,5 @@
 -- Update Grand Line Guess reward payout to the current gameplay formula.
--- The RPC remains service-role only and keeps payout validation/idempotency in PostgreSQL.
+-- The RPC remains service-role only and keeps payout authority/idempotency in PostgreSQL.
 
 CREATE OR REPLACE FUNCTION public.award_grand_line_guess_reward(
   _puzzle_id uuid,
@@ -64,9 +64,8 @@ BEGIN
     RAISE EXCEPTION 'Grand Line Guess reward validation failed';
   END IF;
 
-  IF _reward_amount IS DISTINCT FROM v_computed_reward THEN
-    RAISE EXCEPTION 'Grand Line Guess reward validation failed';
-  END IF;
+  -- _reward_amount is kept only for signature compatibility with already deployed clients.
+  -- The payout amount is always calculated above from database state.
 
   INSERT INTO public.grand_line_guess_results (puzzle_id, user_id)
   VALUES (_puzzle_id, _user_id)
