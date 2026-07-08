@@ -37,7 +37,7 @@ test("wrong guesses do not deduct wallet funds or call the reward path", () => {
   const wrongGuessBranch = submitBranch.slice(wrongBranchStart, wrongBranchEnd);
 
   assert.match(wrongGuessBranch, /grand_line_guess_results/);
-  assert.doesNotMatch(wrongGuessBranch, /awardGrandLineGuessReward|awardGrandLineGuessRewardSafely|user_wallets|berries\s*[-=]/);
+  assert.doesNotMatch(wrongGuessBranch, /awardGrandLineGuessReward|awardGrandLineGuessRewardSafely|ensureGrandLineGuessRewardWallet|user_wallets|berries\s*[-=]/);
 });
 
 test("correct guesses use the award path and payout failures return contained state", () => {
@@ -50,6 +50,38 @@ test("correct guesses use the award path and payout failures return contained st
   assert.match(routeSource, /role="alert"/);
   assert.match(routeSource, /Retry reward payout/);
   assert.match(routeSource, /setSubmissionError/);
+});
+
+test("reward payout prepares a missing wallet row without touching balances", () => {
+  const helper = between(
+    source,
+    "async function ensureGrandLineGuessRewardWallet",
+    "async function awardGrandLineGuessReward(",
+  );
+
+  assert.match(helper, /\.from\("user_wallets"\)[\s\S]*\.select\("user_id"\)[\s\S]*\.eq\("user_id", userId\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(helper, /if \(existing\.data\) return/);
+  assert.match(helper, /\.insert\(\{ user_id: userId \}\)/);
+  assert.match(helper, /created\.error\.code === "23505"/);
+  assert.match(helper, /const raced = await db[\s\S]*\.from\("user_wallets"\)[\s\S]*\.select\("user_id"\)/);
+  assert.doesNotMatch(helper, /\.update\(|\.upsert\(|berries/);
+  assert.match(source, /await ensureGrandLineGuessRewardWallet\(db, args\.userId\);\s+await awardGrandLineGuessReward\(db, args\);/);
+});
+
+test("reward RPC keeps compatibility arguments and logs server diagnostics on failure", () => {
+  const awardFn = between(source, "async function awardGrandLineGuessReward(", "async function awardGrandLineGuessRewardSafely");
+
+  assert.match(awardFn, /\.rpc\("award_grand_line_guess_reward", \{/);
+  assert.match(awardFn, /_puzzle_id: args\.puzzleId/);
+  assert.match(awardFn, /_user_id: args\.userId/);
+  assert.match(awardFn, /_attempt_number: args\.attemptNumber/);
+  assert.match(awardFn, /_reward_amount: args\.rewardAmount/);
+  assert.match(awardFn, /logGrandLineGuessSupabaseError\("Grand Line Guess reward RPC failed", error\)/);
+  assert.match(source, /code: error\.code/);
+  assert.match(source, /message: error\.message/);
+  assert.match(source, /details: error\.details/);
+  assert.match(source, /hint: error\.hint/);
+  assert.match(source, /REWARD_PAYOUT_ERROR_MESSAGE/);
 });
 
 test("duplicate correct submissions retry the idempotent award path without trusting the client", () => {

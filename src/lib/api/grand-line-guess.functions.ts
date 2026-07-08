@@ -103,6 +103,60 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
 
 type GuessAdminClient = Awaited<ReturnType<typeof admin>>;
 
+const REWARD_PAYOUT_ERROR_MESSAGE = "Could not award Grand Line Guess reward. Please refresh and try again.";
+
+function logGrandLineGuessSupabaseError(
+  message: string,
+  error: { code?: string; message?: string; details?: string; hint?: string },
+) {
+  console.error(message, {
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+  });
+}
+
+async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: string) {
+  const existing = await db
+    .from("user_wallets")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existing.error) {
+    logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition check failed", existing.error);
+    throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+  }
+
+  if (existing.data) return;
+
+  const created = await db
+    .from("user_wallets")
+    .insert({ user_id: userId })
+    .select("user_id")
+    .maybeSingle();
+
+  if (!created.error) return;
+
+  if (created.error.code === "23505") {
+    const raced = await db
+      .from("user_wallets")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!raced.error && raced.data) return;
+
+    if (raced.error) {
+      logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition race recheck failed", raced.error);
+    }
+  }
+
+  logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition insert failed", created.error);
+  throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+}
+
 async function awardGrandLineGuessReward(
   db: GuessAdminClient,
   args: { puzzleId: string; userId: string; attemptNumber: number; rewardAmount: number },
@@ -113,7 +167,10 @@ async function awardGrandLineGuessReward(
     _attempt_number: args.attemptNumber,
     _reward_amount: args.rewardAmount,
   });
-  if (error) throw new Error("Could not award Grand Line Guess reward. Please refresh and try again.");
+  if (error) {
+    logGrandLineGuessSupabaseError("Grand Line Guess reward RPC failed", error);
+    throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+  }
 }
 
 async function awardGrandLineGuessRewardSafely(
@@ -121,10 +178,11 @@ async function awardGrandLineGuessRewardSafely(
   args: { puzzleId: string; userId: string; attemptNumber: number; rewardAmount: number },
 ): Promise<string | null> {
   try {
+    await ensureGrandLineGuessRewardWallet(db, args.userId);
     await awardGrandLineGuessReward(db, args);
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message : "Could not award Grand Line Guess reward. Please refresh and try again.";
+    return error instanceof Error ? error.message : REWARD_PAYOUT_ERROR_MESSAGE;
   }
 }
 
