@@ -52,6 +52,7 @@ test("preview wording distinguishes base fair value and signed fair-value differ
 test("ratings functions are used and preview-only inputs are omitted from save payloads", () => {
   assert.match(panelSource, /getCharacterPricingRatings/);
   assert.match(panelSource, /listCharacterPricingRatings/);
+  assert.match(panelSource, /exportCharacterPricingRatingsCsv/);
   assert.match(panelSource, /saveCharacterPricingDraft/);
   assert.match(panelSource, /saveAndApplyCharacterPricing/);
   assert.match(panelSource, /resetCharacterPricingRatings/);
@@ -61,6 +62,28 @@ test("ratings functions are used and preview-only inputs are omitted from save p
     functionBlock(panelSource, "saveDraft"),
     /currentMomentumPct|approvedEventImpactPct|isMajorEvent|marketIndexEffectPct|simulationEvents/,
   );
+});
+
+test("CSV export button downloads the read-only admin export without touching pricing state", () => {
+  const exportFunction = functionBlock(panelSource, "exportPricingRatingsCsv");
+  const downloadFunction = functionBlock(panelSource, "downloadCsvFile");
+
+  assert.match(panelSource, /Export Pricing Ratings CSV/);
+  assert.match(panelSource, /Exporting\.\.\./);
+  assert.match(panelSource, /Downloads the current character pricing dataset/);
+  assert.match(exportFunction, /setOperation\("export"\)/);
+  assert.match(exportFunction, /exportCharacterPricingRatingsCsv\(\)/);
+  assert.match(exportFunction, /downloadCsvFile\(result\.filename, result\.csv\)/);
+  assert.match(exportFunction, /toast\.success/);
+  assert.match(exportFunction, /toast\.error/);
+  assert.match(exportFunction, /setOperation\(null\)/);
+  assert.match(downloadFunction, /new Blob\(\[csv\], \{ type: "text\/csv;charset=utf-8" \}\)/);
+  assert.match(downloadFunction, /URL\.createObjectURL\(blob\)/);
+  assert.match(downloadFunction, /anchor\.download = filename/);
+  assert.match(downloadFunction, /anchor\.click\(\)/);
+  assert.match(downloadFunction, /URL\.revokeObjectURL\(url\)/);
+  assert.doesNotMatch(exportFunction, /setDraft|setBaselinePersistent|refreshRatingsState/);
+  assert.doesNotMatch(exportFunction, /refreshAppliedMarketState|invalidateQueries|saveAndApplyPrice/);
 });
 
 test("status, stale, and dirty-state workflow are represented", () => {
@@ -120,6 +143,7 @@ test("mutations lock character switching and persistent inputs", () => {
   assert.match(functionBlock(panelSource, "handleCharacterChange"), /if \(operation\)/);
   assert.match(panelSource, /disabled=\{isBusy\}/);
   assert.match(panelSource, /<fieldset disabled=\{persistentInputsDisabled\}/);
+  assert.match(panelSource, /type Operation = "save" \| "apply" \| "reset" \| "export" \| null/);
   assert.match(functionBlock(panelSource, "resetCurrentDraft"), /if \(operation\)/);
   assert.match(
     functionBlock(panelSource, "saveDraft"),
@@ -161,7 +185,7 @@ test("hydration preserves temporary preview work unless character switch or rese
   const hydrationEffect = sourceBetween(
     panelSource,
     "const alreadyProcessed",
-    "useEffect(() => {\n    if (!persistentDirty)",
+    "const warnBeforeUnload",
   );
 
   assert.match(hydrationEffect, /setDraft\(\(currentDraft\) =>/);

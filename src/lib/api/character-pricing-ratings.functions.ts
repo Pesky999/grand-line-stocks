@@ -16,6 +16,41 @@ import {
 const ratingSchema = z.number().int().min(0).max(100);
 const characterIdSchema = z.object({ characterId: z.string().uuid() }).strict();
 const MAX_SUPPORTED_MARKET_PRICE = 99999;
+const CSV_COLUMNS = [
+  "character_id",
+  "character_name",
+  "current_live_price",
+  "previous_live_price",
+  "live_stock_category",
+  "ratings_status",
+  "narrative_importance",
+  "current_relevance",
+  "strength_status",
+  "popularity",
+  "future_potential",
+  "investor_confidence",
+  "volatility",
+  "rated_stock_category",
+  "comparable_adjustment",
+  "uncertainty_discount_pct",
+  "launch_catalyst_pct",
+  "pricing_algorithm_version",
+  "ratings_updated_at",
+] as const;
+
+type CharacterPricingRatingsCsvColumn = (typeof CSV_COLUMNS)[number];
+type CharacterExportRow = Pick<
+  Database["public"]["Tables"]["characters"]["Row"],
+  "id" | "name" | "current_price" | "previous_price" | "category"
+>;
+type CharacterPricingRatingsCsvRow = Record<CharacterPricingRatingsCsvColumn, string | number>;
+
+export type CharacterPricingRatingsCsvExport = {
+  filename: string;
+  csv: string;
+  rowCount: number;
+  ratedCount: number;
+};
 
 const persistentRatingsInput = characterIdSchema
   .extend({
@@ -132,6 +167,51 @@ function mapApplyRpcResult(value: unknown): CharacterPricingApplicationResult {
   };
 }
 
+function csvCell(value: string | number): string {
+  const text = String(value);
+  if (!/[",\r\n]/.test(text)) return text;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function buildCsv(rows: CharacterPricingRatingsCsvRow[]): string {
+  const lines = [
+    CSV_COLUMNS.join(","),
+    ...rows.map((row) => CSV_COLUMNS.map((column) => csvCell(row[column])).join(",")),
+  ];
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
+}
+
+function exportFilename(now = new Date()): string {
+  return `grand-line-pricing-ratings-${now.toISOString().slice(0, 10)}.csv`;
+}
+
+function toCsvRow(
+  character: CharacterExportRow,
+  rating: CharacterPricingRatingsRow | undefined,
+): CharacterPricingRatingsCsvRow {
+  return {
+    character_id: character.id,
+    character_name: character.name,
+    current_live_price: Number(character.current_price),
+    previous_live_price: Number(character.previous_price),
+    live_stock_category: character.category,
+    ratings_status: rating?.ratings_status ?? "",
+    narrative_importance: rating?.narrative_importance ?? "",
+    current_relevance: rating?.current_relevance ?? "",
+    strength_status: rating?.strength_status ?? "",
+    popularity: rating?.popularity ?? "",
+    future_potential: rating?.future_potential ?? "",
+    investor_confidence: rating?.investor_confidence ?? "",
+    volatility: rating?.volatility ?? "",
+    rated_stock_category: rating?.stock_category ?? "",
+    comparable_adjustment: rating?.comparable_adjustment ?? "",
+    uncertainty_discount_pct: rating?.uncertainty_discount_pct ?? "",
+    launch_catalyst_pct: rating?.launch_catalyst_pct ?? "",
+    pricing_algorithm_version: rating?.pricing_algorithm_version ?? "",
+    ratings_updated_at: rating?.updated_at ?? "",
+  };
+}
+
 export const getCharacterPricingRatings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => characterIdSchema.parse(input))
@@ -161,6 +241,42 @@ export const listCharacterPricingRatings = createServerFn({ method: "GET" })
     return (data ?? []).map((row) =>
       mapCharacterPricingRatingsRow(row as CharacterPricingRatingsRow),
     );
+  });
+
+export const exportCharacterPricingRatingsCsv = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<CharacterPricingRatingsCsvExport> => {
+    await requireAdminRole(context.supabase, context.userId);
+
+    const [charactersResult, ratingsResult] = await Promise.all([
+      context.supabase
+        .from("characters")
+        .select("id,name,current_price,previous_price,category")
+        .order("name", { ascending: true })
+        .returns<CharacterExportRow[]>(),
+      context.supabase
+        .from("character_pricing_ratings")
+        .select("*")
+        .returns<CharacterPricingRatingsRow[]>(),
+    ]);
+
+    if (charactersResult.error) throw charactersResult.error;
+    if (ratingsResult.error) throw ratingsResult.error;
+
+    const ratingsRows = ratingsResult.data ?? [];
+    const ratingsByCharacterId = new Map(
+      ratingsRows.map((row) => [row.character_id, row] as const),
+    );
+    const rows = [...(charactersResult.data ?? [])]
+      .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+      .map((character) => toCsvRow(character, ratingsByCharacterId.get(character.id)));
+
+    return {
+      filename: exportFilename(),
+      csv: buildCsv(rows),
+      rowCount: rows.length,
+      ratedCount: ratingsRows.length,
+    };
   });
 
 export const saveCharacterPricingDraft = createServerFn({ method: "POST" })

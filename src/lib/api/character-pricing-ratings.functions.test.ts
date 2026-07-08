@@ -19,6 +19,7 @@ test("every ratings server function requires authenticated middleware and admin 
   for (const name of [
     "getCharacterPricingRatings",
     "listCharacterPricingRatings",
+    "exportCharacterPricingRatingsCsv",
     "saveCharacterPricingDraft",
     "saveAndApplyCharacterPricing",
     "resetCharacterPricingRatings",
@@ -53,6 +54,73 @@ test("reads use authenticated context.supabase and no row maps to unrated", () =
   assert.doesNotMatch(
     source,
     /\.from\("character_pricing_ratings"\)[\s\S]*\.(insert|update|delete)\(/,
+  );
+});
+
+test("CSV export reads characters and ratings through the authenticated admin client", () => {
+  const exportCsv = functionSource("exportCharacterPricingRatingsCsv");
+
+  assert.match(exportCsv, /requireAdminRole\(context\.supabase, context\.userId\)/);
+  assert.match(
+    exportCsv,
+    /context\.supabase[\s\S]*\.from\("characters"\)[\s\S]*\.select\("id,name,current_price,previous_price,category"\)/,
+  );
+  assert.match(
+    exportCsv,
+    /context\.supabase[\s\S]*\.from\("character_pricing_ratings"\)[\s\S]*\.select\("\*"\)/,
+  );
+  assert.match(exportCsv, /new Map\([\s\S]*ratingsRows\.map/);
+  assert.match(exportCsv, /\.sort\(\(left, right\) => left\.name\.localeCompare\(right\.name\)/);
+  assert.match(exportCsv, /toCsvRow\(character, ratingsByCharacterId\.get\(character\.id\)\)/);
+});
+
+test("CSV export includes the approved columns and keeps unrated cells blank", () => {
+  const exportCsv = functionSource("exportCharacterPricingRatingsCsv");
+  const csvHelpers = source.slice(source.indexOf("const CSV_COLUMNS"), source.indexOf("export const getCharacterPricingRatings"));
+
+  for (const column of [
+    "character_id",
+    "character_name",
+    "current_live_price",
+    "previous_live_price",
+    "live_stock_category",
+    "ratings_status",
+    "narrative_importance",
+    "current_relevance",
+    "strength_status",
+    "popularity",
+    "future_potential",
+    "investor_confidence",
+    "volatility",
+    "rated_stock_category",
+    "comparable_adjustment",
+    "uncertainty_discount_pct",
+    "launch_catalyst_pct",
+    "pricing_algorithm_version",
+    "ratings_updated_at",
+  ]) {
+    assert.match(csvHelpers, new RegExp(`"${column}"`), `${column} is exported`);
+  }
+
+  assert.match(exportCsv, /rowCount: rows\.length/);
+  assert.match(exportCsv, /ratedCount: ratingsRows\.length/);
+  assert.match(csvHelpers, /ratings_status: rating\?\.ratings_status \?\? ""/);
+  assert.match(csvHelpers, /narrative_importance: rating\?\.narrative_importance \?\? ""/);
+  assert.match(csvHelpers, /ratings_updated_at: rating\?\.updated_at \?\? ""/);
+});
+
+test("CSV export escapes cells and stays read-only", () => {
+  const exportCsv = functionSource("exportCharacterPricingRatingsCsv");
+  const csvHelpers = source.slice(source.indexOf("function csvCell"), source.indexOf("export const getCharacterPricingRatings"));
+
+  assert.match(csvHelpers, /\/\[",\\r\\n\]\//);
+  assert.match(csvHelpers, /text\.replaceAll\('"', '""'\)/);
+  assert.match(csvHelpers, /`\\uFEFF\$\{lines\.join\("\\r\\n"\)\}\\r\\n`/);
+  assert.match(csvHelpers, /grand-line-pricing-ratings-\$\{now\.toISOString\(\)\.slice\(0, 10\)\}\.csv/);
+  assert.doesNotMatch(exportCsv, /\.(insert|update|delete|upsert)\(/);
+  assert.doesNotMatch(
+    exportCsv,
+    /save_character_pricing_draft|save_and_apply_character_pricing|reset_character_pricing_ratings/,
   );
 });
 
