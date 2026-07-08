@@ -262,12 +262,20 @@ async function loadState(userId: string) {
     db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle(),
     db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single(),
   ]);
-  let answer: { name: string; slug: string } | null = null;
-  if (puzzle.status === "solved" || puzzle.status === "expired") {
-    if (targetR.data) answer = { name: targetR.data.name, slug: targetR.data.slug };
-  }
   const attempts = attemptsR.data ?? [];
   const result = resultR.data;
+  const correctAttempt = attempts.find((attempt: { is_correct: boolean }) => attempt.is_correct) ?? null;
+  const effectivelySolved = Boolean(result?.solved || correctAttempt);
+  const rewardPaid = result?.reward_paid ?? false;
+  const rewardPayoutPending = Boolean((result?.solved && !rewardPaid) || (correctAttempt && !rewardPaid));
+  const correctAttemptNumber = correctAttempt?.attempt_number ?? (result?.solved ? result.attempts_used : null);
+  const pendingRewardAmount = rewardPayoutPending && correctAttemptNumber != null
+    ? rewardForAttempt(correctAttemptNumber)
+    : null;
+  let answer: { name: string; slug: string } | null = null;
+  if (effectivelySolved || puzzle.status === "expired") {
+    if (targetR.data) answer = { name: targetR.data.name, slug: targetR.data.slug };
+  }
   const wrongCount = attempts.filter((attempt: { is_correct: boolean }) => !attempt.is_correct).length;
   const hintsUsed = result?.hints_used ?? 0;
   const target = targetR.data as CharRow | null;
@@ -294,9 +302,12 @@ async function loadState(userId: string) {
     wrong_count: wrongCount,
     hints_used: hintsUsed,
     hints,
-    solved: result?.solved ?? false,
-    reward_paid: result?.reward_paid ?? false,
-    reward_amount: result?.reward_amount ?? 0,
+    solved: effectivelySolved,
+    reward_paid: rewardPaid,
+    reward_amount: rewardPaid ? (result?.reward_amount ?? 0) : (pendingRewardAmount ?? result?.reward_amount ?? 0),
+    reward_payout_pending: rewardPayoutPending,
+    can_retry_payout: Boolean(rewardPayoutPending && correctAttempt),
+    pending_reward_amount: pendingRewardAmount,
     potential_next_reward: potentialReward,
     answer,
     reward_error: null as string | null,
@@ -306,6 +317,60 @@ async function loadState(userId: string) {
 export const getTodayGrandLineGuessState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => loadState(context.userId));
+
+export const retryGrandLineGuessReward = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const db = await admin();
+    const userId = context.userId;
+    const puzzle = await ensurePuzzle(userId);
+
+    const correctAttemptR = await db
+      .from("grand_line_guess_attempts")
+      .select("id,attempt_number,is_correct")
+      .eq("puzzle_id", puzzle.id)
+      .eq("user_id", userId)
+      .eq("is_correct", true)
+      .order("attempt_number", { ascending: true })
+      .limit(1);
+
+    if (correctAttemptR.error) {
+      const state = await loadState(userId);
+      return { ...state, reward_error: REWARD_PAYOUT_ERROR_MESSAGE };
+    }
+
+    const correctAttempt = correctAttemptR.data?.[0] ?? null;
+    if (!correctAttempt) {
+      const state = await loadState(userId);
+      return { ...state, reward_error: "No unpaid Grand Line Guess reward is available to retry." };
+    }
+
+    const resultR = await db
+      .from("grand_line_guess_results")
+      .select("reward_paid")
+      .eq("puzzle_id", puzzle.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (resultR.error) {
+      const state = await loadState(userId);
+      return { ...state, reward_error: REWARD_PAYOUT_ERROR_MESSAGE };
+    }
+
+    if (resultR.data?.reward_paid) {
+      return loadState(userId);
+    }
+
+    const rewardError = await awardGrandLineGuessRewardSafely(db, {
+      puzzleId: puzzle.id,
+      userId,
+      attemptNumber: correctAttempt.attempt_number,
+      rewardAmount: rewardForAttempt(correctAttempt.attempt_number),
+    });
+
+    const state = await loadState(userId);
+    return rewardError ? { ...state, reward_error: rewardError } : state;
+  });
 
 export const submitGrandLineGuess = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
