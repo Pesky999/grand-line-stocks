@@ -10,8 +10,10 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as MarketReportRouteImport } from './routes/market-report'
+import { Route as MarketBulletinRouteImport } from './routes/market-bulletin'
 import { Route as LeaderboardsRouteImport } from './routes/leaderboards'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as EventsRouteImport } from './routes/events'
@@ -34,6 +36,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NewsRoute = NewsRouteImport.update({
   id: '/news',
   path: '/news',
@@ -42,6 +49,11 @@ const NewsRoute = NewsRouteImport.update({
 const MarketReportRoute = MarketReportRouteImport.update({
   id: '/market-report',
   path: '/market-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketBulletinRoute = MarketBulletinRouteImport.update({
+  id: '/market-bulletin',
+  path: '/market-bulletin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeaderboardsRoute = LeaderboardsRouteImport.update({
@@ -133,8 +145,10 @@ export interface FileRoutesByFullPath {
   '/events': typeof EventsRoute
   '/games': typeof GamesRouteWithChildren
   '/leaderboards': typeof LeaderboardsRoute
+  '/market-bulletin': typeof MarketBulletinRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
@@ -152,8 +166,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/events': typeof EventsRoute
   '/leaderboards': typeof LeaderboardsRoute
+  '/market-bulletin': typeof MarketBulletinRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
@@ -174,8 +190,10 @@ export interface FileRoutesById {
   '/events': typeof EventsRoute
   '/games': typeof GamesRouteWithChildren
   '/leaderboards': typeof LeaderboardsRoute
+  '/market-bulletin': typeof MarketBulletinRoute
   '/market-report': typeof MarketReportRoute
   '/news': typeof NewsRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
@@ -196,8 +214,10 @@ export interface FileRouteTypes {
     | '/events'
     | '/games'
     | '/leaderboards'
+    | '/market-bulletin'
     | '/market-report'
     | '/news'
+    | '/reports'
     | '/reset-password'
     | '/admin'
     | '/events-admin'
@@ -215,8 +235,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/events'
     | '/leaderboards'
+    | '/market-bulletin'
     | '/market-report'
     | '/news'
+    | '/reports'
     | '/reset-password'
     | '/admin'
     | '/events-admin'
@@ -236,8 +258,10 @@ export interface FileRouteTypes {
     | '/events'
     | '/games'
     | '/leaderboards'
+    | '/market-bulletin'
     | '/market-report'
     | '/news'
+    | '/reports'
     | '/reset-password'
     | '/_authenticated/admin'
     | '/_authenticated/events-admin'
@@ -258,8 +282,10 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   GamesRoute: typeof GamesRouteWithChildren
   LeaderboardsRoute: typeof LeaderboardsRoute
+  MarketBulletinRoute: typeof MarketBulletinRoute
   MarketReportRoute: typeof MarketReportRoute
   NewsRoute: typeof NewsRoute
+  ReportsRoute: typeof ReportsRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   CharacterSlugRoute: typeof CharacterSlugRoute
   UUsernameRoute: typeof UUsernameRoute
@@ -274,6 +300,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/news': {
       id: '/news'
       path: '/news'
@@ -286,6 +319,13 @@ declare module '@tanstack/react-router' {
       path: '/market-report'
       fullPath: '/market-report'
       preLoaderRoute: typeof MarketReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/market-bulletin': {
+      id: '/market-bulletin'
+      path: '/market-bulletin'
+      fullPath: '/market-bulletin'
+      preLoaderRoute: typeof MarketBulletinRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leaderboards': {
@@ -443,8 +483,10 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   GamesRoute: GamesRouteWithChildren,
   LeaderboardsRoute: LeaderboardsRoute,
+  MarketBulletinRoute: MarketBulletinRoute,
   MarketReportRoute: MarketReportRoute,
   NewsRoute: NewsRoute,
+  ReportsRoute: ReportsRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   CharacterSlugRoute: CharacterSlugRoute,
   UUsernameRoute: UUsernameRoute,

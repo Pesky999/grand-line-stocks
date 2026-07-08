@@ -24,9 +24,7 @@ type NavItem = { to: string; label: string; chip?: string; tone?: "accent"; admi
 const NAV: NavItem[] = [
   { to: "/", label: "Market", chip: "F1" },
   { to: "/portfolio", label: "Portfolio", chip: "F2" },
-  { to: "/events", label: "Events", chip: "F3" },
-  { to: "/market-report", label: "Report", chip: "F4" },
-  { to: "/news", label: "News", chip: "F5" },
+  { to: "/market-bulletin", label: "Market Bulletin", chip: "F3" },
   { to: "/leaderboards", label: "Ranks", chip: "F6" },
   { to: "/games", label: "Games", chip: "F7" },
   { to: "/admin", label: "Admin", chip: "F9", tone: "accent", adminOnly: true },

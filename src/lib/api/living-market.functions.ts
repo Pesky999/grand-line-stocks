@@ -1,18 +1,35 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
+import type { Database } from "@/integrations/supabase/types";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
-async function requireAdmin(userId: string) {
-  const db = await admin();
+async function requireAdmin(userId: string, db: SupabaseClient<Database>) {
   const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin role required");
+}
+
+async function updateCharacterCategoryWithAdminClient(characterId: string, category: (typeof CATEGORIES)[number]) {
+  try {
+    const db = await admin();
+    const { error } = await db.from("characters").update({ category }).eq("id", characterId);
+    if (error) throw error;
+  } catch (error) {
+    throw new Error(
+      error instanceof Error && error.message.includes("Invalid API key")
+        ? "Category updates require the server admin client and cannot run with the current local Supabase configuration. Category changes were not applied."
+        : error instanceof Error
+          ? error.message
+          : "Category update failed",
+    );
+  }
 }
 
 const CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
@@ -68,8 +85,8 @@ export const listActiveRumors = createServerFn({ method: "GET" })
 export const adminListAttributes = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
+    await requireAdmin(context.userId, context.supabase);
+    const db = context.supabase;
     const { data, error } = await db
       .from("characters")
       .select("id,slug,name,category,momentum,character_attributes(narrative_potential,hype_rating,investor_confidence,volatility_rating)")
@@ -84,7 +101,6 @@ export const adminUpdateAttributes = createServerFn({ method: "POST" })
     z
       .object({
         slug: z.string(),
-        category: z.enum(CATEGORIES).optional(),
         narrative_potential: z.number().int().min(0).max(100).optional(),
         hype_rating: z.number().int().min(0).max(100).optional(),
         investor_confidence: z.number().int().min(0).max(100).optional(),
@@ -93,15 +109,10 @@ export const adminUpdateAttributes = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.userId);
-    const db = await admin();
+    await requireAdmin(context.userId, context.supabase);
+    const db = context.supabase;
     const { data: ch, error: e1 } = await db.from("characters").select("id").eq("slug", data.slug).maybeSingle();
     if (e1 || !ch) throw new Error("Character not found");
-
-    if (data.category) {
-      const { error } = await db.from("characters").update({ category: data.category }).eq("id", ch.id);
-      if (error) throw error;
-    }
 
     const attrPatch: Record<string, number> = {};
     if (data.narrative_potential !== undefined) attrPatch.narrative_potential = data.narrative_potential;
@@ -116,4 +127,25 @@ export const adminUpdateAttributes = createServerFn({ method: "POST" })
       if (error) throw error;
     }
     return { ok: true };
+  });
+
+export const adminApplyCategory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        slug: z.string(),
+        category: z.enum(CATEGORIES),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context.userId, context.supabase);
+    const db = context.supabase;
+    const { data: ch, error } = await db.from("characters").select("id,category").eq("slug", data.slug).maybeSingle();
+    if (error || !ch) throw new Error("Character not found");
+    if (ch.category === data.category) return { ok: true, changed: false };
+
+    await updateCharacterCategoryWithAdminClient(ch.id, data.category);
+    return { ok: true, changed: true };
   });
