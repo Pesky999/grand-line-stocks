@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import type { CharacterRow } from "@/lib/api/market.functions";
 import {
+  exportCharacterPricingRatingsCsv,
   getCharacterPricingRatings,
   listCharacterPricingRatings,
   resetCharacterPricingRatings,
@@ -50,7 +51,7 @@ type CalculationState = {
   error: string | null;
 };
 
-type Operation = "save" | "apply" | "reset" | null;
+type Operation = "save" | "apply" | "reset" | "export" | null;
 
 const STOCK_CATEGORIES = ["blue_chip", "growth", "speculative", "meme"] as const;
 const LARGE_REPRICE_WARNING_PCT = 25;
@@ -148,6 +149,18 @@ function validationSummary(errors: Record<string, string>) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function downloadCsvFile(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function getDefaultPersistentBaseline(character: CharacterRow | undefined): PersistentPricingInput {
@@ -531,6 +544,22 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     }
   }
 
+  async function exportPricingRatingsCsv() {
+    if (operation) return;
+    setOperation("export");
+    try {
+      const result = await exportCharacterPricingRatingsCsv();
+      downloadCsvFile(result.filename, result.csv);
+      toast.success(
+        `Pricing ratings CSV exported (${result.ratedCount}/${result.rowCount} rated).`,
+      );
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not export pricing ratings CSV."));
+    } finally {
+      setOperation(null);
+    }
+  }
+
   if (!selectedCharacter) {
     return (
       <section className="terminal-panel">
@@ -577,6 +606,20 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
               value={ratingsListQuery.isLoading ? "loading" : String(savedRatingsCount)}
             />
             <Metric label="Algorithm" value={ratingsState?.currentAlgorithmVersion ?? "loading"} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            <button
+              type="button"
+              onClick={() => void exportPricingRatingsCsv()}
+              disabled={isBusy}
+              className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+            >
+              {operation === "export" ? "Exporting..." : "Export Pricing Ratings CSV"}
+            </button>
+            <span>
+              Downloads the current character pricing dataset. This does not change ratings or
+              market data.
+            </span>
           </div>
           <p>{resetNotice}</p>
           {ratingsQuery.isError && (
