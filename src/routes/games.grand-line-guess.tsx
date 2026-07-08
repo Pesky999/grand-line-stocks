@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { TerminalShell } from "@/components/TerminalShell";
@@ -24,6 +25,13 @@ export const Route = createFileRoute("/games/grand-line-guess")({
 
 type Cell = { value: string; result: string };
 type Feedback = Record<string, Cell>;
+type AutocompleteOption = { id: string; name: string };
+type GuessAttempt = {
+  guessed_character_id: string;
+  feedback: Feedback;
+  attempt_number: number;
+  is_correct: boolean;
+};
 
 const COLUMNS: { key: keyof Feedback; label: string }[] = [
   { key: "character", label: "Character" },
@@ -69,6 +77,10 @@ function arrow(columnKey: string, result: string) {
   return "";
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Submission failed";
+}
+
 function GrandLineGuessPage() {
   const { user } = useMe();
   const qc = useQueryClient();
@@ -94,19 +106,32 @@ function GrandLineGuessPage() {
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  const guessedIds = new Set((stateQ.data?.attempts ?? []).map((a: any) => a.guessed_character_id));
+  const state = stateQ.data;
+  const stats = statsQ.data;
+  const attempts = useMemo(() => ((state?.attempts ?? []) as unknown) as GuessAttempt[], [state?.attempts]);
+  const unpaidCorrectAttempt = attempts.find((attempt) => attempt.is_correct) ?? null;
+  const guessedIds = new Set(attempts.map((attempt) => attempt.guessed_character_id));
   const options = useMemo(() => {
-    const all = autocompleteQ.data ?? [];
+    const all = (autocompleteQ.data ?? []) as AutocompleteOption[];
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return all.filter((c: any) => c.name.toLowerCase().includes(q)).slice(0, 8);
+    return all.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 8);
   }, [autocompleteQ.data, query]);
 
   const submitM = useMutation({
     mutationFn: (id: string) => submitGrandLineGuess({ data: { guessed_character_id: id } }),
+    onMutate: () => {
+      setSubmissionError(null);
+    },
     onSuccess: (next) => {
       qc.setQueryData(["glg-state"], next);
+      if (next?.reward_error) {
+        setSubmissionError(next.reward_error);
+        toast.error(next.reward_error);
+        return;
+      }
       if (next?.solved) {
         toast.success(`Solved in ${next.attempts_used}! +฿${next.reward_amount}`);
         invalidateMe();
@@ -115,7 +140,11 @@ function GrandLineGuessPage() {
       setQuery("");
       setOpen(false);
     },
-    onError: (e: any) => toast.error(e.message ?? "Submission failed"),
+    onError: (error) => {
+      const message = errorMessage(error);
+      setSubmissionError(message);
+      toast.error(message);
+    },
   });
 
 
@@ -124,10 +153,6 @@ function GrandLineGuessPage() {
     if (guessedIds.has(id)) { toast("Already guessed"); return; }
     submitM.mutate(id);
   };
-
-  const state = stateQ.data;
-  const stats = statsQ.data;
-  const attempts = ((state?.attempts ?? []) as unknown) as Array<{ feedback: Feedback; attempt_number: number; is_correct: boolean }>;
 
   const shareText = useMemo(() => {
     if (!state?.solved) return "";
@@ -191,7 +216,7 @@ function GrandLineGuessPage() {
                     />
                     {open && options.length > 0 && (
                       <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto border border-border bg-card">
-                        {options.map((o: any) => {
+                        {options.map((o) => {
                           const used = guessedIds.has(o.id);
                           return (
                             <li key={o.id}>
@@ -211,7 +236,21 @@ function GrandLineGuessPage() {
                   </div>
                 )}
 
-
+                {submissionError && (
+                  <div role="alert" className="mt-4 border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
+                    <div className="font-bold uppercase tracking-widest">Reward payout needs attention</div>
+                    <p className="mt-1 text-muted-foreground">{submissionError}</p>
+                    {unpaidCorrectAttempt && !state?.reward_paid ? (
+                      <button
+                        disabled={submitM.isPending}
+                        onClick={() => submitM.mutate(unpaidCorrectAttempt.guessed_character_id)}
+                        className="mt-3 border border-bear/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-bear hover:bg-bear/10 disabled:opacity-40"
+                      >
+                        Retry reward payout
+                      </button>
+                    ) : null}
+                  </div>
+                )}
 
 
                 {/* Grid */}
@@ -281,7 +320,7 @@ function GrandLineGuessPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: any }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="border border-border bg-card/60 p-2">
       <div className="text-[9px] text-muted-foreground">{label}</div>

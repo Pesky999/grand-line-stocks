@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { compareGuessBounty, rewardForAttempt } from "@/lib/grand-line-guess/rules";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -82,14 +83,7 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
       return { value, result, armament: g[0], observation: g[1], conquerors: g[2] };
     })(),
     bounty: (() => {
-      const gd = guess.bounty_display ?? "Unknown";
-      if (guess.bounty_unknown || target.bounty_unknown || guess.bounty_numeric == null || target.bounty_numeric == null) {
-        return { value: gd, result: "unknown" as const };
-      }
-      if (guess.bounty_numeric === target.bounty_numeric && !guess.bounty_is_minimum && !target.bounty_is_minimum) return { value: gd, result: "exact" as const };
-      if (target.bounty_numeric > guess.bounty_numeric) return { value: gd, result: "higher" as const };
-      if (target.bounty_numeric < guess.bounty_numeric) return { value: gd, result: "lower" as const };
-      return { value: gd, result: "partial" as const };
+      return compareGuessBounty(guess, target);
     })(),
     height: (() => {
       const gd = guess.height_cm != null ? `${guess.height_cm} cm` : "Unknown";
@@ -107,9 +101,6 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
   return fb;
 }
 
-const REWARDS = [750, 600, 500, 400, 300, 200, 100];
-function rewardForAttempt(n: number) { return n <= 0 ? 0 : REWARDS[Math.min(n, REWARDS.length) - 1]; }
-
 type GuessAdminClient = Awaited<ReturnType<typeof admin>>;
 
 async function awardGrandLineGuessReward(
@@ -123,6 +114,18 @@ async function awardGrandLineGuessReward(
     _reward_amount: args.rewardAmount,
   });
   if (error) throw new Error("Could not award Grand Line Guess reward. Please refresh and try again.");
+}
+
+async function awardGrandLineGuessRewardSafely(
+  db: GuessAdminClient,
+  args: { puzzleId: string; userId: string; attemptNumber: number; rewardAmount: number },
+): Promise<string | null> {
+  try {
+    await awardGrandLineGuessReward(db, args);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Could not award Grand Line Guess reward. Please refresh and try again.";
+  }
 }
 
 function utcDate(): string {
@@ -207,7 +210,7 @@ async function loadState(userId: string) {
   }
   const attempts = attemptsR.data ?? [];
   const result = resultR.data;
-  const wrongCount = attempts.filter((a: any) => !a.is_correct).length;
+  const wrongCount = attempts.filter((attempt: { is_correct: boolean }) => !attempt.is_correct).length;
   const hintsUsed = result?.hints_used ?? 0;
   const target = targetR.data as CharRow | null;
   const hints = HINT_TIERS.map((t) => {
@@ -238,6 +241,7 @@ async function loadState(userId: string) {
     reward_amount: result?.reward_amount ?? 0,
     potential_next_reward: potentialReward,
     answer,
+    reward_error: null as string | null,
   };
 }
 
@@ -271,13 +275,14 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     const duplicateAttempt = existing.data?.find(a => a.guessed_character_id === guess.id);
     if (duplicateAttempt) {
       if (guess.id === target.id && duplicateAttempt.is_correct) {
-        await awardGrandLineGuessReward(db, {
+        const rewardError = await awardGrandLineGuessRewardSafely(db, {
           puzzleId: puzzle.id,
           userId,
           attemptNumber: duplicateAttempt.attempt_number,
           rewardAmount: rewardForAttempt(duplicateAttempt.attempt_number),
         });
-        return loadState(userId);
+        const state = await loadState(userId);
+        return rewardError ? { ...state, reward_error: rewardError } : state;
       }
       throw new Error("You already guessed that character.");
     }
@@ -301,13 +306,14 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
           .maybeSingle();
         if (retry.data) {
           if (guess.id === target.id && retry.data.is_correct) {
-            await awardGrandLineGuessReward(db, {
+            const rewardError = await awardGrandLineGuessRewardSafely(db, {
               puzzleId: puzzle.id,
               userId,
               attemptNumber: retry.data.attempt_number,
               rewardAmount: rewardForAttempt(retry.data.attempt_number),
             });
-            return loadState(userId);
+            const state = await loadState(userId);
+            return rewardError ? { ...state, reward_error: rewardError } : state;
           }
           throw new Error("You already guessed that character.");
         }
@@ -317,12 +323,16 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
 
     if (isCorrect) {
       const reward = rewardForAttempt(attemptNumber);
-      await awardGrandLineGuessReward(db, {
+      const rewardError = await awardGrandLineGuessRewardSafely(db, {
         puzzleId: puzzle.id,
         userId,
         attemptNumber,
         rewardAmount: reward,
       });
+      if (rewardError) {
+        const state = await loadState(userId);
+        return { ...state, reward_error: rewardError };
+      }
     } else {
       // ensure result row
       const existingResult = await db.from("grand_line_guess_results").select("hints_used").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
