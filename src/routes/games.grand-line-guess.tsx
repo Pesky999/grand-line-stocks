@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   getGrandLineGuessAutocomplete,
   getTodayGrandLineGuessState,
+  retryGrandLineGuessReward,
   submitGrandLineGuess,
   getGrandLineGuessStats,
 } from "@/lib/api/grand-line-guess.functions";
@@ -107,12 +108,14 @@ function GrandLineGuessPage() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [rewardPayoutError, setRewardPayoutError] = useState<string | null>(null);
 
   const state = stateQ.data;
   const stats = statsQ.data;
   const attempts = useMemo(() => ((state?.attempts ?? []) as unknown) as GuessAttempt[], [state?.attempts]);
-  const unpaidCorrectAttempt = attempts.find((attempt) => attempt.is_correct) ?? null;
   const guessedIds = new Set(attempts.map((attempt) => attempt.guessed_character_id));
+  const rewardError = rewardPayoutError ?? state?.reward_error ?? null;
+  const showRewardRecovery = Boolean(rewardError || state?.reward_payout_pending);
   const options = useMemo(() => {
     const all = (autocompleteQ.data ?? []) as AutocompleteOption[];
     const q = query.trim().toLowerCase();
@@ -124,14 +127,16 @@ function GrandLineGuessPage() {
     mutationFn: (id: string) => submitGrandLineGuess({ data: { guessed_character_id: id } }),
     onMutate: () => {
       setSubmissionError(null);
+      setRewardPayoutError(null);
     },
     onSuccess: (next) => {
       qc.setQueryData(["glg-state"], next);
       if (next?.reward_error) {
-        setSubmissionError(next.reward_error);
+        setRewardPayoutError(next.reward_error);
         toast.error(next.reward_error);
         return;
       }
+      setRewardPayoutError(null);
       if (next?.solved) {
         toast.success(`Solved in ${next.attempts_used}! +฿${next.reward_amount}`);
         invalidateMe();
@@ -143,6 +148,32 @@ function GrandLineGuessPage() {
     onError: (error) => {
       const message = errorMessage(error);
       setSubmissionError(message);
+      toast.error(message);
+    },
+  });
+
+  const retryPayoutM = useMutation({
+    mutationFn: () => retryGrandLineGuessReward(),
+    onMutate: () => {
+      setSubmissionError(null);
+    },
+    onSuccess: (next) => {
+      qc.setQueryData(["glg-state"], next);
+      if (next?.reward_error) {
+        setRewardPayoutError(next.reward_error);
+        toast.error(next.reward_error);
+        return;
+      }
+      setRewardPayoutError(null);
+      if (next?.reward_paid) {
+        toast.success(`Reward paid: à¸¿${next.reward_amount}`);
+        invalidateMe();
+        qc.invalidateQueries({ queryKey: ["glg-stats"] });
+      }
+    },
+    onError: (error) => {
+      const message = errorMessage(error);
+      setRewardPayoutError(message);
       toast.error(message);
     },
   });
@@ -198,7 +229,10 @@ function GrandLineGuessPage() {
                   <Stat label="Streak" value={stats?.current_streak ?? 0} />
                   <Stat label="Best" value={stats?.best_streak ?? 0} />
                   <Stat label="Attempts" value={state?.attempts_used ?? 0} />
-                  <Stat label={state?.solved ? "Earned" : "Next reward"} value={`฿${state?.solved ? state.reward_amount : (state?.potential_next_reward ?? 0)}`} />
+                  <Stat
+                    label={state?.solved ? (state.reward_paid ? "Earned" : "Pending reward") : "Next reward"}
+                    value={`฿${state?.solved ? (state.reward_paid ? state.reward_amount : (state.pending_reward_amount ?? state.reward_amount)) : (state?.potential_next_reward ?? 0)}`}
+                  />
                 </div>
 
                 {/* Search */}
@@ -238,15 +272,27 @@ function GrandLineGuessPage() {
 
                 {submissionError && (
                   <div role="alert" className="mt-4 border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
-                    <div className="font-bold uppercase tracking-widest">Reward payout needs attention</div>
+                    <div className="font-bold uppercase tracking-widest">Guess could not be submitted</div>
                     <p className="mt-1 text-muted-foreground">{submissionError}</p>
-                    {unpaidCorrectAttempt && !state?.reward_paid ? (
+                  </div>
+                )}
+
+                {showRewardRecovery && (
+                  <div role="alert" className="mt-4 border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
+                    <div className="font-bold uppercase tracking-widest">Reward payout needs attention</div>
+                    <p className="mt-1 text-muted-foreground">
+                      {rewardError ?? "Your correct answer was recorded, but the reward has not been paid yet."}
+                    </p>
+                    {!state?.reward_paid && state?.pending_reward_amount != null ? (
+                      <p className="mt-1 text-muted-foreground">Pending reward: ฿{state.pending_reward_amount}</p>
+                    ) : null}
+                    {state?.can_retry_payout ? (
                       <button
-                        disabled={submitM.isPending}
-                        onClick={() => submitM.mutate(unpaidCorrectAttempt.guessed_character_id)}
+                        disabled={retryPayoutM.isPending}
+                        onClick={() => retryPayoutM.mutate()}
                         className="mt-3 border border-bear/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-bear hover:bg-bear/10 disabled:opacity-40"
                       >
-                        Retry reward payout
+                        {retryPayoutM.isPending ? "Retrying payout..." : "Retry reward payout"}
                       </button>
                     ) : null}
                   </div>
@@ -297,7 +343,9 @@ function GrandLineGuessPage() {
                 {state?.solved && state.answer && (
                   <div className="mt-6 border border-bull/40 bg-bull/5 p-4 text-sm">
                     <div className="font-bold text-bull">Solved! Mystery character: {state.answer.name}</div>
-                    <div className="mt-1 text-muted-foreground">In {state.attempts_used} guesses · earned ฿{state.reward_amount} · streak {stats?.current_streak ?? 0}</div>
+                    <div className="mt-1 text-muted-foreground">
+                      In {state.attempts_used} guesses · {state.reward_paid ? "earned" : "pending payout"} ฿{state.reward_paid ? state.reward_amount : (state.pending_reward_amount ?? state.reward_amount)} · streak {stats?.current_streak ?? 0}
+                    </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Link to="/character/$slug" params={{ slug: state.answer.slug }} className="border border-border px-3 py-2 text-xs uppercase tracking-widest hover:border-primary">
                         View stock
