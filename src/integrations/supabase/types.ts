@@ -219,6 +219,311 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_crew_character_role_scores: {
+        Row: {
+          character_id: string
+          created_at: string
+          explanation: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          score: number
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          explanation: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          score: number
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          explanation?: string
+          mission_id?: string
+          role?: Database["public"]["Enums"]["daily_crew_role"]
+          score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_character_role_scores_mission_id_character_id_fkey"
+            columns: ["mission_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_mission_pool"
+            referencedColumns: ["mission_id", "character_id"]
+          },
+          {
+            foreignKeyName: "daily_crew_character_role_scores_mission_id_role_fkey"
+            columns: ["mission_id", "role"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_role_requirements"
+            referencedColumns: ["mission_id", "role"]
+          },
+        ]
+      }
+      daily_crew_mission_pool: {
+        Row: {
+          character_id: string
+          created_at: string
+          display_order: number
+          id: string
+          is_straw_hat: boolean
+          mission_id: string
+          visible_tags: string[]
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          display_order: number
+          id?: string
+          is_straw_hat?: boolean
+          mission_id: string
+          visible_tags?: string[]
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_straw_hat?: boolean
+          mission_id?: string
+          visible_tags?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_mission_pool_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_crew_mission_pool_mission_id_fkey"
+            columns: ["mission_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_missions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_crew_missions: {
+        Row: {
+          brief: string
+          created_at: string
+          id: string
+          max_score: number
+          mission_date: string
+          mission_tags: string[]
+          reveal_at: string | null
+          reveal_policy: Database["public"]["Enums"]["daily_crew_reveal_policy"]
+          slug: string
+          status: Database["public"]["Enums"]["daily_crew_mission_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          brief: string
+          created_at?: string
+          id?: string
+          max_score?: number
+          mission_date: string
+          mission_tags?: string[]
+          reveal_at?: string | null
+          reveal_policy?: Database["public"]["Enums"]["daily_crew_reveal_policy"]
+          slug: string
+          status?: Database["public"]["Enums"]["daily_crew_mission_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          brief?: string
+          created_at?: string
+          id?: string
+          max_score?: number
+          mission_date?: string
+          mission_tags?: string[]
+          reveal_at?: string | null
+          reveal_policy?: Database["public"]["Enums"]["daily_crew_reveal_policy"]
+          slug?: string
+          status?: Database["public"]["Enums"]["daily_crew_mission_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_crew_perfect_solution: {
+        Row: {
+          character_id: string
+          created_at: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          mission_id?: string
+          role?: Database["public"]["Enums"]["daily_crew_role"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_perfect_solution_mission_id_character_id_fkey"
+            columns: ["mission_id", "character_id"]
+            isOneToOne: true
+            referencedRelation: "daily_crew_mission_pool"
+            referencedColumns: ["mission_id", "character_id"]
+          },
+          {
+            foreignKeyName: "daily_crew_perfect_solution_mission_id_role_fkey"
+            columns: ["mission_id", "role"]
+            isOneToOne: true
+            referencedRelation: "daily_crew_role_requirements"
+            referencedColumns: ["mission_id", "role"]
+          },
+        ]
+      }
+      daily_crew_role_requirements: {
+        Row: {
+          created_at: string
+          max_points: number
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          subtype_key: string
+          subtype_label: string | null
+        }
+        Insert: {
+          created_at?: string
+          max_points?: number
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          subtype_key: string
+          subtype_label?: string | null
+        }
+        Update: {
+          created_at?: string
+          max_points?: number
+          mission_id?: string
+          role?: Database["public"]["Enums"]["daily_crew_role"]
+          subtype_key?: string
+          subtype_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_role_requirements_mission_id_fkey"
+            columns: ["mission_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_missions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_crew_submission_roles: {
+        Row: {
+          character_id: string
+          created_at: string
+          explanation: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          role_score: number
+          submission_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          explanation: string
+          mission_id: string
+          role: Database["public"]["Enums"]["daily_crew_role"]
+          role_score: number
+          submission_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          explanation?: string
+          mission_id?: string
+          role?: Database["public"]["Enums"]["daily_crew_role"]
+          role_score?: number
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_submission_roles_mission_id_character_id_fkey"
+            columns: ["mission_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_mission_pool"
+            referencedColumns: ["mission_id", "character_id"]
+          },
+          {
+            foreignKeyName: "daily_crew_submission_roles_mission_id_role_fkey"
+            columns: ["mission_id", "role"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_role_requirements"
+            referencedColumns: ["mission_id", "role"]
+          },
+          {
+            foreignKeyName: "daily_crew_submission_roles_submission_id_mission_id_fkey"
+            columns: ["submission_id", "mission_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_submissions"
+            referencedColumns: ["id", "mission_id"]
+          },
+        ]
+      }
+      daily_crew_submissions: {
+        Row: {
+          created_at: string
+          id: string
+          mission_id: string
+          rank: Database["public"]["Enums"]["daily_crew_rank"]
+          reward_amount: number
+          reward_paid: boolean
+          score: number
+          score_breakdown: Json
+          submitted_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mission_id: string
+          rank: Database["public"]["Enums"]["daily_crew_rank"]
+          reward_amount?: number
+          reward_paid?: boolean
+          score: number
+          score_breakdown?: Json
+          submitted_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mission_id?: string
+          rank?: Database["public"]["Enums"]["daily_crew_rank"]
+          reward_amount?: number
+          reward_paid?: boolean
+          score?: number
+          score_breakdown?: Json
+          submitted_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_submissions_mission_id_fkey"
+            columns: ["mission_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_missions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_market_reports: {
         Row: {
           avg_change_pct: number
@@ -1776,10 +2081,27 @@ export type Database = {
         }[]
       }
       user_equity: { Args: { _user_id: string }; Returns: number }
+      validate_daily_crew_mission: {
+        Args: { _mission_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       achievement_tier: "beginner" | "intermediate" | "advanced" | "legendary"
       app_role: "admin" | "moderator" | "user"
+      daily_crew_mission_status:
+        | "draft"
+        | "scheduled"
+        | "published"
+        | "archived"
+      daily_crew_rank: "s" | "a" | "b" | "c" | "fail"
+      daily_crew_reveal_policy: "immediate" | "next_day" | "manual"
+      daily_crew_role:
+        | "captain"
+        | "fighter"
+        | "navigator"
+        | "strategist"
+        | "support"
       event_status: "draft" | "scheduled" | "published"
       event_type:
         | "story_event"
@@ -1963,6 +2285,21 @@ export const Constants = {
     Enums: {
       achievement_tier: ["beginner", "intermediate", "advanced", "legendary"],
       app_role: ["admin", "moderator", "user"],
+      daily_crew_mission_status: [
+        "draft",
+        "scheduled",
+        "published",
+        "archived",
+      ],
+      daily_crew_rank: ["s", "a", "b", "c", "fail"],
+      daily_crew_reveal_policy: ["immediate", "next_day", "manual"],
+      daily_crew_role: [
+        "captain",
+        "fighter",
+        "navigator",
+        "strategist",
+        "support",
+      ],
       event_status: ["draft", "scheduled", "published"],
       event_type: [
         "story_event",
