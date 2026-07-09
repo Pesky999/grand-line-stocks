@@ -158,6 +158,8 @@ DECLARE
   v_solution_count integer;
   v_solution_role_count integer;
   v_solution_straw_hats integer;
+  v_score_count integer;
+  v_solution_score_total integer;
 BEGIN
   SELECT count(*), count(*) FILTER (WHERE is_straw_hat)
     INTO v_pool_count, v_pool_straw_hats
@@ -177,6 +179,20 @@ BEGIN
    AND p.character_id = s.character_id
   WHERE s.mission_id = _mission_id;
 
+  SELECT count(*)
+    INTO v_score_count
+  FROM public.daily_crew_character_role_scores
+  WHERE mission_id = _mission_id;
+
+  SELECT COALESCE(sum(scores.score), 0)
+    INTO v_solution_score_total
+  FROM public.daily_crew_perfect_solution AS s
+  JOIN public.daily_crew_character_role_scores AS scores
+    ON scores.mission_id = s.mission_id
+   AND scores.character_id = s.character_id
+   AND scores.role = s.role
+  WHERE s.mission_id = _mission_id;
+
   RETURN
     v_pool_count = 12
     AND v_pool_straw_hats <= 5
@@ -184,7 +200,9 @@ BEGIN
     AND v_requirement_role_count = 5
     AND v_solution_count = 5
     AND v_solution_role_count = 5
-    AND v_solution_straw_hats <= 3;
+    AND v_solution_straw_hats <= 3
+    AND v_score_count = 60
+    AND v_solution_score_total = 90;
 END;
 $function$;
 

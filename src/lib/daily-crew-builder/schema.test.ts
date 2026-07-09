@@ -145,6 +145,12 @@ test("pool and publishing safeguards encode the v1 mission constraints", () => {
   expectSql(/v_solution_count = 5/i, "published validation requires five perfect solution rows");
   expectSql(/v_solution_role_count = 5/i, "published validation requires five distinct solution roles");
   expectSql(/v_solution_straw_hats <= 3/i, "published validation enforces the perfect solution Straw Hat cap");
+  expectSql(/v_score_count = 60/i, "published validation requires scores for every pool character and role");
+  expectSql(/v_solution_score_total = 90/i, "published validation requires a full-max perfect solution role score");
+  expectSql(
+    /JOIN public\.daily_crew_character_role_scores AS scores[\s\S]*scores\.mission_id = s\.mission_id[\s\S]*scores\.character_id = s\.character_id[\s\S]*scores\.role = s\.role/i,
+    "perfect solution score total joins by mission, character, and role",
+  );
   expectSql(/CREATE TRIGGER daily_crew_pool_limits/i, "pool limit trigger exists");
   expectSql(/CREATE TRIGGER daily_crew_solution_limits/i, "solution limit trigger exists");
   expectSql(/CREATE TRIGGER daily_crew_publish_ready/i, "publish readiness trigger exists");
