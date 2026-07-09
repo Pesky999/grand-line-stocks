@@ -88,6 +88,7 @@ CREATE TABLE public.daily_crew_perfect_solution (
   character_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (mission_id, role),
+  UNIQUE (mission_id, character_id),
   FOREIGN KEY (mission_id, role)
     REFERENCES public.daily_crew_role_requirements(mission_id, role)
     ON DELETE CASCADE,
@@ -108,17 +109,29 @@ CREATE TABLE public.daily_crew_submissions (
   submitted_at timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (mission_id, user_id)
+  UNIQUE (mission_id, user_id),
+  UNIQUE (id, mission_id)
 );
 
 CREATE TABLE public.daily_crew_submission_roles (
-  submission_id uuid NOT NULL REFERENCES public.daily_crew_submissions(id) ON DELETE CASCADE,
+  submission_id uuid NOT NULL,
+  mission_id uuid NOT NULL,
   role public.daily_crew_role NOT NULL,
-  character_id uuid NOT NULL REFERENCES public.characters(id) ON DELETE RESTRICT,
+  character_id uuid NOT NULL,
   role_score integer NOT NULL CHECK (role_score BETWEEN 0 AND 18),
   explanation text NOT NULL CHECK (char_length(btrim(explanation)) BETWEEN 1 AND 500),
   created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (submission_id, role)
+  PRIMARY KEY (submission_id, role),
+  UNIQUE (submission_id, character_id),
+  FOREIGN KEY (submission_id, mission_id)
+    REFERENCES public.daily_crew_submissions(id, mission_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (mission_id, character_id)
+    REFERENCES public.daily_crew_mission_pool(mission_id, character_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (mission_id, role)
+    REFERENCES public.daily_crew_role_requirements(mission_id, role)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX idx_daily_crew_missions_status_date

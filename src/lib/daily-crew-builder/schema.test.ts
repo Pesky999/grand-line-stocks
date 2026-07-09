@@ -101,6 +101,10 @@ test("hidden role requirements, role scores, and perfect solution are modeled se
     /FOREIGN KEY \(mission_id, role\)[\s\S]*REFERENCES public\.daily_crew_role_requirements\(mission_id, role\)/i,
     "scores and perfect solution must reference configured role requirements",
   );
+  expectSql(
+    /CREATE TABLE public\.daily_crew_perfect_solution[\s\S]*UNIQUE \(mission_id, character_id\)/i,
+    "perfect solution cannot assign the same character to multiple roles",
+  );
 });
 
 test("submissions are one per user per mission and prepare future idempotent rewards", () => {
@@ -111,7 +115,25 @@ test("submissions are one per user per mission and prepare future idempotent rew
   expectSql(/reward_paid boolean NOT NULL DEFAULT false/i, "reward-paid state is present for future idempotency");
   expectSql(/score_breakdown jsonb NOT NULL DEFAULT '\{\}'::jsonb/i, "score breakdown can be stored without hidden table reads");
   expectSql(/UNIQUE \(mission_id, user_id\)/i, "users can submit once per mission");
+  expectSql(/UNIQUE \(id, mission_id\)/i, "submissions expose a safe composite parent key for role rows");
   expectSql(/PRIMARY KEY \(submission_id, role\)/i, "submitted assignments have one row per role");
+  expectSql(/mission_id uuid NOT NULL/i, "submitted role rows carry mission identity for composite foreign keys");
+  expectSql(
+    /CREATE TABLE public\.daily_crew_submission_roles[\s\S]*UNIQUE \(submission_id, character_id\)/i,
+    "submitted crews cannot assign the same character to multiple roles",
+  );
+  expectSql(
+    /FOREIGN KEY \(submission_id, mission_id\)[\s\S]*REFERENCES public\.daily_crew_submissions\(id, mission_id\)/i,
+    "submitted role rows must match the parent submission mission",
+  );
+  expectSql(
+    /FOREIGN KEY \(mission_id, character_id\)[\s\S]*REFERENCES public\.daily_crew_mission_pool\(mission_id, character_id\)/i,
+    "submitted characters must belong to the curated mission pool",
+  );
+  expectSql(
+    /FOREIGN KEY \(mission_id, role\)[\s\S]*REFERENCES public\.daily_crew_role_requirements\(mission_id, role\)/i,
+    "submitted roles must belong to the mission role requirements",
+  );
 });
 
 test("pool and publishing safeguards encode the v1 mission constraints", () => {
