@@ -23,6 +23,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GamesIndexRouteImport } from './routes/games.index'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as GamesGrandLineGuessRouteImport } from './routes/games.grand-line-guess'
+import { Route as GamesDailyCrewBuilderRouteImport } from './routes/games.daily-crew-builder'
 import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPricingAdminRouteImport } from './routes/_authenticated/pricing-admin'
@@ -100,6 +101,11 @@ const GamesGrandLineGuessRoute = GamesGrandLineGuessRouteImport.update({
   path: '/grand-line-guess',
   getParentRoute: () => GamesRoute,
 } as any)
+const GamesDailyCrewBuilderRoute = GamesDailyCrewBuilderRouteImport.update({
+  id: '/daily-crew-builder',
+  path: '/daily-crew-builder',
+  getParentRoute: () => GamesRoute,
+} as any)
 const CharacterSlugRoute = CharacterSlugRouteImport.update({
   id: '/character/$slug',
   path: '/character/$slug',
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/daily-crew-builder': typeof GamesDailyCrewBuilderRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games/': typeof GamesIndexRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/daily-crew-builder': typeof GamesDailyCrewBuilderRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games': typeof GamesIndexRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/_authenticated/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/character/$slug': typeof CharacterSlugRoute
+  '/games/daily-crew-builder': typeof GamesDailyCrewBuilderRoute
   '/games/grand-line-guess': typeof GamesGrandLineGuessRoute
   '/u/$username': typeof UUsernameRoute
   '/games/': typeof GamesIndexRoute
@@ -226,6 +235,7 @@ export interface FileRouteTypes {
     | '/pricing-admin'
     | '/profile'
     | '/character/$slug'
+    | '/games/daily-crew-builder'
     | '/games/grand-line-guess'
     | '/u/$username'
     | '/games/'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/pricing-admin'
     | '/profile'
     | '/character/$slug'
+    | '/games/daily-crew-builder'
     | '/games/grand-line-guess'
     | '/u/$username'
     | '/games'
@@ -270,6 +281,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pricing-admin'
     | '/_authenticated/profile'
     | '/character/$slug'
+    | '/games/daily-crew-builder'
     | '/games/grand-line-guess'
     | '/u/$username'
     | '/games/'
@@ -391,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GamesGrandLineGuessRouteImport
       parentRoute: typeof GamesRoute
     }
+    '/games/daily-crew-builder': {
+      id: '/games/daily-crew-builder'
+      path: '/daily-crew-builder'
+      fullPath: '/games/daily-crew-builder'
+      preLoaderRoute: typeof GamesDailyCrewBuilderRouteImport
+      parentRoute: typeof GamesRoute
+    }
     '/character/$slug': {
       id: '/character/$slug'
       path: '/character/$slug'
@@ -465,11 +484,13 @@ const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 interface GamesRouteChildren {
+  GamesDailyCrewBuilderRoute: typeof GamesDailyCrewBuilderRoute
   GamesGrandLineGuessRoute: typeof GamesGrandLineGuessRoute
   GamesIndexRoute: typeof GamesIndexRoute
 }
 
 const GamesRouteChildren: GamesRouteChildren = {
+  GamesDailyCrewBuilderRoute: GamesDailyCrewBuilderRoute,
   GamesGrandLineGuessRoute: GamesGrandLineGuessRoute,
   GamesIndexRoute: GamesIndexRoute,
 }
