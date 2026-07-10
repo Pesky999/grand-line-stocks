@@ -41,14 +41,16 @@ test("wrong guesses do not deduct wallet funds or call the reward path", () => {
 });
 
 test("correct guesses use the award path and payout failures return contained state", () => {
-  const correctGuessBranch = between(source, "if (isCorrect) {", "} else {\n      // ensure result row");
+  const submitFn = source.slice(source.indexOf("export const submitGrandLineGuess"));
+  const correctGuessBranch = between(submitFn, "if (isCorrect) {", "} else {");
 
   assert.match(correctGuessBranch, /const reward = rewardForAttempt\(attemptNumber\)/);
   assert.match(correctGuessBranch, /awardGrandLineGuessRewardSafely\(db/);
-  assert.match(correctGuessBranch, /reward_error: rewardError/);
+  assert.match(correctGuessBranch, /applyPayoutFailure\(state, rewardError\)/);
   assert.match(source, /async function awardGrandLineGuessRewardSafely/);
+  assert.match(source, /type PayoutFailure = \{[\s\S]*payout_error_code: string[\s\S]*payout_error_step: PayoutErrorStep/);
   assert.match(routeSource, /role="alert"/);
-  assert.match(routeSource, /Retry reward payout/);
+  assert.match(routeSource, /Diagnostic code: \{rewardDiagnosticCode\}/);
   assert.match(routeSource, /setSubmissionError/);
 });
 
@@ -62,8 +64,9 @@ test("loadState exposes persistent unpaid solved payout state", () => {
   assert.match(loadStateBlock, /if \(effectivelySolved \|\| puzzle\.status === "expired"\)/);
   assert.match(loadStateBlock, /solved: effectivelySolved/);
   assert.match(loadStateBlock, /reward_payout_pending: rewardPayoutPending/);
-  assert.match(loadStateBlock, /can_retry_payout: Boolean\(rewardPayoutPending && correctAttempt\)/);
   assert.match(loadStateBlock, /pending_reward_amount: pendingRewardAmount/);
+  assert.match(loadStateBlock, /payout_error_code: null as string \| null/);
+  assert.match(loadStateBlock, /payout_error_step: null as PayoutErrorStep \| null/);
 });
 
 test("reward payout prepares a missing wallet row without touching balances", () => {
@@ -82,7 +85,21 @@ test("reward payout prepares a missing wallet row without touching balances", ()
   assert.match(source, /await ensureGrandLineGuessRewardWallet\(db, args\.userId\);\s+await awardGrandLineGuessReward\(db, args\);/);
 });
 
-test("reward RPC keeps compatibility arguments and logs server diagnostics on failure", () => {
+test("wallet precondition failures map to safe diagnostic codes", () => {
+  const helper = between(
+    source,
+    "async function ensureGrandLineGuessRewardWallet",
+    "async function awardGrandLineGuessReward(",
+  );
+
+  assert.match(source, /class GrandLineGuessPayoutError extends Error/);
+  assert.match(source, /function safePayoutErrorCode/);
+  assert.match(helper, /GrandLineGuessPayoutError\("WALLET_PRECHECK_SELECT_FAILED", existing\.error\.code\)/);
+  assert.match(helper, /GrandLineGuessPayoutError\("WALLET_PRECHECK_RACE_RECHECK_FAILED", raced\.error\.code\)/);
+  assert.match(helper, /GrandLineGuessPayoutError\("WALLET_PRECHECK_INSERT_FAILED", created\.error\.code\)/);
+});
+
+test("reward RPC keeps compatibility arguments and logs safe diagnostics on failure", () => {
   const awardFn = between(source, "async function awardGrandLineGuessReward(", "async function awardGrandLineGuessRewardSafely");
 
   assert.match(awardFn, /\.rpc\("award_grand_line_guess_reward", \{/);
@@ -91,10 +108,12 @@ test("reward RPC keeps compatibility arguments and logs server diagnostics on fa
   assert.match(awardFn, /_attempt_number: args\.attemptNumber/);
   assert.match(awardFn, /_reward_amount: args\.rewardAmount/);
   assert.match(awardFn, /logGrandLineGuessSupabaseError\("Grand Line Guess reward RPC failed", error\)/);
+  assert.match(awardFn, /GrandLineGuessPayoutError\("REWARD_RPC_FAILED", error\.code\)/);
   assert.match(source, /code: error\.code/);
   assert.match(source, /message: error\.message/);
   assert.match(source, /details: error\.details/);
   assert.match(source, /hint: error\.hint/);
+  assert.match(source, /return safeCode \? `\$\{step\}_\$\{safeCode\}` : step/);
   assert.match(source, /REWARD_PAYOUT_ERROR_MESSAGE/);
 });
 
@@ -107,19 +126,20 @@ test("retry payout uses existing correct attempt and never records a new guess",
   assert.match(retryFn, /\.from\("grand_line_guess_results"\)[\s\S]*\.select\("reward_paid"\)/);
   assert.match(retryFn, /if \(resultR\.data\?\.reward_paid\) \{[\s\S]*return loadState\(userId\)/);
   assert.match(retryFn, /awardGrandLineGuessRewardSafely\(db, \{[\s\S]*attemptNumber: correctAttempt\.attempt_number[\s\S]*rewardAmount: rewardForAttempt\(correctAttempt\.attempt_number\)/);
-  assert.match(retryFn, /return rewardError \? \{ \.\.\.state, reward_error: rewardError \} : state/);
+  assert.match(retryFn, /return rewardError \? applyPayoutFailure\(state, rewardError\) : state/);
   assert.match(source, /await ensureGrandLineGuessRewardWallet\(db, args\.userId\);\s+await awardGrandLineGuessReward\(db, args\);/);
   assert.doesNotMatch(retryFn, /grand_line_guess_attempts"\)[\s\S]*\.(?:insert|upsert)\(/);
   assert.doesNotMatch(retryFn, /user_wallets"\)[\s\S]*\.update\(|berries\s*=/);
 });
 
-test("UI shows persistent retry payout controls for unpaid solved state", () => {
-  assert.match(routeSource, /retryGrandLineGuessReward/);
-  assert.match(routeSource, /const showRewardRecovery = Boolean\(rewardError \|\| state\?\.reward_payout_pending\)/);
-  assert.match(routeSource, /Your correct answer was recorded, but the reward has not been paid yet\./);
-  assert.match(routeSource, /state\?\.can_retry_payout/);
-  assert.match(routeSource, /retryPayoutM\.mutate\(\)/);
-  assert.match(routeSource, /Retrying payout\.\.\./);
+test("UI shows a generic payout failure diagnostic without manual retry controls", () => {
+  assert.doesNotMatch(routeSource, /retryGrandLineGuessReward/);
+  assert.match(routeSource, /const showRewardFailure = Boolean\(rewardError\)/);
+  assert.match(routeSource, /Reward payout needs attention/);
+  assert.match(routeSource, /Diagnostic code: \{rewardDiagnosticCode\}/);
+  assert.doesNotMatch(routeSource, /Your correct answer was recorded, but the reward has not been paid yet\./);
+  assert.doesNotMatch(routeSource, /state\?\.can_retry_payout/);
+  assert.doesNotMatch(routeSource, /retryPayoutM|Retrying payout|Retry reward payout/);
   assert.match(routeSource, /!state\?\.solved && state\?\.status === "active"/);
   assert.match(routeSource, /state\.reward_paid \? "earned" : "pending payout"/);
   assert.doesNotMatch(routeSource, /unpaidCorrectAttempt|submitM\.mutate\(unpaidCorrectAttempt/);
@@ -131,7 +151,7 @@ test("duplicate correct submissions retry the idempotent award path without trus
   assert.match(duplicateBranch, /duplicateAttempt\.is_correct/);
   assert.match(duplicateBranch, /awardGrandLineGuessRewardSafely\(db/);
   assert.match(duplicateBranch, /rewardForAttempt\(duplicateAttempt\.attempt_number\)/);
-  assert.match(duplicateBranch, /reward_error: rewardError/);
+  assert.match(duplicateBranch, /applyPayoutFailure\(state, rewardError\)/);
   assert.match(duplicateBranch, /throw new Error\("You already guessed that character\."\)/);
 });
 

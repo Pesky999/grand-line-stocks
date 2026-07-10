@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import {
   getGrandLineGuessAutocomplete,
   getTodayGrandLineGuessState,
-  retryGrandLineGuessReward,
   submitGrandLineGuess,
   getGrandLineGuessStats,
 } from "@/lib/api/grand-line-guess.functions";
@@ -109,13 +108,15 @@ function GrandLineGuessPage() {
   const [open, setOpen] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [rewardPayoutError, setRewardPayoutError] = useState<string | null>(null);
+  const [rewardPayoutCode, setRewardPayoutCode] = useState<string | null>(null);
 
   const state = stateQ.data;
   const stats = statsQ.data;
   const attempts = useMemo(() => ((state?.attempts ?? []) as unknown) as GuessAttempt[], [state?.attempts]);
   const guessedIds = new Set(attempts.map((attempt) => attempt.guessed_character_id));
   const rewardError = rewardPayoutError ?? state?.reward_error ?? null;
-  const showRewardRecovery = Boolean(rewardError || state?.reward_payout_pending);
+  const rewardDiagnosticCode = rewardPayoutCode ?? state?.payout_error_code ?? null;
+  const showRewardFailure = Boolean(rewardError);
   const options = useMemo(() => {
     const all = (autocompleteQ.data ?? []) as AutocompleteOption[];
     const q = query.trim().toLowerCase();
@@ -128,15 +129,18 @@ function GrandLineGuessPage() {
     onMutate: () => {
       setSubmissionError(null);
       setRewardPayoutError(null);
+      setRewardPayoutCode(null);
     },
     onSuccess: (next) => {
       qc.setQueryData(["glg-state"], next);
       if (next?.reward_error) {
         setRewardPayoutError(next.reward_error);
+        setRewardPayoutCode(next.payout_error_code ?? null);
         toast.error(next.reward_error);
         return;
       }
       setRewardPayoutError(null);
+      setRewardPayoutCode(null);
       if (next?.solved) {
         toast.success(`Solved in ${next.attempts_used}! +฿${next.reward_amount}`);
         invalidateMe();
@@ -151,34 +155,6 @@ function GrandLineGuessPage() {
       toast.error(message);
     },
   });
-
-  const retryPayoutM = useMutation({
-    mutationFn: () => retryGrandLineGuessReward(),
-    onMutate: () => {
-      setSubmissionError(null);
-    },
-    onSuccess: (next) => {
-      qc.setQueryData(["glg-state"], next);
-      if (next?.reward_error) {
-        setRewardPayoutError(next.reward_error);
-        toast.error(next.reward_error);
-        return;
-      }
-      setRewardPayoutError(null);
-      if (next?.reward_paid) {
-        toast.success(`Reward paid: à¸¿${next.reward_amount}`);
-        invalidateMe();
-        qc.invalidateQueries({ queryKey: ["glg-stats"] });
-      }
-    },
-    onError: (error) => {
-      const message = errorMessage(error);
-      setRewardPayoutError(message);
-      toast.error(message);
-    },
-  });
-
-
 
   const handlePick = (id: string) => {
     if (guessedIds.has(id)) { toast("Already guessed"); return; }
@@ -277,23 +253,14 @@ function GrandLineGuessPage() {
                   </div>
                 )}
 
-                {showRewardRecovery && (
+                {showRewardFailure && (
                   <div role="alert" className="mt-4 border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
                     <div className="font-bold uppercase tracking-widest">Reward payout needs attention</div>
                     <p className="mt-1 text-muted-foreground">
-                      {rewardError ?? "Your correct answer was recorded, but the reward has not been paid yet."}
+                      {rewardError}
                     </p>
-                    {!state?.reward_paid && state?.pending_reward_amount != null ? (
-                      <p className="mt-1 text-muted-foreground">Pending reward: ฿{state.pending_reward_amount}</p>
-                    ) : null}
-                    {state?.can_retry_payout ? (
-                      <button
-                        disabled={retryPayoutM.isPending}
-                        onClick={() => retryPayoutM.mutate()}
-                        className="mt-3 border border-bear/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-bear hover:bg-bear/10 disabled:opacity-40"
-                      >
-                        {retryPayoutM.isPending ? "Retrying payout..." : "Retry reward payout"}
-                      </button>
+                    {rewardDiagnosticCode ? (
+                      <p className="mt-1 text-muted-foreground">Diagnostic code: {rewardDiagnosticCode}</p>
                     ) : null}
                   </div>
                 )}

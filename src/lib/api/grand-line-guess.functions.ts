@@ -104,6 +104,60 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
 type GuessAdminClient = Awaited<ReturnType<typeof admin>>;
 
 const REWARD_PAYOUT_ERROR_MESSAGE = "Could not award Grand Line Guess reward. Please refresh and try again.";
+type PayoutErrorStep =
+  | "WALLET_PRECHECK_SELECT_FAILED"
+  | "WALLET_PRECHECK_INSERT_FAILED"
+  | "WALLET_PRECHECK_RACE_RECHECK_FAILED"
+  | "REWARD_RPC_FAILED"
+  | "REWARD_UNKNOWN_FAILED";
+
+type PayoutFailure = {
+  message: string;
+  payout_error_code: string;
+  payout_error_step: PayoutErrorStep;
+};
+
+class GrandLineGuessPayoutError extends Error {
+  payout_error_code: string;
+  payout_error_step: PayoutErrorStep;
+
+  constructor(step: PayoutErrorStep, supabaseCode?: string) {
+    super(REWARD_PAYOUT_ERROR_MESSAGE);
+    this.name = "GrandLineGuessPayoutError";
+    this.payout_error_step = step;
+    this.payout_error_code = safePayoutErrorCode(step, supabaseCode);
+  }
+}
+
+function safePayoutErrorCode(step: PayoutErrorStep, supabaseCode?: string) {
+  const safeCode = supabaseCode?.replace(/[^A-Za-z0-9_]/g, "_");
+  return safeCode ? `${step}_${safeCode}` : step;
+}
+
+function payoutFailureFromError(error: unknown): PayoutFailure {
+  if (error instanceof GrandLineGuessPayoutError) {
+    return {
+      message: error.message,
+      payout_error_code: error.payout_error_code,
+      payout_error_step: error.payout_error_step,
+    };
+  }
+
+  return {
+    message: REWARD_PAYOUT_ERROR_MESSAGE,
+    payout_error_code: "REWARD_UNKNOWN_FAILED",
+    payout_error_step: "REWARD_UNKNOWN_FAILED",
+  };
+}
+
+function applyPayoutFailure<T extends Record<string, unknown>>(state: T, failure: PayoutFailure) {
+  return {
+    ...state,
+    reward_error: failure.message,
+    payout_error_code: failure.payout_error_code,
+    payout_error_step: failure.payout_error_step,
+  };
+}
 
 function logGrandLineGuessSupabaseError(
   message: string,
@@ -126,7 +180,7 @@ async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: st
 
   if (existing.error) {
     logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition check failed", existing.error);
-    throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+    throw new GrandLineGuessPayoutError("WALLET_PRECHECK_SELECT_FAILED", existing.error.code);
   }
 
   if (existing.data) return;
@@ -150,11 +204,12 @@ async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: st
 
     if (raced.error) {
       logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition race recheck failed", raced.error);
+      throw new GrandLineGuessPayoutError("WALLET_PRECHECK_RACE_RECHECK_FAILED", raced.error.code);
     }
   }
 
   logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition insert failed", created.error);
-  throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+  throw new GrandLineGuessPayoutError("WALLET_PRECHECK_INSERT_FAILED", created.error.code);
 }
 
 async function awardGrandLineGuessReward(
@@ -169,20 +224,20 @@ async function awardGrandLineGuessReward(
   });
   if (error) {
     logGrandLineGuessSupabaseError("Grand Line Guess reward RPC failed", error);
-    throw new Error(REWARD_PAYOUT_ERROR_MESSAGE);
+    throw new GrandLineGuessPayoutError("REWARD_RPC_FAILED", error.code);
   }
 }
 
 async function awardGrandLineGuessRewardSafely(
   db: GuessAdminClient,
   args: { puzzleId: string; userId: string; attemptNumber: number; rewardAmount: number },
-): Promise<string | null> {
+): Promise<PayoutFailure | null> {
   try {
     await ensureGrandLineGuessRewardWallet(db, args.userId);
     await awardGrandLineGuessReward(db, args);
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message : REWARD_PAYOUT_ERROR_MESSAGE;
+    return payoutFailureFromError(error);
   }
 }
 
@@ -306,11 +361,12 @@ async function loadState(userId: string) {
     reward_paid: rewardPaid,
     reward_amount: rewardPaid ? (result?.reward_amount ?? 0) : (pendingRewardAmount ?? result?.reward_amount ?? 0),
     reward_payout_pending: rewardPayoutPending,
-    can_retry_payout: Boolean(rewardPayoutPending && correctAttempt),
     pending_reward_amount: pendingRewardAmount,
     potential_next_reward: potentialReward,
     answer,
     reward_error: null as string | null,
+    payout_error_code: null as string | null,
+    payout_error_step: null as PayoutErrorStep | null,
   };
 }
 
@@ -369,7 +425,7 @@ export const retryGrandLineGuessReward = createServerFn({ method: "POST" })
     });
 
     const state = await loadState(userId);
-    return rewardError ? { ...state, reward_error: rewardError } : state;
+    return rewardError ? applyPayoutFailure(state, rewardError) : state;
   });
 
 export const submitGrandLineGuess = createServerFn({ method: "POST" })
@@ -405,7 +461,7 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
           rewardAmount: rewardForAttempt(duplicateAttempt.attempt_number),
         });
         const state = await loadState(userId);
-        return rewardError ? { ...state, reward_error: rewardError } : state;
+        return rewardError ? applyPayoutFailure(state, rewardError) : state;
       }
       throw new Error("You already guessed that character.");
     }
@@ -436,7 +492,7 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
               rewardAmount: rewardForAttempt(retry.data.attempt_number),
             });
             const state = await loadState(userId);
-            return rewardError ? { ...state, reward_error: rewardError } : state;
+            return rewardError ? applyPayoutFailure(state, rewardError) : state;
           }
           throw new Error("You already guessed that character.");
         }
@@ -454,7 +510,7 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
       });
       if (rewardError) {
         const state = await loadState(userId);
-        return { ...state, reward_error: rewardError };
+        return applyPayoutFailure(state, rewardError);
       }
     } else {
       // ensure result row
