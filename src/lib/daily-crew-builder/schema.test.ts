@@ -6,15 +6,21 @@ import { join } from "node:path";
 import test from "node:test";
 
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
-const migrationPath = join(
+const baseMigrationPath = join(
   migrationsDir,
   "20260709030000_create_daily_crew_builder_schema.sql",
+);
+const pool15MigrationPath = join(
+  migrationsDir,
+  "20260709120000_update_daily_crew_builder_pool_15.sql",
 );
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
 );
-const sql = readFileSync(migrationPath, "utf8");
+const baseSql = readFileSync(baseMigrationPath, "utf8");
+const pool15Sql = readFileSync(pool15MigrationPath, "utf8");
+const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
   return source.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -26,8 +32,16 @@ function expectSql(pattern: RegExp, message: string): void {
   assert.match(sql, pattern, message);
 }
 
+function expectPool15Sql(pattern: RegExp, message: string): void {
+  assert.match(pool15Sql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
+}
+
+function rejectPool15Sql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(pool15Sql), pattern, message);
 }
 
 const tables = [
@@ -78,7 +92,12 @@ test("mission and pool tables support public-safe daily puzzle setup", () => {
   expectSql(/mission_tags text\[\] NOT NULL DEFAULT '\{\}'/i, "mission tags are supported");
 
   expectSql(/character_id uuid NOT NULL REFERENCES public\.characters\(id\) ON DELETE RESTRICT/i, "pool references market characters");
-  expectSql(/display_order integer NOT NULL CHECK \(display_order BETWEEN 1 AND 12\)/i, "pool display order is 1 through 12");
+  expectSql(/display_order integer NOT NULL CHECK \(display_order BETWEEN 1 AND 12\)/i, "historical base migration created the original pool display order check");
+  expectPool15Sql(/DROP CONSTRAINT IF EXISTS daily_crew_mission_pool_display_order_check/i, "pool-15 migration drops the generated display-order constraint");
+  expectPool15Sql(
+    /ADD CONSTRAINT daily_crew_mission_pool_display_order_check\s+CHECK \(display_order BETWEEN 1 AND 15\)/i,
+    "current pool display order is 1 through 15",
+  );
   expectSql(/is_straw_hat boolean NOT NULL DEFAULT false/i, "pool stores explicit Straw Hat membership");
   expectSql(/visible_tags text\[\] NOT NULL DEFAULT '\{\}'/i, "pool can expose safe visible tags");
   expectSql(/UNIQUE \(mission_id, character_id\)/i, "pool cannot repeat a character");
@@ -138,14 +157,14 @@ test("submissions are one per user per mission and prepare future idempotent rew
 
 test("pool and publishing safeguards encode the v1 mission constraints", () => {
   expectSql(/CREATE OR REPLACE FUNCTION public\.validate_daily_crew_mission\(_mission_id uuid\)/i, "validation function exists");
-  expectSql(/v_pool_count = 12/i, "published validation requires 12 pool characters");
+  expectSql(/v_pool_count = 15/i, "published validation requires 15 pool characters");
   expectSql(/v_pool_straw_hats <= 5/i, "published validation enforces the pool Straw Hat cap");
   expectSql(/v_requirement_count = 5/i, "published validation requires five role requirements");
   expectSql(/v_requirement_role_count = 5/i, "published validation requires five distinct requirement roles");
   expectSql(/v_solution_count = 5/i, "published validation requires five perfect solution rows");
   expectSql(/v_solution_role_count = 5/i, "published validation requires five distinct solution roles");
   expectSql(/v_solution_straw_hats <= 3/i, "published validation enforces the perfect solution Straw Hat cap");
-  expectSql(/v_score_count = 60/i, "published validation requires scores for every pool character and role");
+  expectSql(/v_score_count = 75/i, "published validation requires scores for every pool character and role");
   expectSql(/v_solution_score_total = 90/i, "published validation requires a full-max perfect solution role score");
   expectSql(
     /JOIN public\.daily_crew_character_role_scores AS scores[\s\S]*scores\.mission_id = s\.mission_id[\s\S]*scores\.character_id = s\.character_id[\s\S]*scores\.role = s\.role/i,
@@ -212,6 +231,33 @@ test("Phase 1 does not mutate wallets, stock prices, or seed daily missions", ()
   rejectSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "migration does not add reward payout RPC");
   rejectSql(/pg_cron|cron\.schedule|cron\.unschedule/i, "migration does not use cron");
   rejectSql(/INSERT\s+INTO\s+public\.daily_crew_/i, "migration does not seed missions or submissions");
+});
+
+test("pool-15 alignment migration is schema-only and does not introduce payout or browser-hidden grants", () => {
+  expectPool15Sql(/ALTER TABLE public\.daily_crew_mission_pool/i, "alignment migration updates only the mission pool table constraint");
+  expectPool15Sql(/CREATE OR REPLACE FUNCTION public\.validate_daily_crew_mission\(_mission_id uuid\)/i, "alignment migration updates only publish validation logic");
+  expectPool15Sql(/SECURITY DEFINER/i, "validation function remains security definer");
+  expectPool15Sql(/SET search_path = pg_catalog, public, pg_temp/i, "validation function keeps the safe search path");
+  expectPool15Sql(/v_pool_count = 15/i, "alignment migration requires 15 pool characters");
+  expectPool15Sql(/v_score_count = 75/i, "alignment migration requires 75 role score rows");
+  expectPool15Sql(/v_pool_straw_hats <= 5/i, "alignment migration preserves pool Straw Hat cap");
+  expectPool15Sql(/v_solution_straw_hats <= 3/i, "alignment migration preserves perfect solution Straw Hat cap");
+  expectPool15Sql(/v_solution_score_total = 90/i, "alignment migration preserves full-max perfect role scoring");
+  expectPool15Sql(/REVOKE EXECUTE ON FUNCTION public\.validate_daily_crew_mission\(uuid\) FROM PUBLIC, anon, authenticated/i, "browser roles cannot execute validation");
+  expectPool15Sql(/GRANT EXECUTE ON FUNCTION public\.validate_daily_crew_mission\(uuid\) TO service_role/i, "service_role can execute validation");
+
+  rejectPool15Sql(/\buser_wallets\b/i, "alignment migration does not touch wallets");
+  rejectPool15Sql(/\btransactions\b/i, "alignment migration does not touch transactions");
+  rejectPool15Sql(/INSERT\s+INTO\s+public\.daily_crew_missions\b/i, "alignment migration does not seed daily missions");
+  rejectPool15Sql(/INSERT\s+INTO\s+public\.daily_crew_submissions\b/i, "alignment migration does not seed submissions");
+  rejectPool15Sql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "alignment migration does not add payout RPC");
+
+  for (const table of hiddenTables) {
+    rejectPool15Sql(
+      new RegExp(`GRANT SELECT ON TABLE public\\.${table} TO (?:anon|authenticated|anon, authenticated|authenticated, anon)`, "i"),
+      `${table} remains hidden from browser roles`,
+    );
+  }
 });
 
 test("the previously removed duplicate wallet migration is not reintroduced", () => {
