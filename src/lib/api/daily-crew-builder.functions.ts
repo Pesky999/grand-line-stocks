@@ -41,6 +41,10 @@ type DailyCrewPerfectSolutionRow = Pick<
   Database["public"]["Tables"]["daily_crew_perfect_solution"]["Row"],
   "role" | "character_id"
 >;
+type DailyCrewSubmissionRow = Pick<
+  Database["public"]["Tables"]["daily_crew_submissions"]["Row"],
+  "id" | "submitted_at" | "score" | "rank" | "reward_amount" | "reward_paid" | "score_breakdown"
+>;
 
 type DailyCrewDbMissionFixture = DailyCrewMissionFixture & { id: string };
 
@@ -86,6 +90,10 @@ const assignmentInput = z.object({
 const previewSubmissionInput = z.object({
   missionId: z.string().uuid(),
   assignments: z.array(assignmentInput).length(DAILY_CREW_ROLES.length),
+});
+
+const savedResultInput = z.object({
+  missionId: z.string().uuid().optional(),
 });
 
 const previewResultSchema = z
@@ -134,6 +142,18 @@ const recordSubmissionResultSchema = z
     rewardAmount: z.number().int().min(0),
     rewardPaid: z.boolean(),
     scoreBreakdown: z.unknown(),
+  })
+  .strict();
+
+const savedSubmissionResultSchema = z
+  .object({
+    id: z.string().uuid(),
+    submitted_at: z.string().nullable(),
+    score: z.number().int().min(0).max(100),
+    rank: dailyCrewRankSchema,
+    reward_amount: z.number().int().min(0),
+    reward_paid: z.boolean(),
+    score_breakdown: z.unknown(),
   })
   .strict();
 
@@ -401,6 +421,25 @@ function parsePersistedResult(
   };
 }
 
+function parseSavedSubmissionResult(row: DailyCrewSubmissionRow): DailyCrewBuilderPersistedResult {
+  const savedSubmission = savedSubmissionResultSchema.parse(row);
+  const savedBreakdown = previewResultSchema.parse(savedSubmission.score_breakdown);
+
+  return {
+    ...savedBreakdown,
+    score: savedSubmission.score,
+    rank: savedSubmission.rank as DailyCrewRank,
+    rewardAmount: savedSubmission.reward_amount,
+    rewardPreviewOnly: true,
+    submissionSaved: true,
+    alreadySubmitted: true,
+    submissionId: savedSubmission.id,
+    submittedAt: savedSubmission.submitted_at,
+    rewardPaid: savedSubmission.reward_paid,
+    walletBalance: null,
+  };
+}
+
 async function awardDailyCrewBuilderReward(
   db: DailyCrewDb,
   args: { submissionId: string; userId: string },
@@ -459,6 +498,36 @@ export const getTodayDailyCrewBuilderMission = createServerFn({ method: "GET" })
   const fixture = await loadPublishedDailyCrewBuilderMissionFixture(db);
   return toPublicDailyCrewBuilderMission(fixture);
 });
+
+export const getMyTodayDailyCrewBuilderResult = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => savedResultInput.parse(input))
+  .handler(async ({ data, context }): Promise<DailyCrewBuilderPersistedResult | null> => {
+    const db = await admin();
+    const fixture = await loadPublishedDailyCrewBuilderMissionFixture(db, { missionId: data.missionId });
+
+    const { data: savedSubmissionRow, error } = await db
+      .from("daily_crew_submissions")
+      .select("id,submitted_at,score,rank,reward_amount,reward_paid,score_breakdown")
+      .eq("mission_id", fixture.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!savedSubmissionRow) return null;
+
+    const savedResult = parseSavedSubmissionResult(savedSubmissionRow as DailyCrewSubmissionRow);
+    if (savedResult.rewardPaid) return savedResult;
+
+    const payoutAttempt = await awardDailyCrewBuilderRewardSafely(db, {
+      submissionId: savedResult.submissionId,
+      userId: context.userId,
+    });
+
+    return payoutAttempt.ok
+      ? applyDailyCrewPayoutResult(savedResult, payoutAttempt.result)
+      : applyDailyCrewPayoutFailure(savedResult, payoutAttempt.failure);
+  });
 
 export const submitDailyCrewBuilderPreview = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

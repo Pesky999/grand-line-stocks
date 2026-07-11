@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { TerminalShell } from "@/components/TerminalShell";
 import { useMe } from "@/hooks/useMe";
 import {
+  getMyTodayDailyCrewBuilderResult,
   getTodayDailyCrewBuilderMission,
   submitDailyCrewBuilderPreview,
   type DailyCrewBuilderPersistedResult,
@@ -50,6 +51,17 @@ function DailyCrewBuilderPage() {
   const mission = missionQ.data as DailyCrewBuilderPublicMission | undefined;
   const roles = mission?.roles ?? [];
   const pool = mission?.pool ?? [];
+  const savedResultEnabled = Boolean(user && mission?.id);
+
+  const savedResultQ = useQuery({
+    queryKey: ["daily-crew-builder-saved-result", user?.id, mission?.id],
+    queryFn: () =>
+      getMyTodayDailyCrewBuilderResult({
+        data: { missionId: mission?.id },
+      }),
+    enabled: savedResultEnabled,
+    staleTime: 30_000,
+  });
 
   const assignedEntries = useMemo(
     () => Object.entries(assignments).filter((entry): entry is [DailyCrewRole, string] => Boolean(entry[1])),
@@ -58,7 +70,20 @@ function DailyCrewBuilderPage() {
   const assignedIds = useMemo(() => new Set(assignedEntries.map(([, characterId]) => characterId)), [assignedEntries]);
   const allRolesAssigned = roles.length > 0 && roles.every((role) => assignments[role.role]);
   const submissionLocked = Boolean(result?.submissionSaved);
-  const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading && !submissionLocked;
+  const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading && !savedResultQ.isLoading && !submissionLocked;
+
+  useEffect(() => {
+    const savedResult = savedResultQ.data as DailyCrewBuilderPersistedResult | null | undefined;
+    if (!savedResult) return;
+
+    setResult(savedResult);
+    setSubmissionError(null);
+    setAssignments(
+      Object.fromEntries(
+        savedResult.roles.map((role) => [role.role, role.characterId]),
+      ) as Assignments,
+    );
+  }, [savedResultQ.data]);
 
   const submitPreviewM = useMutation({
     mutationFn: () =>
@@ -211,6 +236,18 @@ function DailyCrewBuilderPage() {
                   Sign in
                 </a>{" "}
                 to submit your crew.
+              </div>
+            )}
+
+            {savedResultEnabled && savedResultQ.isLoading && (
+              <div className="border border-border bg-card/60 p-3 text-xs text-muted-foreground">
+                Checking for your saved crew result...
+              </div>
+            )}
+
+            {savedResultEnabled && savedResultQ.isError && (
+              <div role="alert" className="border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
+                Could not load your saved crew result. Please refresh and try again.
               </div>
             )}
           </div>
