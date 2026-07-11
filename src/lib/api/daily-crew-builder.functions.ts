@@ -67,7 +67,14 @@ export type DailyCrewBuilderPersistedResult = DailyCrewBuilderPreviewResult & {
   submissionId: string;
   submittedAt: string | null;
   rewardPaid: boolean;
+  walletBalance: number | null;
+  payoutErrorCode?: string;
+  payoutErrorStep?: DailyCrewPayoutErrorStep;
 };
+
+type DailyCrewPayoutErrorStep =
+  | "DAILY_CREW_PAYOUT_RPC_FAILED"
+  | "DAILY_CREW_PAYOUT_UNKNOWN_FAILED";
 
 const dailyCrewRankSchema = z.enum(["s", "a", "b", "c", "fail"]);
 
@@ -129,6 +136,75 @@ const recordSubmissionResultSchema = z
     scoreBreakdown: z.unknown(),
   })
   .strict();
+
+const awardDailyCrewRewardResultSchema = z
+  .object({
+    submissionId: z.string().uuid(),
+    rewardAmount: z.number().int().min(0),
+    rewardPaid: z.literal(true),
+    alreadyPaid: z.boolean(),
+    walletBalance: z.number().int().nullable(),
+  })
+  .strict();
+
+type DailyCrewPayoutResult = z.infer<typeof awardDailyCrewRewardResultSchema>;
+
+const DAILY_CREW_PAYOUT_ERROR_MESSAGE = "Reward payout is pending. Your saved result is safe.";
+
+class DailyCrewPayoutError extends Error {
+  payoutErrorCode: string;
+  payoutErrorStep: DailyCrewPayoutErrorStep;
+
+  constructor(step: DailyCrewPayoutErrorStep, supabaseCode?: string) {
+    super(DAILY_CREW_PAYOUT_ERROR_MESSAGE);
+    this.name = "DailyCrewPayoutError";
+    this.payoutErrorStep = step;
+    this.payoutErrorCode = safeDailyCrewPayoutCode(step, supabaseCode);
+  }
+}
+
+type DailyCrewPayoutFailure = {
+  message: string;
+  payoutErrorCode: string;
+  payoutErrorStep: DailyCrewPayoutErrorStep;
+};
+
+type DailyCrewPayoutAttempt =
+  | { ok: true; result: DailyCrewPayoutResult }
+  | { ok: false; failure: DailyCrewPayoutFailure };
+
+function safeDailyCrewPayoutCode(step: DailyCrewPayoutErrorStep, supabaseCode?: string): string {
+  const safeCode = supabaseCode?.replace(/[^A-Za-z0-9_]/g, "_");
+  return safeCode ? `${step}_${safeCode}` : step;
+}
+
+function dailyCrewPayoutFailureFromError(error: unknown): DailyCrewPayoutFailure {
+  if (error instanceof DailyCrewPayoutError) {
+    return {
+      message: error.message,
+      payoutErrorCode: error.payoutErrorCode,
+      payoutErrorStep: error.payoutErrorStep,
+    };
+  }
+
+  return {
+    message: DAILY_CREW_PAYOUT_ERROR_MESSAGE,
+    payoutErrorCode: "DAILY_CREW_PAYOUT_UNKNOWN_FAILED",
+    payoutErrorStep: "DAILY_CREW_PAYOUT_UNKNOWN_FAILED",
+  };
+}
+
+function logDailyCrewPayoutSupabaseError(
+  message: string,
+  error: { code?: string; message?: string; details?: string; hint?: string },
+) {
+  console.error(message, {
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+  });
+}
 
 async function admin(): Promise<DailyCrewDb> {
   const { supabaseAdmin } = await import("../../integrations/supabase/client.server.ts");
@@ -321,6 +397,60 @@ function parsePersistedResult(
     submissionId: rpcResult.submissionId,
     submittedAt: rpcResult.submittedAt,
     rewardPaid: rpcResult.rewardPaid,
+    walletBalance: null,
+  };
+}
+
+async function awardDailyCrewBuilderReward(
+  db: DailyCrewDb,
+  args: { submissionId: string; userId: string },
+): Promise<DailyCrewPayoutResult> {
+  const { data, error } = await db.rpc("award_daily_crew_builder_reward", {
+    _submission_id: args.submissionId,
+    _user_id: args.userId,
+  });
+
+  if (error) {
+    logDailyCrewPayoutSupabaseError("Daily Crew Builder reward RPC failed", error);
+    throw new DailyCrewPayoutError("DAILY_CREW_PAYOUT_RPC_FAILED", error.code);
+  }
+
+  return awardDailyCrewRewardResultSchema.parse(data);
+}
+
+async function awardDailyCrewBuilderRewardSafely(
+  db: DailyCrewDb,
+  args: { submissionId: string; userId: string },
+): Promise<DailyCrewPayoutAttempt> {
+  try {
+    const result = await awardDailyCrewBuilderReward(db, args);
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, failure: dailyCrewPayoutFailureFromError(error) };
+  }
+}
+
+function applyDailyCrewPayoutResult(
+  state: DailyCrewBuilderPersistedResult,
+  payout: DailyCrewPayoutResult,
+): DailyCrewBuilderPersistedResult {
+  return {
+    ...state,
+    rewardAmount: payout.rewardAmount,
+    rewardPaid: payout.rewardPaid,
+    walletBalance: payout.walletBalance,
+  };
+}
+
+function applyDailyCrewPayoutFailure(
+  state: DailyCrewBuilderPersistedResult,
+  failure: DailyCrewPayoutFailure,
+): DailyCrewBuilderPersistedResult {
+  return {
+    ...state,
+    rewardPaid: false,
+    payoutErrorCode: failure.payoutErrorCode,
+    payoutErrorStep: failure.payoutErrorStep,
   };
 }
 
@@ -353,5 +483,15 @@ export const submitDailyCrewBuilderPreview = createServerFn({ method: "POST" })
     });
     if (error) throw error;
 
-    return parsePersistedResult(rpcResult, computedResult);
+    const persistedResult = parsePersistedResult(rpcResult, computedResult);
+    if (persistedResult.rewardPaid) return persistedResult;
+
+    const payoutAttempt = await awardDailyCrewBuilderRewardSafely(db, {
+      submissionId: persistedResult.submissionId,
+      userId: context.userId,
+    });
+
+    return payoutAttempt.ok
+      ? applyDailyCrewPayoutResult(persistedResult, payoutAttempt.result)
+      : applyDailyCrewPayoutFailure(persistedResult, payoutAttempt.failure);
   });

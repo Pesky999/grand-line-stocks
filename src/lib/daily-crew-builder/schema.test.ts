@@ -22,6 +22,10 @@ const roleLaneCorrectionMigrationPath = join(
   migrationsDir,
   "20260711130000_correct_daily_crew_builder_role_lanes.sql",
 );
+const payoutMigrationPath = join(
+  migrationsDir,
+  "20260711140000_award_daily_crew_builder_reward.sql",
+);
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
@@ -30,6 +34,7 @@ const baseSql = readFileSync(baseMigrationPath, "utf8");
 const pool15Sql = readFileSync(pool15MigrationPath, "utf8");
 const persistenceSql = readFileSync(persistenceMigrationPath, "utf8");
 const roleLaneCorrectionSql = readFileSync(roleLaneCorrectionMigrationPath, "utf8");
+const payoutSql = readFileSync(payoutMigrationPath, "utf8");
 const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
@@ -54,6 +59,10 @@ function expectRoleLaneCorrectionSql(pattern: RegExp, message: string): void {
   assert.match(roleLaneCorrectionSql, pattern, message);
 }
 
+function expectPayoutSql(pattern: RegExp, message: string): void {
+  assert.match(payoutSql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
@@ -68,6 +77,10 @@ function rejectPersistenceSql(pattern: RegExp, message: string): void {
 
 function rejectRoleLaneCorrectionSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(stripSqlComments(roleLaneCorrectionSql), pattern, message);
+}
+
+function rejectPayoutSql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(payoutSql), pattern, message);
 }
 
 const tables = [
@@ -415,6 +428,61 @@ test("role-lane correction updates only seeded Daily Crew role data", () => {
   rejectRoleLaneCorrectionSql(/ALTER\s+TABLE\b/i, "correction does not evolve schema");
   rejectRoleLaneCorrectionSql(/\bkoala\b/i, "correction does not introduce Koala");
   rejectRoleLaneCorrectionSql(/\bperona\b/i, "correction does not introduce Perona");
+});
+
+test("Daily Crew Builder payout RPC pays stored rewards idempotently and remains service-role only", () => {
+  expectPayoutSql(
+    /CREATE OR REPLACE FUNCTION public\.award_daily_crew_builder_reward\(\s*_submission_id uuid,\s*_user_id uuid\s*\)\s*RETURNS jsonb/i,
+    "payout RPC exists with the approved signature",
+  );
+  expectPayoutSql(/SECURITY DEFINER/i, "payout RPC is security definer");
+  expectPayoutSql(/SET search_path = pg_catalog, public, pg_temp/i, "payout RPC uses a fixed safe search path");
+  expectPayoutSql(
+    /FROM public\.daily_crew_submissions[\s\S]*WHERE id = _submission_id[\s\S]*FOR UPDATE/i,
+    "payout RPC locks the target submission row",
+  );
+  expectPayoutSql(/v_submission\.user_id <> _user_id/i, "payout RPC verifies submission ownership");
+  expectPayoutSql(/IF v_submission\.reward_paid THEN[\s\S]*'alreadyPaid', true/i, "paid submissions return idempotently");
+  expectPayoutSql(
+    /INSERT INTO public\.user_wallets \(user_id\)\s*VALUES \(_user_id\)\s*ON CONFLICT \(user_id\) DO NOTHING/i,
+    "missing wallets are created using database defaults",
+  );
+  expectPayoutSql(
+    /FROM public\.user_wallets[\s\S]*WHERE user_id = _user_id[\s\S]*FOR UPDATE/i,
+    "wallet row is locked before payout",
+  );
+  expectPayoutSql(
+    /IF v_submission\.reward_amount > 0 THEN[\s\S]*UPDATE public\.user_wallets[\s\S]*berries = berries \+ v_submission\.reward_amount/i,
+    "positive rewards increment berries by the stored reward amount",
+  );
+  expectPayoutSql(
+    /UPDATE public\.daily_crew_submissions[\s\S]*reward_paid = true/i,
+    "payout RPC marks the stored submission paid",
+  );
+  expectPayoutSql(/'rewardAmount', v_submission\.reward_amount/i, "RPC returns the stored reward amount");
+  expectPayoutSql(/'walletBalance', v_wallet_balance/i, "RPC returns wallet balance for UI confirmation");
+  expectPayoutSql(
+    /REVOKE EXECUTE ON FUNCTION public\.award_daily_crew_builder_reward\(uuid, uuid\) FROM PUBLIC, anon, authenticated/i,
+    "browser roles cannot execute payout directly",
+  );
+  expectPayoutSql(
+    /GRANT EXECUTE ON FUNCTION public\.award_daily_crew_builder_reward\(uuid, uuid\) TO service_role/i,
+    "service role can execute payout",
+  );
+  expectPayoutSql(/NOTIFY pgrst, 'reload schema'/i, "schema cache reload notification is included");
+
+  rejectPayoutSql(/_reward_amount/i, "payout RPC does not accept or trust a client reward amount");
+  rejectPayoutSql(/\btransactions\b/i, "payout RPC does not write stock transaction history");
+  rejectPayoutSql(/\buser_holdings\b/i, "payout RPC does not touch holdings");
+  rejectPayoutSql(/UPDATE\s+public\.characters\b/i, "payout RPC does not touch character prices");
+  rejectPayoutSql(/\bprice_history\b/i, "payout RPC does not touch price history");
+  rejectPayoutSql(/\bgrand_line_guess\b/i, "payout RPC does not touch Grand Line Guess tables");
+  rejectPayoutSql(/INSERT\s+INTO\s+public\.daily_crew_submissions\b/i, "payout RPC does not create submissions");
+  rejectPayoutSql(/INSERT\s+INTO\s+public\.daily_crew_submission_roles\b/i, "payout RPC does not touch submitted role rows");
+  rejectPayoutSql(/UPDATE\s+public\.daily_crew_submission_roles\b/i, "payout RPC does not touch submitted role rows");
+  rejectPayoutSql(/UPDATE\s+public\.daily_crew_missions\b/i, "payout RPC does not touch mission setup");
+  rejectPayoutSql(/UPDATE\s+public\.daily_crew_mission_pool\b/i, "payout RPC does not touch mission setup");
+  rejectPayoutSql(/UPDATE\s+public\.daily_crew_character_role_scores\b/i, "payout RPC does not touch hidden scores");
 });
 
 test("the previously removed duplicate wallet migration is not reintroduced", () => {

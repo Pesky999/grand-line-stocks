@@ -28,7 +28,7 @@ export const Route = createFileRoute("/games/daily-crew-builder")({
 type Assignments = Partial<Record<DailyCrewRole, string>>;
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Daily Crew Builder preview failed";
+  return error instanceof Error ? error.message : "Daily Crew Builder submission failed";
 }
 
 function rankLabel(rank: DailyCrewBuilderPersistedResult["rank"]) {
@@ -83,9 +83,11 @@ function DailyCrewBuilderPage() {
         ) as Assignments,
       );
       toast.success(
-        savedResult.alreadySubmitted
-          ? "Your saved crew result is loaded. No Berries were paid."
-          : "Crew preview saved. No Berries were paid.",
+        savedResult.rewardPaid
+          ? savedResult.alreadySubmitted
+            ? "Your saved crew result is loaded. Reward already paid."
+            : "Crew submitted. Reward paid."
+          : "Your crew is saved. Reward payout is pending.",
       );
     },
     onError: (error) => {
@@ -135,8 +137,8 @@ function DailyCrewBuilderPage() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!user) {
-      setSubmissionError("Sign in to submit your crew preview.");
-      toast("Sign in to submit your crew preview.");
+      setSubmissionError("Sign in to submit your crew.");
+      toast("Sign in to submit your crew.");
       return;
     }
     if (!allRolesAssigned) {
@@ -164,8 +166,8 @@ function DailyCrewBuilderPage() {
                 Daily Crew Builder
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Build a five-role crew from today's curated One Piece pool. This is a preview phase:
-                your first submitted crew is saved for this mission, but no Berries are paid yet.
+                Build a five-role crew from today's curated One Piece pool. Your first submitted crew
+                is saved for this mission and pays its rank reward automatically.
               </p>
             </div>
 
@@ -196,8 +198,8 @@ function DailyCrewBuilderPage() {
                   ))}
                 </div>
                 <div className="mt-4 border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
-                  Preview reward only. Reward payout coming later. No Berries are paid in this preview phase.
-                  You can reset the form before submitting; saved results are locked for the mission.
+                  Submit once per mission. Your saved result is locked in, and eligible rewards are
+                  paid automatically after the server records your crew.
                 </div>
               </div>
             )}
@@ -208,7 +210,7 @@ function DailyCrewBuilderPage() {
                 <a href="/auth" className="text-primary underline">
                   Sign in
                 </a>{" "}
-                to submit the preview score.
+                to submit your crew.
               </div>
             )}
           </div>
@@ -267,7 +269,7 @@ function DailyCrewBuilderPage() {
                     disabled={!canSubmit || submitPreviewM.isPending}
                     className="border border-primary bg-primary/10 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {submissionLocked ? "Crew Saved" : user ? "Submit Preview Crew" : "Sign in to submit"}
+                    {submissionLocked ? "Crew Saved" : user ? "Submit Crew" : "Sign in to submit"}
                   </button>
                   <button
                     type="button"
@@ -320,21 +322,23 @@ function DailyCrewBuilderPage() {
             {result && (
               <section className="terminal-panel">
                 <div className="terminal-header flex items-center justify-between">
-                  <span>Saved Preview Result</span>
+                  <span>Saved Crew Result</span>
                   {result.isPerfectSolution && <span className="text-primary">Perfect crew</span>}
                 </div>
                 <div className="space-y-4 p-4">
                   <div className="grid gap-3 sm:grid-cols-4">
                     <ResultStat label="Score" value={`${result.score} / ${result.maxScore}`} />
                     <ResultStat label="Rank" value={rankLabel(result.rank)} />
-                    <ResultStat label="Preview Reward" value={`${result.rewardAmount} Berries`} />
+                    <ResultStat label="Reward" value={`${result.rewardAmount} Berries`} />
                     <ResultStat label="Synergy" value={`+${result.synergyScore}`} />
                   </div>
-                  <div className="border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
+                  <div className={`border p-3 text-xs ${result.rewardPaid ? "border-primary/30 bg-primary/5 text-primary" : "border-bear/40 bg-bear/10 text-bear"}`}>
                     {result.alreadySubmitted
                       ? "You already submitted for this mission, so your saved result is shown. "
                       : "Your first submitted crew is saved for this mission. "}
-                    Preview only. Reward payout coming later. No Berries were paid.
+                    {result.rewardPaid
+                      ? `Reward ${result.alreadySubmitted ? "already paid" : "paid"}: ฿${result.rewardAmount}.${typeof result.walletBalance === "number" ? ` Wallet balance: ฿${result.walletBalance}.` : ""}`
+                      : `Reward payout is pending. Your saved result is safe.${result.payoutErrorCode ? ` Diagnostic: ${result.payoutErrorCode}.` : ""}`}
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                     <div className="space-y-2">
