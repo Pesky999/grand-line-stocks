@@ -54,7 +54,6 @@ function DailyCrewBuilderPage() {
   const pool = mission?.pool ?? [];
   const jobCount = roles.length;
   const poolCount = pool.length;
-  const jobWord = jobCount === 1 ? "job" : "jobs";
   const assignmentGridClass = jobCount <= 3 ? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5";
   const savedResultEnabled = Boolean(user && mission?.id);
   const savedResultKey = user?.id && mission?.id ? `${user.id}:${mission.id}` : null;
@@ -235,7 +234,7 @@ function DailyCrewBuilderPage() {
                 Daily Crew Builder
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Build a {jobCount > 0 ? `${jobCount}-${jobWord}` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew
+                Build a {jobCount > 0 ? `${jobCount}-job` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew
                 is saved for this mission and pays its rank reward automatically.
               </p>
             </div>

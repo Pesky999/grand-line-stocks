@@ -20,6 +20,8 @@ test("Daily Crew Builder route renders the mission, jobs, pool, and saved result
   assert.match(routeSource, /mission\.brief/);
   assert.match(routeSource, /mission\?\.id/);
   assert.match(routeSource, /poolCount > 0 \? `\$\{poolCount\}-character pool` : "Daily mission pool"/);
+  assert.match(routeSource, /jobCount > 0 \? `\$\{jobCount\}-job` : "mission-ready"/);
+  assert.doesNotMatch(routeSource, /\$\{jobCount\}-\$\{jobWord\}/);
   assert.match(routeSource, /Crew Assignment/);
   assert.match(routeSource, /Character Pool/);
   assert.match(routeSource, /Saved Crew Result/);
