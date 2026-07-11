@@ -63,6 +63,25 @@ test("perfect solution scores exactly 100 with 90 role-fit points and a 10-point
   }
 });
 
+test("Covert Harbor fixture uses only current market characters after substitution", () => {
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-infiltration");
+  assert.ok(fixture);
+
+  const characterIds = fixture.pool.map((character) => character.id);
+  assert.equal(characterIds.includes("char-koala"), false);
+  assert.equal(characterIds.includes("char-perona"), false);
+  assert.equal(characterIds.includes("char-sabo"), true);
+  assert.equal(characterIds.includes("char-boa"), true);
+  assert.equal(new Set(characterIds).size, DAILY_CREW_POOL_SIZE);
+  assert.equal(fixture.pool.length, DAILY_CREW_POOL_SIZE);
+  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-sabo");
+
+  const result = scoreDailyCrewSubmission(fixture, perfectAssignments(fixture));
+  assert.equal(result.score, 100);
+  assert.equal(result.baseScore, 90);
+  assert.equal(result.synergyScore, 10);
+});
+
 test("near-perfect submission can score below 100 without leaking the perfect solution", () => {
   const fixture = DAILY_CREW_SAMPLE_FIXTURES[0];
   const assignments = perfectAssignments(fixture).map((assignment) =>

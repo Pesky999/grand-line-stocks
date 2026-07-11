@@ -14,12 +14,17 @@ const pool15MigrationPath = join(
   migrationsDir,
   "20260709120000_update_daily_crew_builder_pool_15.sql",
 );
+const persistenceMigrationPath = join(
+  migrationsDir,
+  "20260710130000_seed_daily_crew_builder_missions.sql",
+);
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
 );
 const baseSql = readFileSync(baseMigrationPath, "utf8");
 const pool15Sql = readFileSync(pool15MigrationPath, "utf8");
+const persistenceSql = readFileSync(persistenceMigrationPath, "utf8");
 const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
@@ -36,12 +41,20 @@ function expectPool15Sql(pattern: RegExp, message: string): void {
   assert.match(pool15Sql, pattern, message);
 }
 
+function expectPersistenceSql(pattern: RegExp, message: string): void {
+  assert.match(persistenceSql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
 
 function rejectPool15Sql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(stripSqlComments(pool15Sql), pattern, message);
+}
+
+function rejectPersistenceSql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(persistenceSql), pattern, message);
 }
 
 const tables = [
@@ -258,6 +271,59 @@ test("pool-15 alignment migration is schema-only and does not introduce payout o
       `${table} remains hidden from browser roles`,
     );
   }
+});
+
+test("persistence migration seeds the two current missions from public market characters", () => {
+  expectPersistenceSql(/2026-07-10[\s\S]*storm-gate-rescue[\s\S]*Storm Gate Rescue/i, "Storm Gate Rescue is seeded");
+  expectPersistenceSql(/2026-07-11[\s\S]*covert-harbor-infiltration[\s\S]*Covert Harbor Infiltration/i, "Covert Harbor Infiltration is seeded");
+  expectPersistenceSql(/'published'::public\.daily_crew_mission_status/i, "seed missions are published");
+  expectPersistenceSql(/JOIN public\.characters AS characters[\s\S]*characters\.slug = seed_characters\.market_slug/i, "seed resolves real market characters by slug");
+  expectPersistenceSql(/Daily Crew Builder seed missing public\.characters slugs/i, "missing market slugs fail clearly");
+  expectPersistenceSql(/public\.validate_daily_crew_mission\(v_mission_id\)/i, "seed validates each mission");
+
+  for (const slug of [
+    "nefertari-vivi",
+    "bartholomew-kuma",
+    "monkey-d-dragon",
+    "coby",
+    "charlotte-katakuri",
+    "jewelry-bonney",
+  ]) {
+    expectPersistenceSql(new RegExp(`'${slug}'`, "i"), `${slug} market slug is used`);
+  }
+
+  expectPersistenceSql(/'char-sabo', 'sabo'/i, "Sabo replaces the missing support character");
+  expectPersistenceSql(/'char-boa', 'boa'/i, "Boa Hancock replaces the missing disruption character");
+  rejectPersistenceSql(/\bkoala\b/i, "seed migration does not reference Koala");
+  rejectPersistenceSql(/\bperona\b/i, "seed migration does not reference Perona");
+  rejectPersistenceSql(/grand_line_guess_characters/i, "Daily Crew Builder does not use Grand Line Guess character tables");
+  rejectPersistenceSql(/daily_crew_builder_character/i, "no separate Daily Crew Builder character roster table is introduced");
+});
+
+test("persistence RPC records unpaid submissions and remains service-role only", () => {
+  expectPersistenceSql(/CREATE OR REPLACE FUNCTION public\.record_daily_crew_builder_submission\(/i, "recording RPC exists");
+  expectPersistenceSql(/SECURITY DEFINER/i, "recording RPC is security definer");
+  expectPersistenceSql(/SET search_path = pg_catalog, public, pg_temp/i, "recording RPC has safe search path");
+  expectPersistenceSql(/missions\.status = 'published'::public\.daily_crew_mission_status/i, "RPC requires published mission");
+  expectPersistenceSql(/_score < 0 OR _score > 100/i, "RPC validates score range");
+  expectPersistenceSql(/v_expected_rank := CASE[\s\S]*WHEN _score >= 90[\s\S]*WHEN _score >= 80[\s\S]*WHEN _score >= 70[\s\S]*WHEN _score >= 60/i, "RPC validates rank from score");
+  expectPersistenceSql(/_reward_amount <> v_expected_reward/i, "RPC validates future reward amount");
+  expectPersistenceSql(/reward_paid,\s*score_breakdown[\s\S]*false,\s*_score_breakdown/i, "RPC forces reward_paid false");
+  expectPersistenceSql(/_assignments IS NULL OR jsonb_typeof\(_assignments\) <> 'array'/i, "RPC rejects missing or non-array assignments");
+  expectPersistenceSql(/INSERT INTO public\.daily_crew_submissions/i, "RPC inserts the submission");
+  expectPersistenceSql(/INSERT INTO public\.daily_crew_submission_roles/i, "RPC inserts submitted role rows");
+  expectPersistenceSql(/JOIN public\.daily_crew_mission_pool AS pool/i, "RPC validates submitted characters against the mission pool");
+  expectPersistenceSql(/JOIN public\.daily_crew_role_requirements AS requirements/i, "RPC validates submitted roles against requirements");
+  expectPersistenceSql(/JOIN public\.daily_crew_character_role_scores AS scores/i, "RPC stores role scores from hidden score rows");
+  expectPersistenceSql(/alreadySubmitted/i, "RPC returns idempotent already-submitted state");
+  expectPersistenceSql(/REVOKE EXECUTE ON FUNCTION public\.record_daily_crew_builder_submission[\s\S]*FROM PUBLIC, anon, authenticated/i, "browser roles cannot execute persistence RPC");
+  expectPersistenceSql(/GRANT EXECUTE ON FUNCTION public\.record_daily_crew_builder_submission[\s\S]*TO service_role/i, "service_role can execute persistence RPC");
+  expectPersistenceSql(/NOTIFY pgrst, 'reload schema'/i, "schema cache reload notification is included");
+
+  rejectPersistenceSql(/\buser_wallets\b/i, "persistence migration does not touch wallets");
+  rejectPersistenceSql(/\btransactions\b/i, "persistence migration does not write transactions");
+  rejectPersistenceSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "persistence migration does not add payout RPC");
+  rejectPersistenceSql(/reward_paid\s*=\s*true/i, "persistence migration never marks rewards paid");
 });
 
 test("the previously removed duplicate wallet migration is not reintroduced", () => {
