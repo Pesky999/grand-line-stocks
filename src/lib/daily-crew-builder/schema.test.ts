@@ -340,6 +340,7 @@ test("persistence migration seeds the two current missions from public market ch
 
   expectPersistenceSql(/'char-sabo', 'sabo'/i, "Sabo replaces the missing support character");
   expectPersistenceSql(/'char-boa', 'boa'/i, "Boa Hancock replaces the missing disruption character");
+  expectPersistenceSql(/'char-jinbe', 'jinbe'/i, "existing v1 seed still uses Jinbe");
   rejectPersistenceSql(/\bkoala\b/i, "seed migration does not reference Koala");
   rejectPersistenceSql(/\bperona\b/i, "seed migration does not reference Perona");
   rejectPersistenceSql(/grand_line_guess_characters/i, "Daily Crew Builder does not use Grand Line Guess character tables");
@@ -520,6 +521,7 @@ test("simplified jobs migration supports three-job missions without changing pay
     "submitted role scores can persist 30-point jobs",
   );
   expectSimplifiedJobsSql(/v_pool_count IN \(9, 15\)/i, "validation supports legacy and simplified pool sizes");
+  expectSimplifiedJobsSql(/v_pool_straw_hats <= 5/i, "validation keeps the shared five Straw Hat pool cap");
   expectSimplifiedJobsSql(/v_requirement_count IN \(3, 5\)/i, "validation supports legacy and simplified job counts");
   expectSimplifiedJobsSql(/v_score_count = v_pool_count \* v_requirement_count/i, "validation requires full score coverage");
   expectSimplifiedJobsSql(/v_requirement_max_points_total = 90/i, "role max points still total 90");
@@ -536,6 +538,11 @@ test("simplified jobs migration supports three-job missions without changing pay
   expectSimplifiedJobsSql(/'Emergency Support'/i, "emergency support is a public job label");
   expectSimplifiedJobsSql(/'char-robin', 'robin'/i, "simplified seed uses the known market slug for Robin");
   expectSimplifiedJobsSql(/'char-chopper', 'chopper'/i, "simplified seed uses the known market slug for Chopper");
+  expectSimplifiedJobsSql(/'char-law', 'law'/i, "simplified seed uses the known market slug for Law");
+  expectSimplifiedJobsSql(
+    /'char-law', 3, false, ARRAY\['captain', 'surgeon', 'tactical'\]/i,
+    "simplified seed uses Law as a non-Straw-Hat pool member",
+  );
   expectSimplifiedJobsSql(/'char-shanks'[\s\S]*'char-usopp'[\s\S]*'char-chopper'/i, "perfect trio is seeded");
   expectSimplifiedJobsSql(/v_required_role_count NOT IN \(3, 5\)/i, "submission RPC supports only approved role counts");
   expectSimplifiedJobsSql(/v_assignment_count <> v_required_role_count/i, "submission RPC validates dynamic assignment counts");
@@ -543,7 +550,18 @@ test("simplified jobs migration supports three-job missions without changing pay
   expectSimplifiedJobsSql(/v_inserted_role_count <> v_required_role_count/i, "submission RPC persists dynamic role counts");
   expectSimplifiedJobsSql(/GRANT EXECUTE ON FUNCTION public\.record_daily_crew_builder_submission[\s\S]*TO service_role/i, "recording RPC remains service-role only");
 
+  const simplifiedPoolSeedRows = [
+    ...simplifiedJobsSql.matchAll(/\('char-[^']+',\s*\d+,\s*(true|false),\s*ARRAY\[/gi),
+  ];
+  assert.equal(
+    simplifiedPoolSeedRows.filter((row) => row[1].toLowerCase() === "true").length,
+    5,
+    "simplified seed pool has no more than five Straw Hats",
+  );
+
   rejectSimplifiedJobsSql(/ALTER TYPE public\.daily_crew_role ADD VALUE/i, "simplified jobs avoid enum changes");
+  rejectSimplifiedJobsSql(/CASE WHEN v_pool_count = 9 THEN 6 ELSE 5 END/i, "simplified jobs do not allow a six Straw Hat pool");
+  rejectSimplifiedJobsSql(/'char-jinbe'/i, "simplified mission seed does not include Jinbe");
   rejectSimplifiedJobsSql(/\bnico-robin\b/i, "simplified seed does not use the wrong Robin market slug");
   rejectSimplifiedJobsSql(/\btony-tony-chopper\b/i, "simplified seed does not use the wrong Chopper market slug");
   rejectSimplifiedJobsSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "simplified jobs do not change payout RPC");

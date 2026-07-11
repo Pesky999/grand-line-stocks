@@ -289,7 +289,7 @@ export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture
   }
 
   const poolStrawHats = fixture.pool.filter((character) => character.isStrawHat).length;
-  const poolStrawHatCap = fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE ? 6 : 5;
+  const poolStrawHatCap = 5;
   if (poolStrawHats > poolStrawHatCap) {
     errors.push(`mission pool cannot include more than ${poolStrawHatCap} Straw Hats`);
   }

@@ -123,7 +123,7 @@ BEGIN
 
   RETURN
     v_pool_count IN (9, 15)
-    AND v_pool_straw_hats <= CASE WHEN v_pool_count = 9 THEN 6 ELSE 5 END
+    AND v_pool_straw_hats <= 5
     AND v_requirement_count IN (3, 5)
     AND v_requirement_role_count = v_requirement_count
     AND v_requirement_display_order_count = v_requirement_count
@@ -147,7 +147,7 @@ CREATE TEMP TABLE daily_crew_simplified_seed_characters (
 INSERT INTO daily_crew_simplified_seed_characters (fixture_id, market_slug) VALUES
   ('char-shanks', 'shanks'),
   ('char-dragon', 'monkey-d-dragon'),
-  ('char-jinbe', 'jinbe'),
+  ('char-law', 'law'),
   ('char-usopp', 'usopp'),
   ('char-franky', 'franky'),
   ('char-koby', 'coby'),
@@ -182,7 +182,7 @@ CREATE TEMP TABLE daily_crew_simplified_seed_pool (
 INSERT INTO daily_crew_simplified_seed_pool (fixture_id, display_order, is_straw_hat, visible_tags) VALUES
   ('char-shanks', 1, false, ARRAY['emperor', 'leader']),
   ('char-dragon', 2, false, ARRAY['revolutionary', 'leader']),
-  ('char-jinbe', 3, true, ARRAY['Straw Hat', 'steady hand']),
+  ('char-law', 3, false, ARRAY['captain', 'surgeon', 'tactical']),
   ('char-usopp', 4, true, ARRAY['Straw Hat', 'scout', 'lookout']),
   ('char-franky', 5, true, ARRAY['Straw Hat', 'shipwright', 'backup lookout']),
   ('char-koby', 6, false, ARRAY['marine', 'scout']),
@@ -247,9 +247,9 @@ INSERT INTO daily_crew_simplified_seed_scores (fixture_id, role, score, explanat
   ('char-dragon', 'captain', 25, 'Dragon can lead a covert exit with patience and political cover.'),
   ('char-dragon', 'navigator', 14, 'Dragon can mask movement patterns, but scouting is not his best fit.'),
   ('char-dragon', 'support', 12, 'Dragon helps the escape plan hold together from a distance.'),
-  ('char-jinbe', 'captain', 22, 'Jinbe keeps the crew calm and decisive under pressure.'),
-  ('char-jinbe', 'navigator', 12, 'Jinbe can read sea conditions, but this mission needs a sharper lookout.'),
-  ('char-jinbe', 'support', 18, 'Jinbe is steady emergency support when the harbor turns hostile.'),
+  ('char-law', 'captain', 22, 'Law can direct a clean extraction with surgical timing.'),
+  ('char-law', 'navigator', 12, 'Law can reposition the crew, but this mission needs a sharper lookout.'),
+  ('char-law', 'support', 18, 'Law is strong emergency support when the harbor turns hostile.'),
   ('char-usopp', 'captain', 10, 'Usopp can improvise, but this mission needs a firmer operation lead.'),
   ('char-usopp', 'navigator', 30, 'Usopp is the best lookout for spotting patrol shifts before they close in.'),
   ('char-usopp', 'support', 14, 'Usopp can cover the escape, but he is not the strongest emergency support.'),

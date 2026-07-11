@@ -58,8 +58,7 @@ test("sample fixtures validate with complete hidden score coverage", () => {
     );
     assert.equal(fixture.roleScores.length, fixture.pool.length * fixture.roleRequirements.length);
     assert.equal(
-      fixture.pool.filter((character) => character.isStrawHat).length <=
-        (fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE ? 6 : 5),
+      fixture.pool.filter((character) => character.isStrawHat).length <= 5,
       true,
     );
     assert.equal(
@@ -129,6 +128,7 @@ test("Covert Harbor fixture uses only current market characters after substituti
   assert.equal(characterIds.includes("char-boa"), true);
   assert.equal(new Set(characterIds).size, DAILY_CREW_LEGACY_POOL_SIZE);
   assert.equal(fixture.pool.length, DAILY_CREW_LEGACY_POOL_SIZE);
+  assert.equal(characterIds.includes("char-jinbe"), true);
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
   assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), roleMaxFor(fixture, "navigator"));
@@ -147,6 +147,9 @@ test("simplified Covert Harbor mission uses three public jobs and a nine-charact
   const publicMission = toPublicDailyCrewMission(fixture);
   assert.equal(fixture.pool.length, DAILY_CREW_SIMPLIFIED_POOL_SIZE);
   assert.equal(fixture.roleRequirements.length, 3);
+  assert.equal(fixture.pool.filter((character) => character.isStrawHat).length, 5);
+  assert.equal(fixture.pool.some((character) => character.id === "char-law"), true);
+  assert.equal(fixture.pool.some((character) => character.id === "char-jinbe"), false);
   assert.deepEqual(
     publicMission.roles.map((role) => role.name),
     ["Operation Lead", "Scout / Lookout", "Emergency Support"],
@@ -158,6 +161,8 @@ test("simplified Covert Harbor mission uses three public jobs and a nine-charact
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "captain")?.characterId, "char-shanks");
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
+  assert.equal(roleScoreFor(fixture, "char-law", "captain"), 22);
+  assert.equal(roleScoreFor(fixture, "char-law", "support"), 18);
   assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), 30);
   assert.equal(roleScoreFor(fixture, "char-koby", "navigator"), 22);
 
@@ -299,6 +304,12 @@ test("fixture validation rejects excessive Straw Hat counts", () => {
   const tooManyPoolStrawHats = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   tooManyPoolStrawHats.pool.find((character) => character.id === "char-law")!.isStrawHat = true;
   assertInvalidFixture(tooManyPoolStrawHats, /pool cannot include more than 5 Straw Hats/);
+
+  const simplifiedTooManyPoolStrawHats = cloneFixture(
+    DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction")!,
+  );
+  simplifiedTooManyPoolStrawHats.pool.find((character) => character.id === "char-law")!.isStrawHat = true;
+  assertInvalidFixture(simplifiedTooManyPoolStrawHats, /pool cannot include more than 5 Straw Hats/);
 
   const tooManyPerfectStrawHats = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   tooManyPerfectStrawHats.perfectSolution = tooManyPerfectStrawHats.perfectSolution.map((solution) =>
