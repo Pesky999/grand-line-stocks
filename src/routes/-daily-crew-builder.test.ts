@@ -70,16 +70,38 @@ test("Daily Crew Builder result panel uses saved and payout-aware reward languag
 
 test("Daily Crew Builder route loads saved results for signed-in users and locks assignments", () => {
   assert.match(routeSource, /const savedResultEnabled = Boolean\(user && mission\?\.id\)/);
+  assert.match(routeSource, /const savedResultKey = user\?\.id && mission\?\.id \? `\$\{user\.id\}:\$\{mission\.id\}` : null/);
   assert.match(routeSource, /queryKey: \["daily-crew-builder-saved-result", user\?\.id, mission\?\.id\]/);
   assert.match(routeSource, /getMyTodayDailyCrewBuilderResult\(\{/);
   assert.match(routeSource, /data: \{ missionId: mission\?\.id \}/);
   assert.match(routeSource, /enabled: savedResultEnabled/);
   assert.match(routeSource, /useEffect\(\(\) => \{/);
   assert.match(routeSource, /setResult\(savedResult\)/);
+  assert.match(routeSource, /setSavedResultStateKey\(savedResultKey\)/);
   assert.match(routeSource, /savedResult\.roles\.map\(\(role\) => \[role\.role, role\.characterId\]\)/);
   assert.match(routeSource, /Checking for your saved crew result/);
   assert.match(routeSource, /Could not load your saved crew result/);
   assert.doesNotMatch(routeSource, /Retry payout/i);
+});
+
+test("Daily Crew Builder route clears stale saved result state on sign-out and user changes", () => {
+  assert.match(routeSource, /const \[savedResultStateKey, setSavedResultStateKey\] = useState<string \| null>\(null\)/);
+  assert.match(routeSource, /if \(!savedResultEnabled \|\| !savedResultKey\) \{/);
+  assert.match(routeSource, /if \(result\?\.submissionSaved \|\| savedResultStateKey\) \{/);
+  assert.match(routeSource, /setResult\(null\)/);
+  assert.match(routeSource, /setAssignments\(\{\}\)/);
+  assert.match(routeSource, /setSavedResultStateKey\(null\)/);
+  assert.match(routeSource, /if \(savedResultStateKey && savedResultStateKey !== savedResultKey\) \{/);
+});
+
+test("Daily Crew Builder route clears previous saved result when the saved-result response is null", () => {
+  assert.match(routeSource, /if \(!savedResultEnabled \|\| !savedResultKey \|\| !savedResultQ\.isSuccess\) return/);
+  assert.match(routeSource, /const savedResult = savedResultQ\.data as DailyCrewBuilderPersistedResult \| null \| undefined/);
+  assert.match(routeSource, /if \(!savedResult\) \{/);
+  assert.match(routeSource, /savedResultStateKey === savedResultKey/);
+  assert.match(routeSource, /setResult\(null\)/);
+  assert.match(routeSource, /setAssignments\(\{\}\)/);
+  assert.match(routeSource, /setSavedResultStateKey\(null\)/);
 });
 
 test("Daily Crew Builder saved-result query is signed-in and mission gated", () => {

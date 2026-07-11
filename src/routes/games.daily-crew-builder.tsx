@@ -40,6 +40,7 @@ function DailyCrewBuilderPage() {
   const { user, authLoading } = useMe();
   const [assignments, setAssignments] = useState<Assignments>({});
   const [result, setResult] = useState<DailyCrewBuilderPersistedResult | null>(null);
+  const [savedResultStateKey, setSavedResultStateKey] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   const missionQ = useQuery({
@@ -52,6 +53,7 @@ function DailyCrewBuilderPage() {
   const roles = mission?.roles ?? [];
   const pool = mission?.pool ?? [];
   const savedResultEnabled = Boolean(user && mission?.id);
+  const savedResultKey = user?.id && mission?.id ? `${user.id}:${mission.id}` : null;
 
   const savedResultQ = useQuery({
     queryKey: ["daily-crew-builder-saved-result", user?.id, mission?.id],
@@ -73,17 +75,54 @@ function DailyCrewBuilderPage() {
   const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading && !savedResultQ.isLoading && !submissionLocked;
 
   useEffect(() => {
+    if (!savedResultEnabled || !savedResultKey) {
+      if (result?.submissionSaved || savedResultStateKey) {
+        setResult(null);
+        setAssignments({});
+      }
+      setSavedResultStateKey(null);
+      setSubmissionError(null);
+      return;
+    }
+
+    if (savedResultStateKey && savedResultStateKey !== savedResultKey) {
+      setResult(null);
+      setAssignments({});
+      setSavedResultStateKey(null);
+      setSubmissionError(null);
+    }
+  }, [result?.submissionSaved, savedResultEnabled, savedResultKey, savedResultStateKey]);
+
+  useEffect(() => {
+    if (!savedResultEnabled || !savedResultKey || !savedResultQ.isSuccess) return;
+
     const savedResult = savedResultQ.data as DailyCrewBuilderPersistedResult | null | undefined;
-    if (!savedResult) return;
+    if (!savedResult) {
+      if (result?.submissionSaved || savedResultStateKey === savedResultKey) {
+        setResult(null);
+        setAssignments({});
+        setSavedResultStateKey(null);
+        setSubmissionError(null);
+      }
+      return;
+    }
 
     setResult(savedResult);
+    setSavedResultStateKey(savedResultKey);
     setSubmissionError(null);
     setAssignments(
       Object.fromEntries(
         savedResult.roles.map((role) => [role.role, role.characterId]),
       ) as Assignments,
     );
-  }, [savedResultQ.data]);
+  }, [
+    result?.submissionSaved,
+    savedResultEnabled,
+    savedResultKey,
+    savedResultQ.data,
+    savedResultQ.isSuccess,
+    savedResultStateKey,
+  ]);
 
   const submitPreviewM = useMutation({
     mutationFn: () =>
@@ -102,6 +141,7 @@ function DailyCrewBuilderPage() {
     onSuccess: (next) => {
       const savedResult = next as DailyCrewBuilderPersistedResult;
       setResult(savedResult);
+      setSavedResultStateKey(savedResultKey);
       setAssignments(
         Object.fromEntries(
           savedResult.roles.map((role) => [role.role, role.characterId]),
