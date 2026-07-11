@@ -28,6 +28,7 @@ export type DailyCrewPoolCharacter = {
   id: string;
   name: string;
   slug: string;
+  primaryRole?: DailyCrewRole;
   displayOrder: number;
   isStrawHat: boolean;
   visibleTags: string[];
