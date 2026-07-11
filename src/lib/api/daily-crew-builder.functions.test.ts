@@ -130,6 +130,8 @@ test("Daily Crew Builder server functions handle already-submitted and payout re
   assert.match(source, /awardDailyCrewBuilderRewardSafely/);
   assert.match(source, /applyDailyCrewPayoutResult/);
   assert.match(source, /applyDailyCrewPayoutFailure/);
+  assert.match(source, /walletBalance: z\.number\(\)\.nullable\(\)/);
+  assert.doesNotMatch(source, /walletBalance: z\.number\(\)\.int\(\)\.nullable\(\)/);
   assert.match(source, /DAILY_CREW_PAYOUT_RPC_FAILED/);
   assert.match(source, /Reward payout is pending\. Your saved result is safe\./);
   assert.doesNotMatch(source, /retryDailyCrew|retry_daily_crew|Retry payout/i);

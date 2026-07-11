@@ -448,6 +448,10 @@ test("Daily Crew Builder payout RPC pays stored rewards idempotently and remains
     "missing wallets are created using database defaults",
   );
   expectPayoutSql(
+    /v_wallet_balance public\.user_wallets\.berries%TYPE/i,
+    "wallet balance return value preserves wallet column precision",
+  );
+  expectPayoutSql(
     /FROM public\.user_wallets[\s\S]*WHERE user_id = _user_id[\s\S]*FOR UPDATE/i,
     "wallet row is locked before payout",
   );

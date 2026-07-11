@@ -143,7 +143,7 @@ const awardDailyCrewRewardResultSchema = z
     rewardAmount: z.number().int().min(0),
     rewardPaid: z.literal(true),
     alreadyPaid: z.boolean(),
-    walletBalance: z.number().int().nullable(),
+    walletBalance: z.number().nullable(),
   })
   .strict();
 

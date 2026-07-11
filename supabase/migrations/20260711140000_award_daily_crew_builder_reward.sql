@@ -11,7 +11,7 @@ SET search_path = pg_catalog, public, pg_temp
 AS $function$
 DECLARE
   v_submission public.daily_crew_submissions%ROWTYPE;
-  v_wallet_balance integer;
+  v_wallet_balance public.user_wallets.berries%TYPE;
 BEGIN
   SELECT *
     INTO v_submission
