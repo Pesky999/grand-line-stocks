@@ -534,6 +534,8 @@ test("simplified jobs migration supports three-job missions without changing pay
   expectSimplifiedJobsSql(/'Operation Lead'/i, "operation lead is a public job label");
   expectSimplifiedJobsSql(/'Scout \/ Lookout'/i, "Scout / Lookout is a public job label");
   expectSimplifiedJobsSql(/'Emergency Support'/i, "emergency support is a public job label");
+  expectSimplifiedJobsSql(/'char-robin', 'robin'/i, "simplified seed uses the known market slug for Robin");
+  expectSimplifiedJobsSql(/'char-chopper', 'chopper'/i, "simplified seed uses the known market slug for Chopper");
   expectSimplifiedJobsSql(/'char-shanks'[\s\S]*'char-usopp'[\s\S]*'char-chopper'/i, "perfect trio is seeded");
   expectSimplifiedJobsSql(/v_required_role_count NOT IN \(3, 5\)/i, "submission RPC supports only approved role counts");
   expectSimplifiedJobsSql(/v_assignment_count <> v_required_role_count/i, "submission RPC validates dynamic assignment counts");
@@ -542,6 +544,8 @@ test("simplified jobs migration supports three-job missions without changing pay
   expectSimplifiedJobsSql(/GRANT EXECUTE ON FUNCTION public\.record_daily_crew_builder_submission[\s\S]*TO service_role/i, "recording RPC remains service-role only");
 
   rejectSimplifiedJobsSql(/ALTER TYPE public\.daily_crew_role ADD VALUE/i, "simplified jobs avoid enum changes");
+  rejectSimplifiedJobsSql(/\bnico-robin\b/i, "simplified seed does not use the wrong Robin market slug");
+  rejectSimplifiedJobsSql(/\btony-tony-chopper\b/i, "simplified seed does not use the wrong Chopper market slug");
   rejectSimplifiedJobsSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "simplified jobs do not change payout RPC");
   rejectSimplifiedJobsSql(/\btransactions\b/i, "simplified jobs do not write transactions");
   rejectSimplifiedJobsSql(/UPDATE\s+public\.user_wallets\b/i, "simplified jobs do not update wallets");

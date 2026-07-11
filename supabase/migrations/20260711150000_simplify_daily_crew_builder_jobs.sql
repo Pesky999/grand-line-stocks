@@ -151,9 +151,9 @@ INSERT INTO daily_crew_simplified_seed_characters (fixture_id, market_slug) VALU
   ('char-usopp', 'usopp'),
   ('char-franky', 'franky'),
   ('char-koby', 'coby'),
-  ('char-robin', 'nico-robin'),
+  ('char-robin', 'robin'),
   ('char-brook', 'brook'),
-  ('char-chopper', 'tony-tony-chopper');
+  ('char-chopper', 'chopper');
 
 DO $$
 DECLARE
