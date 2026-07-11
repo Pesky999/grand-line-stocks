@@ -47,12 +47,12 @@ function Games() {
           className="block border border-primary/40 bg-primary/5 p-4 transition hover:bg-primary/10"
         >
           <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
-            Preview daily
+            Available daily
           </div>
           <div className="mt-2 text-lg font-bold text-foreground">Daily Crew Builder</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Build a five-role crew from a curated 15-character pool. Preview scoring is live, with
-            reward payout coming later.
+            Build a five-role crew from a curated 15-character pool, lock in your score, and earn
+            the rank reward.
           </p>
         </Link>
 

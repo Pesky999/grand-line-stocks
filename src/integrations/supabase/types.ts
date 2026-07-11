@@ -1981,6 +1981,10 @@ export type Database = {
         Args: { _character_id: string }
         Returns: boolean
       }
+      award_daily_crew_builder_reward: {
+        Args: { _submission_id: string; _user_id: string }
+        Returns: Json
+      }
       record_daily_crew_builder_submission: {
         Args: {
           _assignments: Json

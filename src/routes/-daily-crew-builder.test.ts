@@ -13,7 +13,7 @@ const routeSource = read("src/routes/games.daily-crew-builder.tsx");
 const gamesIndexSource = read("src/routes/games.index.tsx");
 const apiSource = read("src/lib/api/daily-crew-builder.functions.ts");
 
-test("Daily Crew Builder preview route renders the mission, roles, pool, and preview result sections", () => {
+test("Daily Crew Builder route renders the mission, roles, pool, and saved result sections", () => {
   assert.match(routeSource, /createFileRoute\("\/games\/daily-crew-builder"\)/);
   assert.match(routeSource, /Daily Crew Builder/);
   assert.match(routeSource, /mission\.title/);
@@ -22,7 +22,7 @@ test("Daily Crew Builder preview route renders the mission, roles, pool, and pre
   assert.match(routeSource, /15-character pool/);
   assert.match(routeSource, /Role Assignment/);
   assert.match(routeSource, /Character Pool/);
-  assert.match(routeSource, /Saved Preview Result/);
+  assert.match(routeSource, /Saved Crew Result/);
   assert.match(routeSource, /role\.name/);
   assert.match(routeSource, /pool\.map/);
 });
@@ -37,7 +37,7 @@ test("Daily Crew Builder route keeps hidden fixture data out of the browser-visi
 
 test("Daily Crew Builder route requires all roles, prevents duplicates, and prompts signed-out users", () => {
   assert.match(routeSource, /useMe\(\)/);
-  assert.match(routeSource, /Sign in to submit your crew preview/);
+  assert.match(routeSource, /Sign in to submit your crew/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
   assert.match(routeSource, /const submissionLocked = Boolean\(result\?\.submissionSaved\)/);
   assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned && !missionQ\.isLoading && !submissionLocked/);
@@ -48,38 +48,43 @@ test("Daily Crew Builder route requires all roles, prevents duplicates, and prom
   assert.match(routeSource, /Clear/);
 });
 
-test("Daily Crew Builder result panel uses preview-only reward language and no paid-wallet language", () => {
-  assert.match(routeSource, /Preview reward only/);
-  assert.match(routeSource, /Reward payout coming later/);
-  assert.match(routeSource, /No Berries are paid in this preview phase/);
-  assert.match(routeSource, /No Berries were paid/);
+test("Daily Crew Builder result panel uses saved and payout-aware reward language", () => {
   assert.match(routeSource, /Your first submitted crew is saved for this mission/);
-  assert.match(routeSource, /saved results are locked for the mission/);
+  assert.match(routeSource, /paid automatically/);
+  assert.match(routeSource, /Reward paid/);
+  assert.match(routeSource, /Reward already paid/);
+  assert.match(routeSource, /Reward payout is pending\. Your saved result is safe/);
+  assert.match(routeSource, /payoutErrorCode/);
+  assert.match(routeSource, /Wallet balance/);
+  assert.match(routeSource, /Your first submitted crew is saved for this mission/);
   assert.match(routeSource, /Crew Saved/);
   assert.match(routeSource, /Saved Result Locked/);
-  assert.match(routeSource, /Preview Reward/);
+  assert.match(routeSource, /Reward/);
   assert.match(routeSource, /Perfect crew/);
   assert.match(routeSource, /Role breakdown/);
   assert.match(routeSource, /No synergy bonus earned/);
-  assert.doesNotMatch(routeSource, /wallet|credited|earned Berries|paid to your account/i);
+  assert.doesNotMatch(routeSource, /Preview reward only|Reward payout coming later|No Berries are paid|No Berries were paid/i);
+  assert.doesNotMatch(routeSource, /Retry payout/i);
 });
 
 test("Games hub links to Daily Crew Builder without removing Grand Line Guess", () => {
   assert.match(gamesIndexSource, /to="\/games\/grand-line-guess"/);
   assert.match(gamesIndexSource, /to="\/games\/daily-crew-builder"/);
   assert.match(gamesIndexSource, /Daily Crew Builder/);
-  assert.match(gamesIndexSource, /Preview daily/);
+  assert.match(gamesIndexSource, /Available daily/);
+  assert.doesNotMatch(gamesIndexSource, /reward payout coming later/i);
 });
 
-test("Daily Crew Builder UI and API persist only the preview result and introduce no wallet mutation or payout call", () => {
+test("Daily Crew Builder UI and API save submissions and pay rewards without direct wallet writes", () => {
   const combined = `${routeSource}\n${apiSource}`;
 
   assert.match(combined, /record_daily_crew_builder_submission/);
+  assert.match(combined, /award_daily_crew_builder_reward/);
   assert.match(combined, /missionId: mission\?\.id \?\? ""/);
   assert.match(combined, /alreadySubmitted/);
   assert.match(combined, /submissionSaved/);
   assert.doesNotMatch(combined, /user_wallets/i);
   assert.doesNotMatch(combined, /transactions/i);
-  assert.doesNotMatch(combined, /award_daily_crew/i);
+  assert.doesNotMatch(combined, /Retry payout/i);
   assert.doesNotMatch(combined, /\.(insert|update|upsert|delete)\s*\(/);
 });

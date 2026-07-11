@@ -87,7 +87,9 @@ test("submit preview rejects missing roles, duplicate characters, and unknown ch
   );
 });
 
-test("Daily Crew Builder server functions read missions from DB and persist only through the approved RPC", () => {
+test("Daily Crew Builder server functions read missions from DB and use only approved RPCs for save and payout", () => {
+  const payoutCall = source.match(/\.rpc\("award_daily_crew_builder_reward"[\s\S]*?\}\);/);
+
   assert.match(source, /export const getTodayDailyCrewBuilderMission = createServerFn\(\{ method: "GET" \}\)/);
   assert.match(source, /loadPublishedDailyCrewBuilderMissionFixture\(db\)/);
   assert.match(source, /export const submitDailyCrewBuilderPreview = createServerFn\(\{ method: "POST" \}\)/);
@@ -106,18 +108,31 @@ test("Daily Crew Builder server functions read missions from DB and persist only
   assert.match(source, /_reward_amount: computedResult\.rewardAmount/);
   assert.match(source, /_score_breakdown: toJson\(computedResult\)/);
   assert.match(source, /_assignments: toJson\(assignments\)/);
+  assert.match(source, /\.rpc\("award_daily_crew_builder_reward"/);
+  assert.match(source, /_submission_id: args\.submissionId/);
+  assert.match(source, /_user_id: args\.userId/);
+  assert.ok(payoutCall, "payout RPC call should be present");
+  assert.doesNotMatch(payoutCall[0], /_reward_amount|rewardAmount|score|rank/);
 
   assert.doesNotMatch(source, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(source, /user_wallets|wallet mutation|transactions/);
-  assert.doesNotMatch(source, /award_daily_crew|payout RPC/i);
   assert.doesNotMatch(source, /\.(insert|update|upsert|delete)\s*\(/);
 });
 
-test("Daily Crew Builder server functions handle already-submitted results safely", () => {
+test("Daily Crew Builder server functions handle already-submitted and payout results safely", () => {
   assert.match(source, /alreadySubmitted: z\.boolean\(\)/);
   assert.match(source, /const savedBreakdown = rpcResult\.alreadySubmitted/);
   assert.match(source, /previewResultSchema\.parse\(rpcResult\.scoreBreakdown\)/);
   assert.match(source, /submissionSaved: true/);
   assert.match(source, /rewardPreviewOnly: true/);
   assert.match(source, /rewardPaid: rpcResult\.rewardPaid/);
+  assert.match(source, /if \(persistedResult\.rewardPaid\) return persistedResult/);
+  assert.match(source, /awardDailyCrewBuilderRewardSafely/);
+  assert.match(source, /applyDailyCrewPayoutResult/);
+  assert.match(source, /applyDailyCrewPayoutFailure/);
+  assert.match(source, /walletBalance: z\.number\(\)\.nullable\(\)/);
+  assert.doesNotMatch(source, /walletBalance: z\.number\(\)\.int\(\)\.nullable\(\)/);
+  assert.match(source, /DAILY_CREW_PAYOUT_RPC_FAILED/);
+  assert.match(source, /Reward payout is pending\. Your saved result is safe\./);
+  assert.doesNotMatch(source, /retryDailyCrew|retry_daily_crew|Retry payout/i);
 });
