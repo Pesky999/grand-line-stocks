@@ -92,6 +92,7 @@ test("Daily Crew Builder server functions read missions from DB and use only app
 
   assert.match(source, /export const getTodayDailyCrewBuilderMission = createServerFn\(\{ method: "GET" \}\)/);
   assert.match(source, /loadPublishedDailyCrewBuilderMissionFixture\(db\)/);
+  assert.match(source, /export const getMyTodayDailyCrewBuilderResult = createServerFn\(\{ method: "POST" \}\)/);
   assert.match(source, /export const submitDailyCrewBuilderPreview = createServerFn\(\{ method: "POST" \}\)/);
   assert.match(source, /\.middleware\(\[requireSupabaseAuth\]\)/);
   assert.match(source, /scoreDailyCrewBuilderPreviewForFixture\(fixture, assignments\)/);
@@ -135,4 +136,34 @@ test("Daily Crew Builder server functions handle already-submitted and payout re
   assert.match(source, /DAILY_CREW_PAYOUT_RPC_FAILED/);
   assert.match(source, /Reward payout is pending\. Your saved result is safe\./);
   assert.doesNotMatch(source, /retryDailyCrew|retry_daily_crew|Retry payout/i);
+});
+
+test("Daily Crew Builder saved-result load uses stored submission data and existing payout only", () => {
+  const savedResultFunction = source.match(
+    /export const getMyTodayDailyCrewBuilderResult[\s\S]*?export const submitDailyCrewBuilderPreview/,
+  )?.[0];
+
+  assert.ok(savedResultFunction, "saved-result server function should be present");
+  assert.match(savedResultFunction, /\.middleware\(\[requireSupabaseAuth\]\)/);
+  assert.match(savedResultFunction, /savedResultInput\.parse\(input\)/);
+  assert.match(savedResultFunction, /loadPublishedDailyCrewBuilderMissionFixture\(db, \{ missionId: data\.missionId \}\)/);
+  assert.match(savedResultFunction, /\.from\("daily_crew_submissions"\)/);
+  assert.match(savedResultFunction, /\.select\("id,submitted_at,score,rank,reward_amount,reward_paid,score_breakdown"\)/);
+  assert.match(savedResultFunction, /\.eq\("mission_id", fixture\.id\)/);
+  assert.match(savedResultFunction, /\.eq\("user_id", context\.userId\)/);
+  assert.match(savedResultFunction, /\.maybeSingle\(\)/);
+  assert.match(savedResultFunction, /if \(!savedSubmissionRow\) return null/);
+  assert.match(savedResultFunction, /parseSavedSubmissionResult\(savedSubmissionRow as DailyCrewSubmissionRow\)/);
+  assert.match(savedResultFunction, /if \(savedResult\.rewardPaid\) return savedResult/);
+  assert.match(savedResultFunction, /awardDailyCrewBuilderRewardSafely\(db, \{/);
+  assert.match(savedResultFunction, /submissionId: savedResult\.submissionId/);
+  assert.match(savedResultFunction, /userId: context\.userId/);
+  assert.match(savedResultFunction, /applyDailyCrewPayoutResult\(savedResult, payoutAttempt\.result\)/);
+  assert.match(savedResultFunction, /applyDailyCrewPayoutFailure\(savedResult, payoutAttempt\.failure\)/);
+  assert.doesNotMatch(savedResultFunction, /_reward_amount|rewardAmount:|record_daily_crew_builder_submission/);
+  assert.doesNotMatch(savedResultFunction, /user_wallets|transactions|roleScores|perfectSolution/);
+  assert.doesNotMatch(savedResultFunction, /\.(insert|update|upsert|delete)\s*\(/);
+  assert.match(source, /function parseSavedSubmissionResult\(row: DailyCrewSubmissionRow\)/);
+  assert.match(source, /previewResultSchema\.parse\(savedSubmission\.score_breakdown\)/);
+  assert.match(source, /alreadySubmitted: true/);
 });
