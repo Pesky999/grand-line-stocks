@@ -30,11 +30,11 @@ function poolCharacter(
 
 function roleRequirements(prefix: string): DailyCrewRoleRequirement[] {
   return [
-    { role: "captain", subtypeKey: `${prefix}_command`, subtypeLabel: "Hidden command profile", maxPoints: 18 },
-    { role: "fighter", subtypeKey: `${prefix}_duelist`, subtypeLabel: "Hidden combat profile", maxPoints: 18 },
-    { role: "navigator", subtypeKey: `${prefix}_route`, subtypeLabel: "Hidden route profile", maxPoints: 18 },
-    { role: "strategist", subtypeKey: `${prefix}_scheme`, subtypeLabel: "Hidden strategy profile", maxPoints: 18 },
-    { role: "support", subtypeKey: `${prefix}_stabilizer`, subtypeLabel: "Hidden support profile", maxPoints: 18 },
+    { role: "captain", subtypeKey: `${prefix}_command`, subtypeLabel: "Hidden command profile", displayLabel: "Captain", displayOrder: 1, maxPoints: 18 },
+    { role: "fighter", subtypeKey: `${prefix}_duelist`, subtypeLabel: "Hidden combat profile", displayLabel: "Fighter", displayOrder: 2, maxPoints: 18 },
+    { role: "navigator", subtypeKey: `${prefix}_route`, subtypeLabel: "Hidden route profile", displayLabel: "Navigator", displayOrder: 3, maxPoints: 18 },
+    { role: "strategist", subtypeKey: `${prefix}_scheme`, subtypeLabel: "Hidden strategy profile", displayLabel: "Strategist", displayOrder: 4, maxPoints: 18 },
+    { role: "support", subtypeKey: `${prefix}_stabilizer`, subtypeLabel: "Hidden support profile", displayLabel: "Support", displayOrder: 5, maxPoints: 18 },
   ];
 }
 
@@ -55,6 +55,29 @@ function roleScoresFromMatrix(
         role,
         score,
         explanation: `${character.name} brings a ${score}/18 ${role} fit to ${missionLabel}.`,
+      };
+    }),
+  );
+}
+
+function roleScoresFromRequirements(
+  pool: DailyCrewPoolCharacter[],
+  matrix: Partial<Record<string, Partial<Record<DailyCrewRole, number>>>>,
+  requirements: DailyCrewRoleRequirement[],
+  missionLabel: string,
+): DailyCrewRoleScore[] {
+  return pool.flatMap((character) =>
+    requirements.map((requirement) => {
+      const score = matrix[character.id]?.[requirement.role];
+      if (score == null) {
+        throw new Error(`Fixture score missing for ${character.id} ${requirement.role}`);
+      }
+
+      return {
+        characterId: character.id,
+        role: requirement.role,
+        score,
+        explanation: `${character.name} brings a ${score}/${requirement.maxPoints} ${requirement.displayLabel ?? requirement.role} fit to ${missionLabel}.`,
       };
     }),
   );
@@ -130,6 +153,57 @@ const covertHarborScores: RoleScoreMatrix = {
   "char-katakuri": { captain: 13, fighter: 16, navigator: 7, strategist: 13, support: 9 },
   "char-boa": { captain: 13, fighter: 14, navigator: 5, strategist: 11, support: 15 },
   "char-bonney": { captain: 16, fighter: 12, navigator: 9, strategist: 10, support: 13 },
+};
+
+const covertHarborExtractionPool = [
+  poolCharacter("char-shanks", "Shanks", "captain", 1, false, ["emperor", "leader"]),
+  poolCharacter("char-dragon", "Monkey D. Dragon", "strategist", 2, false, ["revolutionary", "leader"]),
+  poolCharacter("char-jinbe", "Jinbe", "fighter", 3, true, ["Straw Hat", "steady hand"]),
+  poolCharacter("char-usopp", "Usopp", "navigator", 4, true, ["Straw Hat", "scout", "lookout"]),
+  poolCharacter("char-franky", "Franky", "navigator", 5, true, ["Straw Hat", "shipwright", "backup lookout"]),
+  poolCharacter("char-koby", "Koby", "navigator", 6, false, ["marine", "scout"]),
+  poolCharacter("char-robin", "Nico Robin", "strategist", 7, true, ["Straw Hat", "intel"]),
+  poolCharacter("char-brook", "Brook", "support", 8, true, ["Straw Hat", "morale"]),
+  poolCharacter("char-chopper", "Tony Tony Chopper", "support", 9, true, ["Straw Hat", "medic"]),
+];
+
+const covertHarborExtractionRequirements: DailyCrewRoleRequirement[] = [
+  {
+    role: "captain",
+    subtypeKey: "covert_extraction_lead",
+    subtypeLabel: "Hidden operation lead profile",
+    displayLabel: "Operation Lead",
+    displayOrder: 1,
+    maxPoints: 30,
+  },
+  {
+    role: "navigator",
+    subtypeKey: "covert_extraction_scout",
+    subtypeLabel: "Hidden scout profile",
+    displayLabel: "Scout / Lookout",
+    displayOrder: 2,
+    maxPoints: 30,
+  },
+  {
+    role: "support",
+    subtypeKey: "covert_extraction_support",
+    subtypeLabel: "Hidden emergency support profile",
+    displayLabel: "Emergency Support",
+    displayOrder: 3,
+    maxPoints: 30,
+  },
+];
+
+const covertHarborExtractionScores: Partial<Record<string, Partial<Record<DailyCrewRole, number>>>> = {
+  "char-shanks": { captain: 30, navigator: 11, support: 10 },
+  "char-dragon": { captain: 25, navigator: 14, support: 12 },
+  "char-jinbe": { captain: 22, navigator: 12, support: 18 },
+  "char-usopp": { captain: 10, navigator: 30, support: 14 },
+  "char-franky": { captain: 12, navigator: 24, support: 17 },
+  "char-koby": { captain: 14, navigator: 22, support: 15 },
+  "char-robin": { captain: 18, navigator: 18, support: 24 },
+  "char-brook": { captain: 9, navigator: 16, support: 22 },
+  "char-chopper": { captain: 8, navigator: 10, support: 30 },
 };
 
 export const DAILY_CREW_SAMPLE_FIXTURES: DailyCrewMissionFixture[] = [
@@ -210,6 +284,47 @@ export const DAILY_CREW_SAMPLE_FIXTURES: DailyCrewMissionFixture[] = [
         points: 3,
         explanation: "Usopp scouts the harbor lanes while Dragon masks the extraction.",
         characterIds: ["char-usopp", "char-dragon"],
+      },
+    ],
+  },
+  {
+    missionDate: "2026-07-12",
+    slug: "covert-harbor-extraction",
+    title: "Covert Harbor Extraction",
+    brief: "Pick three specialists who can lead the exit, watch the harbor lanes, and keep the crew standing when the escape turns loud.",
+    missionTags: ["stealth", "extraction", "support"],
+    maxScore: 100,
+    pool: covertHarborExtractionPool,
+    roleRequirements: covertHarborExtractionRequirements,
+    roleScores: roleScoresFromRequirements(
+      covertHarborExtractionPool,
+      covertHarborExtractionScores,
+      covertHarborExtractionRequirements,
+      "the covert harbor extraction",
+    ),
+    perfectSolution: [
+      { role: "captain", characterId: "char-shanks" },
+      { role: "navigator", characterId: "char-usopp" },
+      { role: "support", characterId: "char-chopper" },
+    ],
+    synergyRules: [
+      {
+        id: "covert-harbor-extraction-perfect-trio",
+        label: "Covert Harbor perfect trio",
+        points: 10,
+        explanation: "The exact extraction trio covers every mission-defined job and earns the mission synergy bonus.",
+        roles: {
+          captain: "char-shanks",
+          navigator: "char-usopp",
+          support: "char-chopper",
+        },
+      },
+      {
+        id: "lookout-and-medic",
+        label: "Lookout and medic",
+        points: 4,
+        explanation: "Usopp spots the safe lane while Chopper keeps the extraction team moving.",
+        characterIds: ["char-usopp", "char-chopper"],
       },
     ],
   },

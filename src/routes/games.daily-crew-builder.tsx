@@ -19,7 +19,7 @@ export const Route = createFileRoute("/games/daily-crew-builder")({
       { title: "Daily Crew Builder - Berry Street" },
       {
         name: "description",
-        content: "Build a five-role One Piece crew from a curated 15-character daily pool.",
+        content: "Build a One Piece crew from a curated daily mission pool.",
       },
     ],
   }),
@@ -52,6 +52,9 @@ function DailyCrewBuilderPage() {
   const mission = missionQ.data as DailyCrewBuilderPublicMission | undefined;
   const roles = mission?.roles ?? [];
   const pool = mission?.pool ?? [];
+  const jobCount = roles.length;
+  const poolCount = pool.length;
+  const assignmentGridClass = jobCount <= 3 ? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5";
   const savedResultEnabled = Boolean(user && mission?.id);
   const savedResultKey = user?.id && mission?.id ? `${user.id}:${mission.id}` : null;
 
@@ -184,7 +187,7 @@ function DailyCrewBuilderPage() {
       );
 
       if (duplicateRole) {
-        toast.error("Each character can only fill one role.");
+        toast.error("Each character can only fill one job.");
         return current;
       }
 
@@ -207,7 +210,7 @@ function DailyCrewBuilderPage() {
       return;
     }
     if (!allRolesAssigned) {
-      setSubmissionError("Assign one unique character to every role before submitting.");
+      setSubmissionError("Assign one unique character to every job before submitting.");
       return;
     }
 
@@ -225,13 +228,13 @@ function DailyCrewBuilderPage() {
           <div className="space-y-4 p-4 sm:p-6">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
-                15-character pool
+                {poolCount > 0 ? `${poolCount}-character pool` : "Daily mission pool"}
               </div>
               <h1 className="mt-2 text-xl font-bold text-foreground sm:text-2xl">
                 Daily Crew Builder
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Build a five-role crew from today's curated One Piece pool. Your first submitted crew
+                Build a {jobCount > 0 ? `${jobCount}-job` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew
                 is saved for this mission and pays its rank reward automatically.
               </p>
             </div>
@@ -296,9 +299,9 @@ function DailyCrewBuilderPage() {
         {mission && (
           <>
             <form onSubmit={handleSubmit} className="terminal-panel">
-              <div className="terminal-header">Role Assignment</div>
+              <div className="terminal-header">Crew Assignment</div>
               <div className="space-y-4 p-4">
-                <div className="grid gap-3 md:grid-cols-5">
+                <div className={assignmentGridClass}>
                   {roles.map((role) => (
                     <label key={role.role} className="block border border-border bg-card/60 p-3">
                       <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -419,7 +422,7 @@ function DailyCrewBuilderPage() {
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                     <div className="space-y-2">
-                      <h3 className="text-sm font-bold text-foreground">Role breakdown</h3>
+                      <h3 className="text-sm font-bold text-foreground">Job breakdown</h3>
                       {result.roles.map((role) => (
                         <div key={role.role} className="border border-border bg-card/60 p-3 text-xs">
                           <div className="flex flex-wrap items-center justify-between gap-2">

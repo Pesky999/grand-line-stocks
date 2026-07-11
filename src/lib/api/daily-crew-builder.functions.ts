@@ -31,7 +31,7 @@ type DailyCrewCharacterRow = Pick<
 >;
 type DailyCrewRoleRequirementRow = Pick<
   Database["public"]["Tables"]["daily_crew_role_requirements"]["Row"],
-  "role" | "subtype_key" | "subtype_label" | "max_points"
+  "role" | "subtype_key" | "subtype_label" | "display_label" | "display_order" | "max_points"
 >;
 type DailyCrewRoleScoreRow = Pick<
   Database["public"]["Tables"]["daily_crew_character_role_scores"]["Row"],
@@ -89,7 +89,7 @@ const assignmentInput = z.object({
 
 const previewSubmissionInput = z.object({
   missionId: z.string().uuid(),
-  assignments: z.array(assignmentInput).length(DAILY_CREW_ROLES.length),
+  assignments: z.array(assignmentInput).min(1).max(DAILY_CREW_ROLES.length),
 });
 
 const savedResultInput = z.object({
@@ -113,8 +113,8 @@ const previewResultSchema = z
           roleName: z.string(),
           characterId: z.string().uuid(),
           characterName: z.string(),
-          score: z.number().int().min(0).max(18),
-          maxScore: z.number().int().min(1).max(18),
+          score: z.number().int().min(0).max(30),
+          maxScore: z.number().int().min(1).max(30),
           explanation: z.string(),
         })
         .strict(),
@@ -310,7 +310,7 @@ async function loadPublishedDailyCrewBuilderMissionFixture(
       .order("display_order", { ascending: true }),
     db
       .from("daily_crew_role_requirements")
-      .select("role,subtype_key,subtype_label,max_points")
+      .select("role,subtype_key,subtype_label,display_label,display_order,max_points")
       .eq("mission_id", mission.id),
     db
       .from("daily_crew_character_role_scores")
@@ -371,6 +371,8 @@ async function loadPublishedDailyCrewBuilderMissionFixture(
       role: row.role,
       subtypeKey: row.subtype_key,
       subtypeLabel: row.subtype_label ?? undefined,
+      displayLabel: row.display_label ?? undefined,
+      displayOrder: row.display_order,
       maxPoints: row.max_points,
     })),
     roleScores: ((scoresResult.data ?? []) as DailyCrewRoleScoreRow[]).map((row) => ({

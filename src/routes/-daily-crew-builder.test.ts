@@ -13,14 +13,16 @@ const routeSource = read("src/routes/games.daily-crew-builder.tsx");
 const gamesIndexSource = read("src/routes/games.index.tsx");
 const apiSource = read("src/lib/api/daily-crew-builder.functions.ts");
 
-test("Daily Crew Builder route renders the mission, roles, pool, and saved result sections", () => {
+test("Daily Crew Builder route renders the mission, jobs, pool, and saved result sections", () => {
   assert.match(routeSource, /createFileRoute\("\/games\/daily-crew-builder"\)/);
   assert.match(routeSource, /Daily Crew Builder/);
   assert.match(routeSource, /mission\.title/);
   assert.match(routeSource, /mission\.brief/);
   assert.match(routeSource, /mission\?\.id/);
-  assert.match(routeSource, /15-character pool/);
-  assert.match(routeSource, /Role Assignment/);
+  assert.match(routeSource, /poolCount > 0 \? `\$\{poolCount\}-character pool` : "Daily mission pool"/);
+  assert.match(routeSource, /jobCount > 0 \? `\$\{jobCount\}-job` : "mission-ready"/);
+  assert.doesNotMatch(routeSource, /\$\{jobCount\}-\$\{jobWord\}/);
+  assert.match(routeSource, /Crew Assignment/);
   assert.match(routeSource, /Character Pool/);
   assert.match(routeSource, /Saved Crew Result/);
   assert.match(routeSource, /role\.name/);
@@ -36,16 +38,18 @@ test("Daily Crew Builder route keeps hidden fixture data out of the browser-visi
   assert.doesNotMatch(routeSource, /Hidden command profile|Hidden combat profile|Hidden route profile/i);
 });
 
-test("Daily Crew Builder route requires all roles, prevents duplicates, and prompts signed-out users", () => {
+test("Daily Crew Builder route requires all jobs, prevents duplicates, and prompts signed-out users", () => {
   assert.match(routeSource, /useMe\(\)/);
   assert.match(routeSource, /Sign in to submit your crew/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
+  assert.match(routeSource, /const assignmentGridClass = jobCount <= 3 \? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5"/);
   assert.match(routeSource, /const submissionLocked = Boolean\(result\?\.submissionSaved\)/);
   assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned && !missionQ\.isLoading && !savedResultQ\.isLoading && !submissionLocked/);
   assert.match(routeSource, /disabled=\{!canSubmit \|\| submitPreviewM\.isPending\}/);
   assert.match(routeSource, /assignedToAnotherRole/);
   assert.match(routeSource, /disabled=\{assignedToAnotherRole\}/);
-  assert.match(routeSource, /Each character can only fill one role/);
+  assert.match(routeSource, /Each character can only fill one job/);
+  assert.match(routeSource, /Assign one unique character to every job before submitting/);
   assert.match(routeSource, /Clear/);
 });
 
@@ -62,7 +66,7 @@ test("Daily Crew Builder result panel uses saved and payout-aware reward languag
   assert.match(routeSource, /Saved Result Locked/);
   assert.match(routeSource, /Reward/);
   assert.match(routeSource, /Perfect crew/);
-  assert.match(routeSource, /Role breakdown/);
+  assert.match(routeSource, /Job breakdown/);
   assert.match(routeSource, /No synergy bonus earned/);
   assert.doesNotMatch(routeSource, /Preview reward only|Reward payout coming later|No Berries are paid|No Berries were paid/i);
   assert.doesNotMatch(routeSource, /Retry payout/i);

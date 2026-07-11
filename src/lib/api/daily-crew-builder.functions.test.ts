@@ -22,10 +22,19 @@ function perfectAssignmentsForFirstFixture() {
 
 test("mission endpoint returns only public-safe mission data", () => {
   const mission = toPublicDailyCrewMission(DAILY_CREW_SAMPLE_FIXTURES[0]);
+  const simplifiedMission = toPublicDailyCrewMission(
+    DAILY_CREW_SAMPLE_FIXTURES.find((fixture) => fixture.slug === "covert-harbor-extraction")!,
+  );
   const json = JSON.stringify(mission);
 
   assert.equal(mission.pool.length, 15);
   assert.equal(mission.roles.length, 5);
+  assert.equal(simplifiedMission.pool.length, 9);
+  assert.equal(simplifiedMission.roles.length, 3);
+  assert.deepEqual(
+    simplifiedMission.roles.map((role) => role.name),
+    ["Operation Lead", "Scout / Lookout", "Emergency Support"],
+  );
   assert.equal(Object.hasOwn(mission, "roleScores"), false);
   assert.equal(Object.hasOwn(mission, "roleRequirements"), false);
   assert.equal(Object.hasOwn(mission, "synergyRules"), false);
@@ -50,6 +59,26 @@ test("submit preview helper returns safe score data without hidden tables", () =
   assert.doesNotMatch(json, /roleScores|roleRequirements|subtypeKey|subtypeLabel|"perfectSolution"/i);
   assert.equal(result.roles.some((role) => role.characterId === "char-zoro" && role.role === "navigator"), false);
   assert.equal(result.roles.some((role) => role.characterId === "char-nami" && role.role === "fighter"), false);
+});
+
+test("submit preview helper supports simplified mission-defined jobs", () => {
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction");
+  assert.ok(fixture);
+
+  const result = scoreDailyCrewBuilderPreviewForFixture(
+    fixture,
+    fixture.perfectSolution.map((assignment) => ({
+      role: assignment.role,
+      characterId: assignment.characterId,
+    })),
+  );
+
+  assert.equal(result.score, 100);
+  assert.equal(result.roles.length, 3);
+  assert.deepEqual(
+    result.roles.map((role) => `${role.roleName}:${role.maxScore}`),
+    ["Operation Lead:30", "Scout / Lookout:30", "Emergency Support:30"],
+  );
 });
 
 test("submit preview rejects missing roles, duplicate characters, and unknown characters", () => {
@@ -99,6 +128,7 @@ test("Daily Crew Builder server functions read missions from DB and use only app
   assert.match(source, /\.from\("daily_crew_missions"\)/);
   assert.match(source, /\.from\("daily_crew_mission_pool"\)/);
   assert.match(source, /\.from\("daily_crew_role_requirements"\)/);
+  assert.match(source, /\.select\("role,subtype_key,subtype_label,display_label,display_order,max_points"\)/);
   assert.match(source, /\.from\("daily_crew_character_role_scores"\)/);
   assert.match(source, /\.from\("daily_crew_perfect_solution"\)/);
   assert.match(source, /\.from\("characters"\)/);
@@ -118,6 +148,8 @@ test("Daily Crew Builder server functions read missions from DB and use only app
   assert.doesNotMatch(source, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(source, /user_wallets|wallet mutation|transactions/);
   assert.doesNotMatch(source, /\.(insert|update|upsert|delete)\s*\(/);
+  assert.match(source, /assignments: z\.array\(assignmentInput\)\.min\(1\)\.max\(DAILY_CREW_ROLES\.length\)/);
+  assert.doesNotMatch(source, /assignments: z\.array\(assignmentInput\)\.length\(DAILY_CREW_ROLES\.length\)/);
 });
 
 test("Daily Crew Builder server functions handle already-submitted and payout results safely", () => {

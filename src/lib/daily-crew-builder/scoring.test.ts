@@ -6,8 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { DAILY_CREW_SAMPLE_FIXTURES } from "./fixtures.ts";
 import {
-  DAILY_CREW_POOL_SIZE,
-  DAILY_CREW_ROLE_SCORE_MAX,
+  DAILY_CREW_LEGACY_POOL_SIZE,
+  DAILY_CREW_SIMPLIFIED_POOL_SIZE,
   DAILY_CREW_ROLES,
   type DailyCrewMissionFixture,
   type DailyCrewRole,
@@ -37,19 +37,31 @@ function roleScoreFor(fixture: DailyCrewMissionFixture, characterId: string, rol
   return score.score;
 }
 
+function roleMaxFor(fixture: DailyCrewMissionFixture, role: DailyCrewRole): number {
+  const requirement = fixture.roleRequirements.find((entry) => entry.role === role);
+  assert.ok(requirement, `expected requirement for ${role}`);
+  return requirement.maxPoints;
+}
+
 function assertInvalidFixture(fixture: DailyCrewMissionFixture, pattern: RegExp): void {
   const validation = validateDailyCrewMissionFixture(fixture);
   assert.equal(validation.ok, false);
   assert.match(validation.errors.join("\n"), pattern);
 }
 
-test("sample fixtures use 15-character pools and validate with complete hidden score coverage", () => {
+test("sample fixtures validate with complete hidden score coverage", () => {
   for (const fixture of DAILY_CREW_SAMPLE_FIXTURES) {
     const validation = validateDailyCrewMissionFixture(fixture);
     assert.deepEqual(validation, { ok: true, errors: [] });
-    assert.equal(fixture.pool.length, DAILY_CREW_POOL_SIZE);
-    assert.equal(fixture.roleScores.length, DAILY_CREW_POOL_SIZE * DAILY_CREW_ROLES.length);
-    assert.equal(fixture.pool.filter((character) => character.isStrawHat).length <= 5, true);
+    assert.ok(
+      [DAILY_CREW_SIMPLIFIED_POOL_SIZE, DAILY_CREW_LEGACY_POOL_SIZE].includes(fixture.pool.length),
+    );
+    assert.equal(fixture.roleScores.length, fixture.pool.length * fixture.roleRequirements.length);
+    assert.equal(
+      fixture.pool.filter((character) => character.isStrawHat).length <=
+        (fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE ? 6 : 5),
+      true,
+    );
     assert.equal(
       fixture.perfectSolution.filter((solution) => fixture.pool.find((character) => character.id === solution.characterId)?.isStrawHat).length <=
         3,
@@ -58,34 +70,35 @@ test("sample fixtures use 15-character pools and validate with complete hidden s
   }
 });
 
-test("sample fixtures use exactly three primary candidates per role", () => {
+test("sample fixtures use mission-defined role candidates with one max-score perfect fit", () => {
   for (const fixture of DAILY_CREW_SAMPLE_FIXTURES) {
     assert.equal(fixture.pool.every((character) => character.primaryRole != null), true);
 
-    for (const role of DAILY_CREW_ROLES) {
+    for (const requirement of fixture.roleRequirements) {
+      const role = requirement.role;
       const primaryCandidates = fixture.pool.filter((character) => character.primaryRole === role);
       assert.equal(
-        primaryCandidates.length,
-        3,
-        `${fixture.slug} should have exactly three ${role} primary candidates`,
+        primaryCandidates.length >= 1,
+        true,
+        `${fixture.slug} should have at least one ${role} primary candidate`,
       );
 
       const topScores = fixture.roleScores
-        .filter((score) => score.role === role && score.score === DAILY_CREW_ROLE_SCORE_MAX)
+        .filter((score) => score.role === role && score.score === requirement.maxPoints)
         .map((score) => score.characterId);
       assert.deepEqual(
         topScores,
         [fixture.perfectSolution.find((solution) => solution.role === role)?.characterId],
-        `${fixture.slug} should have exactly one 18-point ${role} fit`,
+        `${fixture.slug} should have exactly one max-point ${role} fit`,
       );
 
       const strongPrimaryAlternatives = primaryCandidates.filter(
         (character) =>
           character.id !== fixture.perfectSolution.find((solution) => solution.role === role)?.characterId &&
-          roleScoreFor(fixture, character.id, role) >= 15,
+          roleScoreFor(fixture, character.id, role) >= Math.floor(requirement.maxPoints * 0.8),
       );
       assert.equal(
-        strongPrimaryAlternatives.length >= 1,
+        fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE || strongPrimaryAlternatives.length >= 1,
         true,
         `${fixture.slug} should have at least one strong ${role} primary alternative`,
       );
@@ -114,12 +127,12 @@ test("Covert Harbor fixture uses only current market characters after substituti
   assert.equal(characterIds.includes("char-perona"), false);
   assert.equal(characterIds.includes("char-sabo"), true);
   assert.equal(characterIds.includes("char-boa"), true);
-  assert.equal(new Set(characterIds).size, DAILY_CREW_POOL_SIZE);
-  assert.equal(fixture.pool.length, DAILY_CREW_POOL_SIZE);
+  assert.equal(new Set(characterIds).size, DAILY_CREW_LEGACY_POOL_SIZE);
+  assert.equal(fixture.pool.length, DAILY_CREW_LEGACY_POOL_SIZE);
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
   assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
-  assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), DAILY_CREW_ROLE_SCORE_MAX);
-  assert.equal(roleScoreFor(fixture, "char-koby", "navigator") < DAILY_CREW_ROLE_SCORE_MAX, true);
+  assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), roleMaxFor(fixture, "navigator"));
+  assert.equal(roleScoreFor(fixture, "char-koby", "navigator") < roleMaxFor(fixture, "navigator"), true);
 
   const result = scoreDailyCrewSubmission(fixture, perfectAssignments(fixture));
   assert.equal(result.score, 100);
@@ -127,9 +140,40 @@ test("Covert Harbor fixture uses only current market characters after substituti
   assert.equal(result.synergyScore, 10);
 });
 
+test("simplified Covert Harbor mission uses three public jobs and a nine-character pool", () => {
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction");
+  assert.ok(fixture);
+
+  const publicMission = toPublicDailyCrewMission(fixture);
+  assert.equal(fixture.pool.length, DAILY_CREW_SIMPLIFIED_POOL_SIZE);
+  assert.equal(fixture.roleRequirements.length, 3);
+  assert.deepEqual(
+    publicMission.roles.map((role) => role.name),
+    ["Operation Lead", "Scout / Lookout", "Emergency Support"],
+  );
+  assert.deepEqual(
+    publicMission.roles.map((role) => role.role),
+    ["captain", "navigator", "support"],
+  );
+  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "captain")?.characterId, "char-shanks");
+  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
+  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
+  assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), 30);
+  assert.equal(roleScoreFor(fixture, "char-koby", "navigator"), 22);
+
+  const result = scoreDailyCrewSubmission(fixture, perfectAssignments(fixture));
+  assert.equal(result.score, 100);
+  assert.equal(result.baseScore, 90);
+  assert.equal(result.synergyScore, 10);
+  assert.deepEqual(
+    result.roles.map((role) => role.roleName),
+    ["Operation Lead", "Scout / Lookout", "Emergency Support"],
+  );
+});
+
 test("sample fixtures include clear weak and bad role fits", () => {
   for (const fixture of DAILY_CREW_SAMPLE_FIXTURES) {
-    for (const role of DAILY_CREW_ROLES) {
+    for (const { role } of fixture.roleRequirements) {
       const roleScores = fixture.roleScores.filter((score) => score.role === role);
       assert.equal(
         roleScores.some((score) => score.score <= 10),
@@ -232,7 +276,7 @@ test("rank and reward helpers consistently reject invalid scores", () => {
 test("fixture validation rejects invalid pool sizes and display order", () => {
   const fourteenCharacters = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   fourteenCharacters.pool.pop();
-  assertInvalidFixture(fourteenCharacters, /exactly 15 characters/);
+  assertInvalidFixture(fourteenCharacters, /exactly 9 or 15 characters/);
 
   const sixteenCharacters = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   sixteenCharacters.pool.push({
@@ -244,7 +288,7 @@ test("fixture validation rejects invalid pool sizes and display order", () => {
     isStrawHat: false,
     visibleTags: [],
   });
-  assertInvalidFixture(sixteenCharacters, /exactly 15 characters/);
+  assertInvalidFixture(sixteenCharacters, /exactly 9 or 15 characters/);
 
   const invalidDisplayOrder = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   invalidDisplayOrder.pool[0].displayOrder = 15;

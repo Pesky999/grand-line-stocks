@@ -9,9 +9,19 @@ export const DAILY_CREW_ROLES = [
 export type DailyCrewRole = (typeof DAILY_CREW_ROLES)[number];
 export type DailyCrewRank = "s" | "a" | "b" | "c" | "fail";
 
-export const DAILY_CREW_POOL_SIZE = 15;
-export const DAILY_CREW_REQUIRED_ROLE_COUNT = 5;
-export const DAILY_CREW_ROLE_SCORE_MAX = 18;
+export const DAILY_CREW_LEGACY_POOL_SIZE = 15;
+export const DAILY_CREW_SIMPLIFIED_POOL_SIZE = 9;
+export const DAILY_CREW_SUPPORTED_POOL_SIZES = [
+  DAILY_CREW_SIMPLIFIED_POOL_SIZE,
+  DAILY_CREW_LEGACY_POOL_SIZE,
+] as const;
+export const DAILY_CREW_LEGACY_ROLE_COUNT = 5;
+export const DAILY_CREW_SIMPLIFIED_ROLE_COUNT = 3;
+export const DAILY_CREW_SUPPORTED_ROLE_COUNTS = [
+  DAILY_CREW_SIMPLIFIED_ROLE_COUNT,
+  DAILY_CREW_LEGACY_ROLE_COUNT,
+] as const;
+export const DAILY_CREW_ROLE_SCORE_MAX = 30;
 export const DAILY_CREW_PERFECT_BASE_SCORE = 90;
 export const DAILY_CREW_SYNERGY_MAX = 10;
 export const DAILY_CREW_MAX_SCORE = 100;
@@ -38,6 +48,8 @@ export type DailyCrewRoleRequirement = {
   role: DailyCrewRole;
   subtypeKey: string;
   subtypeLabel?: string;
+  displayLabel?: string;
+  displayOrder?: number;
   maxPoints: number;
 };
 
@@ -160,13 +172,17 @@ function sortedUniqueNumbers(values: number[]): number[] {
   return [...new Set(values)].sort((left, right) => left - right);
 }
 
-function hasExactRoleSet(roles: DailyCrewRole[]): boolean {
+function hasExactRoleSet(roles: DailyCrewRole[], expectedRoles: DailyCrewRole[]): boolean {
   const uniqueRoles = new Set(roles);
-  return DAILY_CREW_ROLES.every((role) => uniqueRoles.has(role)) && uniqueRoles.size === DAILY_CREW_ROLES.length;
+  return expectedRoles.every((role) => uniqueRoles.has(role)) && uniqueRoles.size === expectedRoles.length;
 }
 
 function getRoleScoreMap(fixture: DailyCrewMissionFixture): Map<string, DailyCrewRoleScore> {
   return new Map(fixture.roleScores.map((score) => [roleScoreKey(score.characterId, score.role), score]));
+}
+
+function getRoleRequirementMap(fixture: DailyCrewMissionFixture): Map<DailyCrewRole, DailyCrewRoleRequirement> {
+  return new Map(fixture.roleRequirements.map((requirement) => [requirement.role, requirement]));
 }
 
 function getPoolMap(fixture: DailyCrewMissionFixture): Map<string, DailyCrewPoolCharacter> {
@@ -179,6 +195,20 @@ function getPerfectSolutionMap(fixture: DailyCrewMissionFixture): Map<DailyCrewR
 
 function assignmentMap(assignments: DailyCrewSubmissionAssignment[]): Map<DailyCrewRole, string> {
   return new Map(assignments.map((assignment) => [assignment.role, assignment.characterId]));
+}
+
+function requirementSortValue(requirement: DailyCrewRoleRequirement): number {
+  return requirement.displayOrder ?? DAILY_CREW_ROLES.indexOf(requirement.role) + 1;
+}
+
+function activeRoleRequirements(fixture: DailyCrewMissionFixture): DailyCrewRoleRequirement[] {
+  return [...fixture.roleRequirements].sort(
+    (left, right) => requirementSortValue(left) - requirementSortValue(right),
+  );
+}
+
+function activeRoles(fixture: DailyCrewMissionFixture): DailyCrewRole[] {
+  return activeRoleRequirements(fixture).map((requirement) => requirement.role);
 }
 
 function matchedSynergyRules(
@@ -226,13 +256,20 @@ function calculatePerfectTotalScore(fixture: DailyCrewMissionFixture): number {
 
 export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture): DailyCrewMissionFixtureValidation {
   const errors: string[] = [];
+  const activeRequirements = activeRoleRequirements(fixture);
+  const expectedRoles = activeRequirements.map((requirement) => requirement.role);
+  const requirementMap = getRoleRequirementMap(fixture);
 
   if (fixture.maxScore !== DAILY_CREW_MAX_SCORE) {
     errors.push("mission maxScore must be exactly 100");
   }
 
-  if (fixture.pool.length !== DAILY_CREW_POOL_SIZE) {
-    errors.push(`mission pool must contain exactly ${DAILY_CREW_POOL_SIZE} characters`);
+  if (
+    !DAILY_CREW_SUPPORTED_POOL_SIZES.includes(
+      fixture.pool.length as (typeof DAILY_CREW_SUPPORTED_POOL_SIZES)[number],
+    )
+  ) {
+    errors.push("mission pool must contain exactly 9 or 15 characters");
   }
 
   const poolIds = fixture.pool.map((character) => character.id);
@@ -243,36 +280,61 @@ export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture
 
   const displayOrders = fixture.pool.map((character) => character.displayOrder);
   const uniqueDisplayOrders = sortedUniqueNumbers(displayOrders);
-  const expectedDisplayOrders = Array.from({ length: DAILY_CREW_POOL_SIZE }, (_, index) => index + 1);
+  const expectedDisplayOrders = Array.from({ length: fixture.pool.length }, (_, index) => index + 1);
   if (
-    uniqueDisplayOrders.length !== DAILY_CREW_POOL_SIZE ||
+    uniqueDisplayOrders.length !== fixture.pool.length ||
     uniqueDisplayOrders.some((value, index) => value !== expectedDisplayOrders[index])
   ) {
-    errors.push(`mission pool display order must be exactly 1 through ${DAILY_CREW_POOL_SIZE}`);
+    errors.push(`mission pool display order must be exactly 1 through ${fixture.pool.length}`);
   }
 
   const poolStrawHats = fixture.pool.filter((character) => character.isStrawHat).length;
-  if (poolStrawHats > 5) {
-    errors.push("mission pool cannot include more than 5 Straw Hats");
+  const poolStrawHatCap = fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE ? 6 : 5;
+  if (poolStrawHats > poolStrawHatCap) {
+    errors.push(`mission pool cannot include more than ${poolStrawHatCap} Straw Hats`);
   }
 
-  if (fixture.roleRequirements.length !== DAILY_CREW_REQUIRED_ROLE_COUNT) {
-    errors.push("mission must define exactly 5 role requirements");
+  if (
+    !DAILY_CREW_SUPPORTED_ROLE_COUNTS.includes(
+      fixture.roleRequirements.length as (typeof DAILY_CREW_SUPPORTED_ROLE_COUNTS)[number],
+    )
+  ) {
+    errors.push("mission must define exactly 3 or 5 role requirements");
   }
 
   const requirementRoles = fixture.roleRequirements.map((requirement) => requirement.role);
-  if (!hasExactRoleSet(requirementRoles)) {
-    errors.push("mission role requirements must define each Daily Crew role exactly once");
+  if (new Set(requirementRoles).size !== requirementRoles.length) {
+    errors.push("mission role requirements cannot repeat a role");
+  }
+  if (!hasExactRoleSet(requirementRoles, expectedRoles)) {
+    errors.push("mission role requirements must define each active Daily Crew role exactly once");
+  }
+
+  const requirementDisplayOrders = sortedUniqueNumbers(
+    fixture.roleRequirements
+      .map((requirement) => requirement.displayOrder)
+      .filter((value): value is number => value != null),
+  );
+  if (
+    requirementDisplayOrders.length > 0 &&
+    (requirementDisplayOrders.length !== fixture.roleRequirements.length ||
+      requirementDisplayOrders.some((value, index) => value !== index + 1))
+  ) {
+    errors.push(`mission role display order must be exactly 1 through ${fixture.roleRequirements.length}`);
   }
 
   for (const requirement of fixture.roleRequirements) {
-    if (requirement.maxPoints !== DAILY_CREW_ROLE_SCORE_MAX) {
-      errors.push(`role ${requirement.role} maxPoints must be exactly ${DAILY_CREW_ROLE_SCORE_MAX}`);
+    if (!isWholeNumberInRange(requirement.maxPoints, 1, DAILY_CREW_ROLE_SCORE_MAX)) {
+      errors.push(`role ${requirement.role} maxPoints must be an integer from 1 through ${DAILY_CREW_ROLE_SCORE_MAX}`);
+    }
+
+    if (requirement.displayLabel != null && requirement.displayLabel.trim().length === 0) {
+      errors.push(`role ${requirement.role} displayLabel cannot be blank`);
     }
   }
 
-  if (fixture.roleScores.length !== DAILY_CREW_POOL_SIZE * DAILY_CREW_REQUIRED_ROLE_COUNT) {
-    errors.push(`mission must define exactly ${DAILY_CREW_POOL_SIZE * DAILY_CREW_REQUIRED_ROLE_COUNT} role score rows`);
+  if (fixture.roleScores.length !== fixture.pool.length * fixture.roleRequirements.length) {
+    errors.push(`mission must define exactly ${fixture.pool.length * fixture.roleRequirements.length} role score rows`);
   }
 
   const roleScoreKeys = new Set<string>();
@@ -285,8 +347,11 @@ export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture
       errors.push(`role score references an unknown role: ${score.role}`);
     }
 
-    if (!isWholeNumberInRange(score.score, 0, DAILY_CREW_ROLE_SCORE_MAX)) {
-      errors.push(`role score for ${score.characterId} ${score.role} must be an integer from 0 through 18`);
+    const requirement = requirementMap.get(score.role);
+    if (requirement == null) {
+      errors.push(`role score references a role outside the active mission jobs: ${score.role}`);
+    } else if (!isWholeNumberInRange(score.score, 0, requirement.maxPoints)) {
+      errors.push(`role score for ${score.characterId} ${score.role} must be an integer from 0 through ${requirement.maxPoints}`);
     }
 
     const key = roleScoreKey(score.characterId, score.role);
@@ -297,20 +362,20 @@ export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture
   }
 
   for (const character of fixture.pool) {
-    for (const role of DAILY_CREW_ROLES) {
+    for (const role of expectedRoles) {
       if (!roleScoreKeys.has(roleScoreKey(character.id, role))) {
         errors.push(`missing role score for ${character.id} ${role}`);
       }
     }
   }
 
-  if (fixture.perfectSolution.length !== DAILY_CREW_REQUIRED_ROLE_COUNT) {
-    errors.push("perfect solution must define exactly 5 rows");
+  if (fixture.perfectSolution.length !== fixture.roleRequirements.length) {
+    errors.push(`perfect solution must define exactly ${fixture.roleRequirements.length} rows`);
   }
 
   const perfectRoles = fixture.perfectSolution.map((solution) => solution.role);
-  if (!hasExactRoleSet(perfectRoles)) {
-    errors.push("perfect solution must assign each Daily Crew role exactly once");
+  if (!hasExactRoleSet(perfectRoles, expectedRoles)) {
+    errors.push("perfect solution must assign each active Daily Crew role exactly once");
   }
 
   const perfectCharacters = fixture.perfectSolution.map((solution) => solution.characterId);
@@ -322,6 +387,10 @@ export function validateDailyCrewMissionFixture(fixture: DailyCrewMissionFixture
   for (const solution of fixture.perfectSolution) {
     if (!poolMap.has(solution.characterId)) {
       errors.push(`perfect solution references character outside the mission pool: ${solution.characterId}`);
+    }
+
+    if (!requirementMap.has(solution.role)) {
+      errors.push(`perfect solution references a role outside the active mission jobs: ${solution.role}`);
     }
   }
 
@@ -407,12 +476,13 @@ export function scoreDailyCrewSubmission(
 ): DailyCrewScoreResult {
   assertValidDailyCrewMissionFixture(fixture);
 
-  if (assignments.length !== DAILY_CREW_REQUIRED_ROLE_COUNT) {
-    throw new DailyCrewScoringError("Daily Crew Builder submissions must assign exactly 5 roles");
+  if (assignments.length !== fixture.roleRequirements.length) {
+    throw new DailyCrewScoringError(`Daily Crew Builder submissions must assign exactly ${fixture.roleRequirements.length} roles`);
   }
 
   const assignedRoles = assignments.map((assignment) => assignment.role);
-  if (!hasExactRoleSet(assignedRoles)) {
+  const expectedRoles = activeRoles(fixture);
+  if (!hasExactRoleSet(assignedRoles, expectedRoles)) {
     throw new DailyCrewScoringError("Daily Crew Builder submissions must assign every required role exactly once");
   }
 
@@ -423,6 +493,7 @@ export function scoreDailyCrewSubmission(
 
   const poolMap = getPoolMap(fixture);
   const scoreMap = getRoleScoreMap(fixture);
+  const requirementMap = getRoleRequirementMap(fixture);
   const breakdown: DailyCrewRoleBreakdown[] = [];
 
   for (const assignment of assignments) {
@@ -440,13 +511,18 @@ export function scoreDailyCrewSubmission(
       throw new DailyCrewScoringError(`Daily Crew Builder mission pool character is missing: ${assignment.characterId}`);
     }
 
+    const requirement = requirementMap.get(assignment.role);
+    if (requirement == null) {
+      throw new DailyCrewScoringError(`Daily Crew Builder role requirement is missing for ${assignment.role}`);
+    }
+
     breakdown.push({
       role: assignment.role,
-      roleName: DAILY_CREW_ROLE_LABELS[assignment.role],
+      roleName: requirement.displayLabel ?? DAILY_CREW_ROLE_LABELS[assignment.role],
       characterId: character.id,
       characterName: character.name,
       score: roleScore.score,
-      maxScore: DAILY_CREW_ROLE_SCORE_MAX,
+      maxScore: requirement.maxPoints,
       explanation: roleScore.explanation,
     });
   }
@@ -459,7 +535,7 @@ export function scoreDailyCrewSubmission(
   const rank = rankForDailyCrewScore(score);
 
   const perfectSolution = getPerfectSolutionMap(fixture);
-  const isPerfectSolution = DAILY_CREW_ROLES.every((role) => assignmentsByRole.get(role) === perfectSolution.get(role));
+  const isPerfectSolution = expectedRoles.every((role) => assignmentsByRole.get(role) === perfectSolution.get(role));
 
   return {
     score,
@@ -469,7 +545,7 @@ export function scoreDailyCrewSubmission(
     synergyScore,
     maxScore: DAILY_CREW_MAX_SCORE,
     isPerfectSolution,
-    roles: breakdown.sort((left, right) => DAILY_CREW_ROLES.indexOf(left.role) - DAILY_CREW_ROLES.indexOf(right.role)),
+    roles: breakdown.sort((left, right) => expectedRoles.indexOf(left.role) - expectedRoles.indexOf(right.role)),
     synergy: matchedRules.map((rule) => ({
       id: rule.id,
       label: rule.label,
@@ -481,6 +557,7 @@ export function scoreDailyCrewSubmission(
 
 export function toPublicDailyCrewMission(fixture: DailyCrewMissionFixture): PublicDailyCrewMission {
   assertValidDailyCrewMissionFixture(fixture);
+  const requirements = activeRoleRequirements(fixture);
 
   return {
     missionDate: fixture.missionDate,
@@ -489,9 +566,9 @@ export function toPublicDailyCrewMission(fixture: DailyCrewMissionFixture): Publ
     brief: fixture.brief,
     missionTags: [...fixture.missionTags],
     maxScore: fixture.maxScore,
-    roles: DAILY_CREW_ROLES.map((role) => ({
-      role,
-      name: DAILY_CREW_ROLE_LABELS[role],
+    roles: requirements.map((requirement) => ({
+      role: requirement.role,
+      name: requirement.displayLabel ?? DAILY_CREW_ROLE_LABELS[requirement.role],
     })),
     pool: [...fixture.pool]
       .sort((left, right) => left.displayOrder - right.displayOrder)
