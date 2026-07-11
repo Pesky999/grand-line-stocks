@@ -188,7 +188,7 @@ function DailyCrewBuilderPage() {
       );
 
       if (duplicateRole) {
-        toast.error("Each character can only fill one role.");
+        toast.error("Each character can only fill one job.");
         return current;
       }
 
@@ -211,7 +211,7 @@ function DailyCrewBuilderPage() {
       return;
     }
     if (!allRolesAssigned) {
-      setSubmissionError("Assign one unique character to every role before submitting.");
+      setSubmissionError("Assign one unique character to every job before submitting.");
       return;
     }
 
@@ -423,7 +423,7 @@ function DailyCrewBuilderPage() {
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                     <div className="space-y-2">
-                      <h3 className="text-sm font-bold text-foreground">Role breakdown</h3>
+                      <h3 className="text-sm font-bold text-foreground">Job breakdown</h3>
                       {result.roles.map((role) => (
                         <div key={role.role} className="border border-border bg-card/60 p-3 text-xs">
                           <div className="flex flex-wrap items-center justify-between gap-2">

@@ -13,7 +13,7 @@ const routeSource = read("src/routes/games.daily-crew-builder.tsx");
 const gamesIndexSource = read("src/routes/games.index.tsx");
 const apiSource = read("src/lib/api/daily-crew-builder.functions.ts");
 
-test("Daily Crew Builder route renders the mission, roles, pool, and saved result sections", () => {
+test("Daily Crew Builder route renders the mission, jobs, pool, and saved result sections", () => {
   assert.match(routeSource, /createFileRoute\("\/games\/daily-crew-builder"\)/);
   assert.match(routeSource, /Daily Crew Builder/);
   assert.match(routeSource, /mission\.title/);
@@ -36,7 +36,7 @@ test("Daily Crew Builder route keeps hidden fixture data out of the browser-visi
   assert.doesNotMatch(routeSource, /Hidden command profile|Hidden combat profile|Hidden route profile/i);
 });
 
-test("Daily Crew Builder route requires all roles, prevents duplicates, and prompts signed-out users", () => {
+test("Daily Crew Builder route requires all jobs, prevents duplicates, and prompts signed-out users", () => {
   assert.match(routeSource, /useMe\(\)/);
   assert.match(routeSource, /Sign in to submit your crew/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
@@ -46,7 +46,8 @@ test("Daily Crew Builder route requires all roles, prevents duplicates, and prom
   assert.match(routeSource, /disabled=\{!canSubmit \|\| submitPreviewM\.isPending\}/);
   assert.match(routeSource, /assignedToAnotherRole/);
   assert.match(routeSource, /disabled=\{assignedToAnotherRole\}/);
-  assert.match(routeSource, /Each character can only fill one role/);
+  assert.match(routeSource, /Each character can only fill one job/);
+  assert.match(routeSource, /Assign one unique character to every job before submitting/);
   assert.match(routeSource, /Clear/);
 });
 
@@ -63,7 +64,7 @@ test("Daily Crew Builder result panel uses saved and payout-aware reward languag
   assert.match(routeSource, /Saved Result Locked/);
   assert.match(routeSource, /Reward/);
   assert.match(routeSource, /Perfect crew/);
-  assert.match(routeSource, /Role breakdown/);
+  assert.match(routeSource, /Job breakdown/);
   assert.match(routeSource, /No synergy bonus earned/);
   assert.doesNotMatch(routeSource, /Preview reward only|Reward payout coming later|No Berries are paid|No Berries were paid/i);
   assert.doesNotMatch(routeSource, /Retry payout/i);
