@@ -51,8 +51,8 @@ function Games() {
           </div>
           <div className="mt-2 text-lg font-bold text-foreground">Daily Crew Builder</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Build a five-role crew from a curated 15-character pool, lock in your score, and earn
-            the rank reward.
+            Build a crew from the current mission pool, lock in your score, and earn the rank
+            reward.
           </p>
         </Link>
 

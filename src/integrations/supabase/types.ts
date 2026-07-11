@@ -390,6 +390,8 @@ export type Database = {
       daily_crew_role_requirements: {
         Row: {
           created_at: string
+          display_label: string
+          display_order: number
           max_points: number
           mission_id: string
           role: Database["public"]["Enums"]["daily_crew_role"]
@@ -398,6 +400,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          display_label: string
+          display_order: number
           max_points?: number
           mission_id: string
           role: Database["public"]["Enums"]["daily_crew_role"]
@@ -406,6 +410,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          display_label?: string
+          display_order?: number
           max_points?: number
           mission_id?: string
           role?: Database["public"]["Enums"]["daily_crew_role"]

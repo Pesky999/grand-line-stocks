@@ -19,8 +19,8 @@ test("Daily Crew Builder route renders the mission, roles, pool, and saved resul
   assert.match(routeSource, /mission\.title/);
   assert.match(routeSource, /mission\.brief/);
   assert.match(routeSource, /mission\?\.id/);
-  assert.match(routeSource, /15-character pool/);
-  assert.match(routeSource, /Role Assignment/);
+  assert.match(routeSource, /poolCount > 0 \? `\$\{poolCount\}-character pool` : "Daily mission pool"/);
+  assert.match(routeSource, /Crew Assignment/);
   assert.match(routeSource, /Character Pool/);
   assert.match(routeSource, /Saved Crew Result/);
   assert.match(routeSource, /role\.name/);
@@ -40,6 +40,7 @@ test("Daily Crew Builder route requires all roles, prevents duplicates, and prom
   assert.match(routeSource, /useMe\(\)/);
   assert.match(routeSource, /Sign in to submit your crew/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
+  assert.match(routeSource, /const assignmentGridClass = jobCount <= 3 \? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5"/);
   assert.match(routeSource, /const submissionLocked = Boolean\(result\?\.submissionSaved\)/);
   assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned && !missionQ\.isLoading && !savedResultQ\.isLoading && !submissionLocked/);
   assert.match(routeSource, /disabled=\{!canSubmit \|\| submitPreviewM\.isPending\}/);

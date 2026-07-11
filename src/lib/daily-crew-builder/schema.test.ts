@@ -26,6 +26,10 @@ const payoutMigrationPath = join(
   migrationsDir,
   "20260711140000_award_daily_crew_builder_reward.sql",
 );
+const simplifiedJobsMigrationPath = join(
+  migrationsDir,
+  "20260711150000_simplify_daily_crew_builder_jobs.sql",
+);
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
@@ -35,6 +39,7 @@ const pool15Sql = readFileSync(pool15MigrationPath, "utf8");
 const persistenceSql = readFileSync(persistenceMigrationPath, "utf8");
 const roleLaneCorrectionSql = readFileSync(roleLaneCorrectionMigrationPath, "utf8");
 const payoutSql = readFileSync(payoutMigrationPath, "utf8");
+const simplifiedJobsSql = readFileSync(simplifiedJobsMigrationPath, "utf8");
 const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
@@ -63,6 +68,10 @@ function expectPayoutSql(pattern: RegExp, message: string): void {
   assert.match(payoutSql, pattern, message);
 }
 
+function expectSimplifiedJobsSql(pattern: RegExp, message: string): void {
+  assert.match(simplifiedJobsSql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
@@ -81,6 +90,10 @@ function rejectRoleLaneCorrectionSql(pattern: RegExp, message: string): void {
 
 function rejectPayoutSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(stripSqlComments(payoutSql), pattern, message);
+}
+
+function rejectSimplifiedJobsSql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(simplifiedJobsSql), pattern, message);
 }
 
 const tables = [
@@ -487,6 +500,54 @@ test("Daily Crew Builder payout RPC pays stored rewards idempotently and remains
   rejectPayoutSql(/UPDATE\s+public\.daily_crew_missions\b/i, "payout RPC does not touch mission setup");
   rejectPayoutSql(/UPDATE\s+public\.daily_crew_mission_pool\b/i, "payout RPC does not touch mission setup");
   rejectPayoutSql(/UPDATE\s+public\.daily_crew_character_role_scores\b/i, "payout RPC does not touch hidden scores");
+});
+
+test("simplified jobs migration supports three-job missions without changing payout", () => {
+  expectSimplifiedJobsSql(
+    /ADD COLUMN IF NOT EXISTS display_label text[\s\S]*ADD COLUMN IF NOT EXISTS display_order integer/i,
+    "role requirements gain public display labels and order",
+  );
+  expectSimplifiedJobsSql(
+    /daily_crew_role_requirements_max_points_check[\s\S]*CHECK \(max_points BETWEEN 1 AND 30\)/i,
+    "role requirements can support 30-point simplified jobs",
+  );
+  expectSimplifiedJobsSql(
+    /daily_crew_character_role_scores_score_check[\s\S]*CHECK \(score BETWEEN 0 AND 30\)/i,
+    "hidden role scores can support 30-point jobs",
+  );
+  expectSimplifiedJobsSql(
+    /daily_crew_submission_roles_role_score_check[\s\S]*CHECK \(role_score BETWEEN 0 AND 30\)/i,
+    "submitted role scores can persist 30-point jobs",
+  );
+  expectSimplifiedJobsSql(/v_pool_count IN \(9, 15\)/i, "validation supports legacy and simplified pool sizes");
+  expectSimplifiedJobsSql(/v_requirement_count IN \(3, 5\)/i, "validation supports legacy and simplified job counts");
+  expectSimplifiedJobsSql(/v_score_count = v_pool_count \* v_requirement_count/i, "validation requires full score coverage");
+  expectSimplifiedJobsSql(/v_requirement_max_points_total = 90/i, "role max points still total 90");
+  expectSimplifiedJobsSql(/v_solution_score_total = 90/i, "perfect solution still has 90 role-fit points");
+  expectSimplifiedJobsSql(/'covert-harbor-extraction'/i, "simplified mission is seeded");
+  expectSimplifiedJobsSql(/DATE '2026-07-12'/i, "simplified mission is scheduled after the existing seeded missions");
+  expectSimplifiedJobsSql(/'draft'::public\.daily_crew_mission_status/i, "simplified mission is inserted as draft first");
+  expectSimplifiedJobsSql(
+    /public\.validate_daily_crew_mission\(v_mission_id\)[\s\S]*status = 'published'::public\.daily_crew_mission_status/i,
+    "simplified mission is published only after validation passes",
+  );
+  expectSimplifiedJobsSql(/'Operation Lead'/i, "operation lead is a public job label");
+  expectSimplifiedJobsSql(/'Scout \/ Lookout'/i, "Scout / Lookout is a public job label");
+  expectSimplifiedJobsSql(/'Emergency Support'/i, "emergency support is a public job label");
+  expectSimplifiedJobsSql(/'char-shanks'[\s\S]*'char-usopp'[\s\S]*'char-chopper'/i, "perfect trio is seeded");
+  expectSimplifiedJobsSql(/v_required_role_count NOT IN \(3, 5\)/i, "submission RPC supports only approved role counts");
+  expectSimplifiedJobsSql(/v_assignment_count <> v_required_role_count/i, "submission RPC validates dynamic assignment counts");
+  expectSimplifiedJobsSql(/v_valid_assignment_count <> v_required_role_count/i, "submission RPC validates dynamic mission jobs");
+  expectSimplifiedJobsSql(/v_inserted_role_count <> v_required_role_count/i, "submission RPC persists dynamic role counts");
+  expectSimplifiedJobsSql(/GRANT EXECUTE ON FUNCTION public\.record_daily_crew_builder_submission[\s\S]*TO service_role/i, "recording RPC remains service-role only");
+
+  rejectSimplifiedJobsSql(/ALTER TYPE public\.daily_crew_role ADD VALUE/i, "simplified jobs avoid enum changes");
+  rejectSimplifiedJobsSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "simplified jobs do not change payout RPC");
+  rejectSimplifiedJobsSql(/\btransactions\b/i, "simplified jobs do not write transactions");
+  rejectSimplifiedJobsSql(/UPDATE\s+public\.user_wallets\b/i, "simplified jobs do not update wallets");
+  rejectSimplifiedJobsSql(/UPDATE\s+public\.characters\b/i, "simplified jobs do not touch character prices");
+  rejectSimplifiedJobsSql(/UPDATE\s+public\.daily_crew_submissions\b/i, "simplified jobs do not update saved submissions");
+  rejectSimplifiedJobsSql(/\bgrand_line_guess\b/i, "simplified jobs do not touch Grand Line Guess");
 });
 
 test("the previously removed duplicate wallet migration is not reintroduced", () => {
