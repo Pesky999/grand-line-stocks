@@ -158,7 +158,7 @@ const covertHarborScores: RoleScoreMatrix = {
 const covertHarborExtractionPool = [
   poolCharacter("char-shanks", "Shanks", "captain", 1, false, ["emperor", "leader"]),
   poolCharacter("char-dragon", "Monkey D. Dragon", "strategist", 2, false, ["revolutionary", "leader"]),
-  poolCharacter("char-jinbe", "Jinbe", "fighter", 3, true, ["Straw Hat", "steady hand"]),
+  poolCharacter("char-law", "Trafalgar Law", "captain", 3, false, ["captain", "surgeon", "tactical"]),
   poolCharacter("char-usopp", "Usopp", "navigator", 4, true, ["Straw Hat", "scout", "lookout"]),
   poolCharacter("char-franky", "Franky", "navigator", 5, true, ["Straw Hat", "shipwright", "backup lookout"]),
   poolCharacter("char-koby", "Koby", "navigator", 6, false, ["marine", "scout"]),
@@ -197,7 +197,7 @@ const covertHarborExtractionRequirements: DailyCrewRoleRequirement[] = [
 const covertHarborExtractionScores: Partial<Record<string, Partial<Record<DailyCrewRole, number>>>> = {
   "char-shanks": { captain: 30, navigator: 11, support: 10 },
   "char-dragon": { captain: 25, navigator: 14, support: 12 },
-  "char-jinbe": { captain: 22, navigator: 12, support: 18 },
+  "char-law": { captain: 22, navigator: 12, support: 18 },
   "char-usopp": { captain: 10, navigator: 30, support: 14 },
   "char-franky": { captain: 12, navigator: 24, support: 17 },
   "char-koby": { captain: 14, navigator: 22, support: 15 },
