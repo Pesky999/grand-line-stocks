@@ -1981,6 +1981,18 @@ export type Database = {
         Args: { _character_id: string }
         Returns: boolean
       }
+      record_daily_crew_builder_submission: {
+        Args: {
+          _assignments: Json
+          _mission_id: string
+          _rank: Database["public"]["Enums"]["daily_crew_rank"]
+          _reward_amount: number
+          _score: number
+          _score_breakdown: Json
+          _user_id: string
+        }
+        Returns: Json
+      }
       run_daily_market_cycle: {
         Args: never
         Returns: {

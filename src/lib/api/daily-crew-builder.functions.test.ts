@@ -5,10 +5,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { DAILY_CREW_SAMPLE_FIXTURES } from "../daily-crew-builder/fixtures.ts";
-import {
-  getPublicDailyCrewBuilderMissionForDate,
-  scoreDailyCrewBuilderPreviewForFixture,
-} from "./daily-crew-builder.functions.ts";
+import { scoreDailyCrewBuilderPreviewForFixture } from "./daily-crew-builder.functions.ts";
+import { toPublicDailyCrewMission } from "../daily-crew-builder/scoring.ts";
 
 const source = readFileSync(
   join(process.cwd(), "src/lib/api/daily-crew-builder.functions.ts"),
@@ -22,8 +20,8 @@ function perfectAssignmentsForFirstFixture() {
   }));
 }
 
-test("mission endpoint helper returns only public-safe mission data", () => {
-  const mission = getPublicDailyCrewBuilderMissionForDate("2026-07-10");
+test("mission endpoint returns only public-safe mission data", () => {
+  const mission = toPublicDailyCrewMission(DAILY_CREW_SAMPLE_FIXTURES[0]);
   const json = JSON.stringify(mission);
 
   assert.equal(mission.pool.length, 15);
@@ -89,17 +87,37 @@ test("submit preview rejects missing roles, duplicate characters, and unknown ch
   );
 });
 
-test("Daily Crew Builder server functions are preview-only and do not persist or pay rewards", () => {
+test("Daily Crew Builder server functions read missions from DB and persist only through the approved RPC", () => {
   assert.match(source, /export const getTodayDailyCrewBuilderMission = createServerFn\(\{ method: "GET" \}\)/);
-  assert.match(source, /return getPublicDailyCrewBuilderMissionForDate\(\)/);
+  assert.match(source, /loadPublishedDailyCrewBuilderMissionFixture\(db\)/);
   assert.match(source, /export const submitDailyCrewBuilderPreview = createServerFn\(\{ method: "POST" \}\)/);
   assert.match(source, /\.middleware\(\[requireSupabaseAuth\]\)/);
-  assert.match(source, /scoreDailyCrewBuilderPreviewForDate/);
+  assert.match(source, /scoreDailyCrewBuilderPreviewForFixture\(fixture, assignments\)/);
+  assert.match(source, /\.from\("daily_crew_missions"\)/);
+  assert.match(source, /\.from\("daily_crew_mission_pool"\)/);
+  assert.match(source, /\.from\("daily_crew_role_requirements"\)/);
+  assert.match(source, /\.from\("daily_crew_character_role_scores"\)/);
+  assert.match(source, /\.from\("daily_crew_perfect_solution"\)/);
+  assert.match(source, /\.from\("characters"\)/);
+  assert.match(source, /\.rpc\("record_daily_crew_builder_submission"/);
+  assert.match(source, /_user_id: context\.userId/);
+  assert.match(source, /_score: computedResult\.score/);
+  assert.match(source, /_rank: computedResult\.rank/);
+  assert.match(source, /_reward_amount: computedResult\.rewardAmount/);
+  assert.match(source, /_score_breakdown: toJson\(computedResult\)/);
+  assert.match(source, /_assignments: toJson\(assignments\)/);
 
-  assert.doesNotMatch(source, /\.from\s*\(/);
-  assert.doesNotMatch(source, /\.rpc\s*\(/);
-  assert.doesNotMatch(source, /daily_crew_submissions|daily_crew_submission_roles/);
+  assert.doesNotMatch(source, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(source, /user_wallets|wallet mutation|transactions/);
-  assert.doesNotMatch(source, /award_daily_crew|reward_paid|payout RPC/i);
+  assert.doesNotMatch(source, /award_daily_crew|payout RPC/i);
   assert.doesNotMatch(source, /\.(insert|update|upsert|delete)\s*\(/);
+});
+
+test("Daily Crew Builder server functions handle already-submitted results safely", () => {
+  assert.match(source, /alreadySubmitted: z\.boolean\(\)/);
+  assert.match(source, /const savedBreakdown = rpcResult\.alreadySubmitted/);
+  assert.match(source, /previewResultSchema\.parse\(rpcResult\.scoreBreakdown\)/);
+  assert.match(source, /submissionSaved: true/);
+  assert.match(source, /rewardPreviewOnly: true/);
+  assert.match(source, /rewardPaid: rpcResult\.rewardPaid/);
 });

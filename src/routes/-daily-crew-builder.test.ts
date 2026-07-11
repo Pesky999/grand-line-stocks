@@ -18,10 +18,11 @@ test("Daily Crew Builder preview route renders the mission, roles, pool, and pre
   assert.match(routeSource, /Daily Crew Builder/);
   assert.match(routeSource, /mission\.title/);
   assert.match(routeSource, /mission\.brief/);
+  assert.match(routeSource, /mission\?\.id/);
   assert.match(routeSource, /15-character pool/);
   assert.match(routeSource, /Role Assignment/);
   assert.match(routeSource, /Character Pool/);
-  assert.match(routeSource, /Preview Result/);
+  assert.match(routeSource, /Saved Preview Result/);
   assert.match(routeSource, /role\.name/);
   assert.match(routeSource, /pool\.map/);
 });
@@ -38,7 +39,8 @@ test("Daily Crew Builder route requires all roles, prevents duplicates, and prom
   assert.match(routeSource, /useMe\(\)/);
   assert.match(routeSource, /Sign in to submit your crew preview/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
-  assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned/);
+  assert.match(routeSource, /const submissionLocked = Boolean\(result\?\.submissionSaved\)/);
+  assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned && !missionQ\.isLoading && !submissionLocked/);
   assert.match(routeSource, /disabled=\{!canSubmit \|\| submitPreviewM\.isPending\}/);
   assert.match(routeSource, /assignedToAnotherRole/);
   assert.match(routeSource, /disabled=\{assignedToAnotherRole\}/);
@@ -51,6 +53,10 @@ test("Daily Crew Builder result panel uses preview-only reward language and no p
   assert.match(routeSource, /Reward payout coming later/);
   assert.match(routeSource, /No Berries are paid in this preview phase/);
   assert.match(routeSource, /No Berries were paid/);
+  assert.match(routeSource, /Your first submitted crew is saved for this mission/);
+  assert.match(routeSource, /saved results are locked for the mission/);
+  assert.match(routeSource, /Crew Saved/);
+  assert.match(routeSource, /Saved Result Locked/);
   assert.match(routeSource, /Preview Reward/);
   assert.match(routeSource, /Perfect crew/);
   assert.match(routeSource, /Role breakdown/);
@@ -65,14 +71,15 @@ test("Games hub links to Daily Crew Builder without removing Grand Line Guess", 
   assert.match(gamesIndexSource, /Preview daily/);
 });
 
-test("Daily Crew Builder UI and API introduce no persistence, wallet mutation, or payout call", () => {
+test("Daily Crew Builder UI and API persist only the preview result and introduce no wallet mutation or payout call", () => {
   const combined = `${routeSource}\n${apiSource}`;
 
+  assert.match(combined, /record_daily_crew_builder_submission/);
+  assert.match(combined, /missionId: mission\?\.id \?\? ""/);
+  assert.match(combined, /alreadySubmitted/);
+  assert.match(combined, /submissionSaved/);
   assert.doesNotMatch(combined, /user_wallets/i);
   assert.doesNotMatch(combined, /transactions/i);
-  assert.doesNotMatch(combined, /daily_crew_submissions|daily_crew_submission_roles/i);
   assert.doesNotMatch(combined, /award_daily_crew/i);
-  assert.doesNotMatch(combined, /\.rpc\s*\(/);
-  assert.doesNotMatch(combined, /\.from\s*\(/);
   assert.doesNotMatch(combined, /\.(insert|update|upsert|delete)\s*\(/);
 });

@@ -7,9 +7,10 @@ import { useMe } from "@/hooks/useMe";
 import {
   getTodayDailyCrewBuilderMission,
   submitDailyCrewBuilderPreview,
-  type DailyCrewBuilderPreviewResult,
+  type DailyCrewBuilderPersistedResult,
+  type DailyCrewBuilderPublicMission,
 } from "@/lib/api/daily-crew-builder.functions";
-import type { DailyCrewRole, PublicDailyCrewMission } from "@/lib/daily-crew-builder/scoring";
+import type { DailyCrewRole } from "@/lib/daily-crew-builder/scoring";
 
 export const Route = createFileRoute("/games/daily-crew-builder")({
   head: () => ({
@@ -30,14 +31,14 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Daily Crew Builder preview failed";
 }
 
-function rankLabel(rank: DailyCrewBuilderPreviewResult["rank"]) {
+function rankLabel(rank: DailyCrewBuilderPersistedResult["rank"]) {
   return rank === "fail" ? "Fail" : rank.toUpperCase();
 }
 
 function DailyCrewBuilderPage() {
   const { user, authLoading } = useMe();
   const [assignments, setAssignments] = useState<Assignments>({});
-  const [result, setResult] = useState<DailyCrewBuilderPreviewResult | null>(null);
+  const [result, setResult] = useState<DailyCrewBuilderPersistedResult | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   const missionQ = useQuery({
@@ -46,7 +47,7 @@ function DailyCrewBuilderPage() {
     staleTime: 5 * 60_000,
   });
 
-  const mission = missionQ.data as PublicDailyCrewMission | undefined;
+  const mission = missionQ.data as DailyCrewBuilderPublicMission | undefined;
   const roles = mission?.roles ?? [];
   const pool = mission?.pool ?? [];
 
@@ -56,12 +57,14 @@ function DailyCrewBuilderPage() {
   );
   const assignedIds = useMemo(() => new Set(assignedEntries.map(([, characterId]) => characterId)), [assignedEntries]);
   const allRolesAssigned = roles.length > 0 && roles.every((role) => assignments[role.role]);
-  const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading;
+  const submissionLocked = Boolean(result?.submissionSaved);
+  const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading && !submissionLocked;
 
   const submitPreviewM = useMutation({
     mutationFn: () =>
       submitDailyCrewBuilderPreview({
         data: {
+          missionId: mission?.id ?? "",
           assignments: roles.map((role) => ({
             role: role.role,
             characterId: assignments[role.role] ?? "",
@@ -72,8 +75,18 @@ function DailyCrewBuilderPage() {
       setSubmissionError(null);
     },
     onSuccess: (next) => {
-      setResult(next as DailyCrewBuilderPreviewResult);
-      toast.success("Crew preview scored. No Berries were paid.");
+      const savedResult = next as DailyCrewBuilderPersistedResult;
+      setResult(savedResult);
+      setAssignments(
+        Object.fromEntries(
+          savedResult.roles.map((role) => [role.role, role.characterId]),
+        ) as Assignments,
+      );
+      toast.success(
+        savedResult.alreadySubmitted
+          ? "Your saved crew result is loaded. No Berries were paid."
+          : "Crew preview saved. No Berries were paid.",
+      );
     },
     onError: (error) => {
       const message = errorMessage(error);
@@ -88,6 +101,7 @@ function DailyCrewBuilderPage() {
   };
 
   const setRoleAssignment = (role: DailyCrewRole, characterId: string) => {
+    if (submissionLocked) return;
     setSubmissionError(null);
     setResult(null);
 
@@ -112,6 +126,7 @@ function DailyCrewBuilderPage() {
   };
 
   const clearAssignments = () => {
+    if (submissionLocked) return;
     setAssignments({});
     setResult(null);
     setSubmissionError(null);
@@ -150,7 +165,7 @@ function DailyCrewBuilderPage() {
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 Build a five-role crew from today's curated One Piece pool. This is a preview phase:
-                no Berries are paid yet, and submissions are not saved.
+                your first submitted crew is saved for this mission, but no Berries are paid yet.
               </p>
             </div>
 
@@ -182,6 +197,7 @@ function DailyCrewBuilderPage() {
                 </div>
                 <div className="mt-4 border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
                   Preview reward only. Reward payout coming later. No Berries are paid in this preview phase.
+                  You can reset the form before submitting; saved results are locked for the mission.
                 </div>
               </div>
             )}
@@ -212,6 +228,7 @@ function DailyCrewBuilderPage() {
                       <select
                         value={assignments[role.role] ?? ""}
                         onChange={(event) => setRoleAssignment(role.role, event.target.value)}
+                        disabled={submissionLocked}
                         className="mt-2 w-full border border-border bg-background px-2 py-2 text-xs text-foreground outline-none focus:border-primary"
                       >
                         <option value="">Choose character</option>
@@ -228,6 +245,7 @@ function DailyCrewBuilderPage() {
                         <button
                           type="button"
                           onClick={() => setRoleAssignment(role.role, "")}
+                          disabled={submissionLocked}
                           className="mt-2 text-[10px] uppercase tracking-widest text-muted-foreground underline hover:text-primary"
                         >
                           Clear
@@ -249,14 +267,15 @@ function DailyCrewBuilderPage() {
                     disabled={!canSubmit || submitPreviewM.isPending}
                     className="border border-primary bg-primary/10 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {user ? "Submit Preview Crew" : "Sign in to submit"}
+                    {submissionLocked ? "Crew Saved" : user ? "Submit Preview Crew" : "Sign in to submit"}
                   </button>
                   <button
                     type="button"
                     onClick={clearAssignments}
+                    disabled={submissionLocked}
                     className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary"
                   >
-                    Try Again
+                    {submissionLocked ? "Saved Result Locked" : "Reset Form"}
                   </button>
                 </div>
               </div>
@@ -301,7 +320,7 @@ function DailyCrewBuilderPage() {
             {result && (
               <section className="terminal-panel">
                 <div className="terminal-header flex items-center justify-between">
-                  <span>Preview Result</span>
+                  <span>Saved Preview Result</span>
                   {result.isPerfectSolution && <span className="text-primary">Perfect crew</span>}
                 </div>
                 <div className="space-y-4 p-4">
@@ -312,6 +331,9 @@ function DailyCrewBuilderPage() {
                     <ResultStat label="Synergy" value={`+${result.synergyScore}`} />
                   </div>
                   <div className="border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
+                    {result.alreadySubmitted
+                      ? "You already submitted for this mission, so your saved result is shown. "
+                      : "Your first submitted crew is saved for this mission. "}
                     Preview only. Reward payout coming later. No Berries were paid.
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[1fr_280px]">

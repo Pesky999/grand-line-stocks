@@ -103,12 +103,12 @@ const covertHarborPool = [
   poolCharacter("char-shanks", "Shanks", 6, false, ["captain", "emperor"]),
   poolCharacter("char-buggy", "Buggy", 7, false, ["captain", "wildcard"]),
   poolCharacter("char-dragon", "Monkey D. Dragon", 8, false, ["strategist", "revolutionary"]),
-  poolCharacter("char-koala", "Koala", 9, false, ["support", "revolutionary"]),
+  poolCharacter("char-sabo", "Sabo", 9, false, ["fighter", "strategist", "revolutionary"]),
   poolCharacter("char-garp", "Monkey D. Garp", 10, false, ["fighter", "marine"]),
   poolCharacter("char-koby", "Koby", 11, false, ["navigator", "marine"]),
   poolCharacter("char-smoker", "Smoker", 12, false, ["fighter", "marine"]),
   poolCharacter("char-katakuri", "Charlotte Katakuri", 13, false, ["fighter", "strategist"]),
-  poolCharacter("char-perona", "Perona", 14, false, ["support", "disruption"]),
+  poolCharacter("char-boa", "Boa Hancock", 14, false, ["captain", "fighter", "disruption"]),
   poolCharacter("char-bonney", "Jewelry Bonney", 15, false, ["captain", "wildcard"]),
 ];
 
@@ -121,12 +121,12 @@ const covertHarborScores: RoleScoreMatrix = {
   "char-shanks": { captain: 18, fighter: 17, navigator: 10, strategist: 15, support: 13 },
   "char-buggy": { captain: 13, fighter: 4, navigator: 8, strategist: 9, support: 8 },
   "char-dragon": { captain: 17, fighter: 13, navigator: 11, strategist: 18, support: 12 },
-  "char-koala": { captain: 9, fighter: 13, navigator: 12, strategist: 14, support: 18 },
+  "char-sabo": { captain: 14, fighter: 17, navigator: 6, strategist: 15, support: 18 },
   "char-garp": { captain: 13, fighter: 18, navigator: 7, strategist: 10, support: 9 },
   "char-koby": { captain: 12, fighter: 12, navigator: 18, strategist: 14, support: 13 },
   "char-smoker": { captain: 11, fighter: 15, navigator: 9, strategist: 13, support: 10 },
   "char-katakuri": { captain: 14, fighter: 17, navigator: 9, strategist: 16, support: 11 },
-  "char-perona": { captain: 8, fighter: 7, navigator: 13, strategist: 15, support: 16 },
+  "char-boa": { captain: 14, fighter: 15, navigator: 7, strategist: 13, support: 16 },
   "char-bonney": { captain: 15, fighter: 13, navigator: 10, strategist: 11, support: 14 },
 };
 
@@ -186,7 +186,7 @@ export const DAILY_CREW_SAMPLE_FIXTURES: DailyCrewMissionFixture[] = [
       { role: "fighter", characterId: "char-jinbe" },
       { role: "navigator", characterId: "char-koby" },
       { role: "strategist", characterId: "char-dragon" },
-      { role: "support", characterId: "char-koala" },
+      { role: "support", characterId: "char-sabo" },
     ],
     synergyRules: [
       {
@@ -199,15 +199,15 @@ export const DAILY_CREW_SAMPLE_FIXTURES: DailyCrewMissionFixture[] = [
           fighter: "char-jinbe",
           navigator: "char-koby",
           strategist: "char-dragon",
-          support: "char-koala",
+          support: "char-sabo",
         },
       },
       {
         id: "revolutionary-handshake",
         label: "Revolutionary handshake",
         points: 3,
-        explanation: "Dragon and Koala coordinate a clean information handoff.",
-        characterIds: ["char-dragon", "char-koala"],
+        explanation: "Dragon and Sabo coordinate a clean information handoff.",
+        characterIds: ["char-dragon", "char-sabo"],
       },
     ],
   },
