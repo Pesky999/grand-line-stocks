@@ -18,6 +18,10 @@ const persistenceMigrationPath = join(
   migrationsDir,
   "20260710130000_seed_daily_crew_builder_missions.sql",
 );
+const roleLaneCorrectionMigrationPath = join(
+  migrationsDir,
+  "20260711130000_correct_daily_crew_builder_role_lanes.sql",
+);
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
@@ -25,6 +29,7 @@ const removedDuplicateWalletMigrationPath = join(
 const baseSql = readFileSync(baseMigrationPath, "utf8");
 const pool15Sql = readFileSync(pool15MigrationPath, "utf8");
 const persistenceSql = readFileSync(persistenceMigrationPath, "utf8");
+const roleLaneCorrectionSql = readFileSync(roleLaneCorrectionMigrationPath, "utf8");
 const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
@@ -45,6 +50,10 @@ function expectPersistenceSql(pattern: RegExp, message: string): void {
   assert.match(persistenceSql, pattern, message);
 }
 
+function expectRoleLaneCorrectionSql(pattern: RegExp, message: string): void {
+  assert.match(roleLaneCorrectionSql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
@@ -55,6 +64,10 @@ function rejectPool15Sql(pattern: RegExp, message: string): void {
 
 function rejectPersistenceSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(stripSqlComments(persistenceSql), pattern, message);
+}
+
+function rejectRoleLaneCorrectionSql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(roleLaneCorrectionSql), pattern, message);
 }
 
 const tables = [
@@ -331,6 +344,77 @@ test("persistence RPC records unpaid submissions and remains service-role only",
   rejectPersistenceSql(/\btransactions\b/i, "persistence migration does not write transactions");
   rejectPersistenceSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "persistence migration does not add payout RPC");
   rejectPersistenceSql(/reward_paid\s*=\s*true/i, "persistence migration never marks rewards paid");
+});
+
+test("role-lane correction updates only seeded Daily Crew role data", () => {
+  expectRoleLaneCorrectionSql(/storm-gate-rescue/i, "Storm Gate seeded mission is corrected");
+  expectRoleLaneCorrectionSql(/covert-harbor-infiltration/i, "Covert Harbor seeded mission is corrected");
+  expectRoleLaneCorrectionSql(
+    /JOIN public\.daily_crew_missions AS missions[\s\S]*missions\.slug = scores\.mission_slug/i,
+    "correction identifies seeded missions by mission slug",
+  );
+  expectRoleLaneCorrectionSql(
+    /JOIN public\.characters AS characters[\s\S]*characters\.slug = seed_characters\.market_slug/i,
+    "correction resolves market characters by slug",
+  );
+  expectRoleLaneCorrectionSql(
+    /Daily Crew Builder role-lane correction missing public\.characters slugs/i,
+    "correction fails clearly when market character slugs are missing",
+  );
+  expectRoleLaneCorrectionSql(
+    /UPDATE public\.daily_crew_mission_pool AS pool[\s\S]*SET visible_tags = pool_tags\.visible_tags/i,
+    "correction updates public-safe visible role tags",
+  );
+  expectRoleLaneCorrectionSql(
+    /UPDATE public\.daily_crew_character_role_scores AS score_rows[\s\S]*score = scores\.score[\s\S]*explanation = scores\.explanation/i,
+    "correction updates hidden role score rows",
+  );
+  expectRoleLaneCorrectionSql(
+    /UPDATE public\.daily_crew_perfect_solution AS solution_rows[\s\S]*SET character_id = characters\.id/i,
+    "correction updates the hidden perfect solution",
+  );
+  expectRoleLaneCorrectionSql(/v_updated_tags <> 30/i, "correction expects all 30 pool tag rows");
+  expectRoleLaneCorrectionSql(/v_updated_scores <> 150/i, "correction expects all 150 hidden role score rows");
+  expectRoleLaneCorrectionSql(/v_updated_solution <> 10/i, "correction expects all 10 perfect-solution rows");
+  expectRoleLaneCorrectionSql(
+    /public\.validate_daily_crew_mission\(v_mission_id\)[\s\S]*status = 'published'::public\.daily_crew_mission_status/i,
+    "correction validates each mission before preserving published status",
+  );
+  expectRoleLaneCorrectionSql(
+    /\('covert-harbor-infiltration', 'char-usopp', 9, 6, 18, 14, 13\)/i,
+    "Covert Harbor gives Usopp the max navigator lane",
+  );
+  expectRoleLaneCorrectionSql(
+    /\('covert-harbor-infiltration', 'char-koby', 10, 11, 15, 12, 11\)/i,
+    "Covert Harbor keeps Koby as a strong but non-perfect navigator alternative",
+  );
+  expectRoleLaneCorrectionSql(
+    /\('covert-harbor-infiltration', 'navigator', 'char-usopp'\)/i,
+    "Covert Harbor perfect navigator is Usopp",
+  );
+  expectRoleLaneCorrectionSql(
+    /\('covert-harbor-infiltration', 'support', 'char-chopper'\)/i,
+    "Covert Harbor perfect support is Chopper",
+  );
+  expectRoleLaneCorrectionSql(
+    /\('storm-gate-rescue', 'support', 'char-marco'\)/i,
+    "Storm Gate perfect support remains Marco",
+  );
+
+  rejectRoleLaneCorrectionSql(/\buser_wallets\b/i, "correction does not touch wallets");
+  rejectRoleLaneCorrectionSql(/\btransactions\b/i, "correction does not write transactions");
+  rejectRoleLaneCorrectionSql(/\bgrand_line_guess\b/i, "correction does not touch Grand Line Guess");
+  rejectRoleLaneCorrectionSql(/INSERT\s+INTO\s+public\.daily_crew_submissions\b/i, "correction does not insert submissions");
+  rejectRoleLaneCorrectionSql(/UPDATE\s+public\.daily_crew_submissions\b/i, "correction does not update submissions");
+  rejectRoleLaneCorrectionSql(/INSERT\s+INTO\s+public\.daily_crew_submission_roles\b/i, "correction does not insert submitted roles");
+  rejectRoleLaneCorrectionSql(/UPDATE\s+public\.daily_crew_submission_roles\b/i, "correction does not update submitted roles");
+  rejectRoleLaneCorrectionSql(/\breward_paid\b/i, "correction does not modify payout state");
+  rejectRoleLaneCorrectionSql(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.award_daily_crew/i, "correction does not add payout RPC");
+  rejectRoleLaneCorrectionSql(/INSERT\s+INTO\s+public\.daily_crew_missions\b/i, "correction does not create missions");
+  rejectRoleLaneCorrectionSql(/INSERT\s+INTO\s+public\.daily_crew_mission_pool\b/i, "correction does not create pool rows");
+  rejectRoleLaneCorrectionSql(/ALTER\s+TABLE\b/i, "correction does not evolve schema");
+  rejectRoleLaneCorrectionSql(/\bkoala\b/i, "correction does not introduce Koala");
+  rejectRoleLaneCorrectionSql(/\bperona\b/i, "correction does not introduce Perona");
 });
 
 test("the previously removed duplicate wallet migration is not reintroduced", () => {
