@@ -334,7 +334,7 @@ BEGIN
     title,
     brief,
     mission_tags,
-    'published'::public.daily_crew_mission_status,
+    'draft'::public.daily_crew_mission_status,
     'next_day'::public.daily_crew_reveal_policy,
     100
   FROM daily_crew_seed_missions
@@ -450,6 +450,12 @@ BEGIN
     IF NOT public.validate_daily_crew_mission(v_mission_id) THEN
       RAISE EXCEPTION 'Daily Crew Builder seed mission failed validation: %', v_mission.slug;
     END IF;
+
+    UPDATE public.daily_crew_missions
+    SET
+      status = 'published'::public.daily_crew_mission_status,
+      updated_at = now()
+    WHERE id = v_mission_id;
   END LOOP;
 END;
 $seed$;

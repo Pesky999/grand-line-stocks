@@ -276,7 +276,14 @@ test("pool-15 alignment migration is schema-only and does not introduce payout o
 test("persistence migration seeds the two current missions from public market characters", () => {
   expectPersistenceSql(/2026-07-10[\s\S]*storm-gate-rescue[\s\S]*Storm Gate Rescue/i, "Storm Gate Rescue is seeded");
   expectPersistenceSql(/2026-07-11[\s\S]*covert-harbor-infiltration[\s\S]*Covert Harbor Infiltration/i, "Covert Harbor Infiltration is seeded");
-  expectPersistenceSql(/'published'::public\.daily_crew_mission_status/i, "seed missions are published");
+  expectPersistenceSql(
+    /INSERT INTO public\.daily_crew_missions[\s\S]*'draft'::public\.daily_crew_mission_status/i,
+    "seed missions are initially inserted as draft",
+  );
+  expectPersistenceSql(
+    /public\.validate_daily_crew_mission\(v_mission_id\)[\s\S]*UPDATE public\.daily_crew_missions[\s\S]*status = 'published'::public\.daily_crew_mission_status/i,
+    "seed missions are published only after validation passes",
+  );
   expectPersistenceSql(/JOIN public\.characters AS characters[\s\S]*characters\.slug = seed_characters\.market_slug/i, "seed resolves real market characters by slug");
   expectPersistenceSql(/Daily Crew Builder seed missing public\.characters slugs/i, "missing market slugs fail clearly");
   expectPersistenceSql(/public\.validate_daily_crew_mission\(v_mission_id\)/i, "seed validates each mission");
