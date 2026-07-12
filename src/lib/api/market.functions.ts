@@ -2,6 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
+import {
+  CHARACTER_PRICE_HISTORY_WINDOW,
+  selectLatestPriceHistoryWindowForChart,
+  type CharacterPriceHistoryPoint,
+} from "@/lib/price-history/window";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -100,11 +105,13 @@ export const getCharacter = createServerFn({ method: "GET" })
     if (!row) throw new Error("Not found");
     const { data: history } = await db
       .from("price_history")
-      .select("price,note,created_at")
+      .select("id,price,note,created_at")
       .eq("character_id", row.id)
-      .order("created_at", { ascending: true })
-      .limit(200);
-    return { character: row, history: history ?? [] };
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(CHARACTER_PRICE_HISTORY_WINDOW)
+      .returns<CharacterPriceHistoryPoint[]>();
+    return { character: row, history: selectLatestPriceHistoryWindowForChart(history ?? []) };
   });
 
 export const listNews = createServerFn({ method: "GET" }).handler(async () => {
