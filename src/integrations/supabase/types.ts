@@ -1703,6 +1703,48 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_ledger_entries: {
+        Row: {
+          amount: number
+          balance_after: number
+          created_at: string
+          description: string
+          entry_type: string
+          id: string
+          idempotency_key: string
+          metadata: Json
+          source_id: string | null
+          source_type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after: number
+          created_at?: string
+          description: string
+          entry_type: string
+          id?: string
+          idempotency_key: string
+          metadata?: Json
+          source_id?: string | null
+          source_type: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after?: number
+          created_at?: string
+          description?: string
+          entry_type?: string
+          id?: string
+          idempotency_key?: string
+          metadata?: Json
+          source_id?: string | null
+          source_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
