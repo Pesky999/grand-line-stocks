@@ -49,7 +49,10 @@ function Games() {
           <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
             Available daily
           </div>
-          <div className="mt-2 text-lg font-bold text-foreground">Daily Crew Builder</div>
+          <div className="mt-2 flex items-center gap-2 text-lg font-bold text-foreground">
+            <span>Daily Crew Builder</span>
+            <span className="text-[10px] uppercase tracking-widest text-primary">Beta</span>
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Build a crew from the current mission pool, lock in your score, and earn the rank
             reward.

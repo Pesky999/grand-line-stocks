@@ -16,6 +16,8 @@ const apiSource = read("src/lib/api/daily-crew-builder.functions.ts");
 test("Daily Crew Builder route renders the mission, jobs, pool, and saved result sections", () => {
   assert.match(routeSource, /createFileRoute\("\/games\/daily-crew-builder"\)/);
   assert.match(routeSource, /Daily Crew Builder/);
+  assert.match(routeSource, /Beta/);
+  assert.match(routeSource, /Daily Crew Builder is in beta\. Missions, rewards, and scoring may be tuned\./);
   assert.match(routeSource, /mission\.title/);
   assert.match(routeSource, /mission\.brief/);
   assert.match(routeSource, /mission\?\.id/);
@@ -72,6 +74,12 @@ test("Daily Crew Builder result panel uses saved and payout-aware reward languag
   assert.doesNotMatch(routeSource, /Retry payout/i);
 });
 
+test("Daily Crew Builder refreshes account balance state after paid results", () => {
+  assert.match(routeSource, /import \{ useInvalidateMe, useMe \} from "@\/hooks\/useMe"/);
+  assert.match(routeSource, /const invalidateMe = useInvalidateMe\(\)/);
+  assert.match(routeSource, /if \(savedResult\.rewardPaid\) \{\s+invalidateMe\(\);\s+\}/);
+});
+
 test("Daily Crew Builder route loads saved results for signed-in users and locks assignments", () => {
   assert.match(routeSource, /const savedResultEnabled = Boolean\(user && mission\?\.id\)/);
   assert.match(routeSource, /const savedResultKey = user\?\.id && mission\?\.id \? `\$\{user\.id\}:\$\{mission\.id\}` : null/);
@@ -123,6 +131,7 @@ test("Games hub links to Daily Crew Builder without removing Grand Line Guess", 
   assert.match(gamesIndexSource, /to="\/games\/grand-line-guess"/);
   assert.match(gamesIndexSource, /to="\/games\/daily-crew-builder"/);
   assert.match(gamesIndexSource, /Daily Crew Builder/);
+  assert.match(gamesIndexSource, /Beta/);
   assert.match(gamesIndexSource, /Available daily/);
   assert.doesNotMatch(gamesIndexSource, /reward payout coming later/i);
 });

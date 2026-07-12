@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { TerminalShell } from "@/components/TerminalShell";
-import { useMe } from "@/hooks/useMe";
+import { useInvalidateMe, useMe } from "@/hooks/useMe";
 import {
   getMyTodayDailyCrewBuilderResult,
   getTodayDailyCrewBuilderMission,
@@ -38,6 +38,7 @@ function rankLabel(rank: DailyCrewBuilderPersistedResult["rank"]) {
 
 function DailyCrewBuilderPage() {
   const { user, authLoading } = useMe();
+  const invalidateMe = useInvalidateMe();
   const [assignments, setAssignments] = useState<Assignments>({});
   const [result, setResult] = useState<DailyCrewBuilderPersistedResult | null>(null);
   const [savedResultStateKey, setSavedResultStateKey] = useState<string | null>(null);
@@ -118,7 +119,11 @@ function DailyCrewBuilderPage() {
         savedResult.roles.map((role) => [role.role, role.characterId]),
       ) as Assignments,
     );
+    if (savedResult.rewardPaid) {
+      invalidateMe();
+    }
   }, [
+    invalidateMe,
     result?.submissionSaved,
     savedResultEnabled,
     savedResultKey,
@@ -157,6 +162,9 @@ function DailyCrewBuilderPage() {
             : "Crew submitted. Reward paid."
           : "Your crew is saved. Reward payout is pending.",
       );
+      if (savedResult.rewardPaid) {
+        invalidateMe();
+      }
     },
     onError: (error) => {
       const message = errorMessage(error);
@@ -231,11 +239,17 @@ function DailyCrewBuilderPage() {
                 {poolCount > 0 ? `${poolCount}-character pool` : "Daily mission pool"}
               </div>
               <h1 className="mt-2 text-xl font-bold text-foreground sm:text-2xl">
-                Daily Crew Builder
+                Daily Crew Builder{" "}
+                <span className="align-middle text-[10px] font-bold uppercase tracking-widest text-primary">
+                  Beta
+                </span>
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 Build a {jobCount > 0 ? `${jobCount}-job` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew
                 is saved for this mission and pays its rank reward automatically.
+              </p>
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                Daily Crew Builder is in beta. Missions, rewards, and scoring may be tuned.
               </p>
             </div>
 
