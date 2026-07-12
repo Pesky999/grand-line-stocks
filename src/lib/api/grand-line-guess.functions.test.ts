@@ -8,9 +8,10 @@ import test from "node:test";
 const source = readFileSync(join(process.cwd(), "src/lib/api/grand-line-guess.functions.ts"), "utf8");
 const routeSource = readFileSync(join(process.cwd(), "src/routes/games.grand-line-guess.tsx"), "utf8");
 const migration = readFileSync(
-  join(process.cwd(), "supabase/migrations/20260711210000_fix_grand_line_guess_reward_greatest.sql"),
+  join(process.cwd(), "supabase/migrations/20260711230000_add_grand_line_guess_wallet_ledger.sql"),
   "utf8",
 );
+const migrationWithoutComments = migration.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function between(text: string, start: string, end: string): string {
   const startIndex = text.indexOf(start);
@@ -211,4 +212,35 @@ test("new migration keeps duplicate-payout protection and service-role-only exec
   assert.match(migration, /REVOKE EXECUTE ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) FROM authenticated/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) TO service_role/);
   assert.match(migration, /NOTIFY pgrst, 'reload schema'/);
+});
+
+test("new migration writes one positive Grand Line Guess reward ledger entry", () => {
+  const positiveRewardBlock = between(
+    migration,
+    "IF v_computed_reward > 0 THEN",
+    "  UPDATE public.grand_line_guess_results",
+  );
+  const outsidePositiveRewardBlock = migration.replace(positiveRewardBlock, "");
+
+  assert.match(positiveRewardBlock, /INSERT INTO public\.wallet_ledger_entries/i);
+  assert.match(positiveRewardBlock, /'reward'/i);
+  assert.match(positiveRewardBlock, /v_computed_reward/);
+  assert.match(positiveRewardBlock, /v_wallet_balance/);
+  assert.match(positiveRewardBlock, /'grand_line_guess'/i);
+  assert.match(positiveRewardBlock, /v_result_id/);
+  assert.match(positiveRewardBlock, /'grand_line_guess:' \|\| v_result_id::text/i);
+  assert.match(positiveRewardBlock, /'Grand Line Guess reward'/i);
+  assert.match(positiveRewardBlock, /'puzzleId', _puzzle_id/i);
+  assert.match(positiveRewardBlock, /'resultId', v_result_id/i);
+  assert.match(positiveRewardBlock, /'attemptNumber', v_attempt_number/i);
+  assert.match(positiveRewardBlock, /'rewardAmount', v_computed_reward/i);
+  assert.match(positiveRewardBlock, /ON CONFLICT \(idempotency_key\) DO NOTHING/i);
+  assert.doesNotMatch(outsidePositiveRewardBlock, /INSERT INTO public\.wallet_ledger_entries/i);
+});
+
+test("new migration avoids unsafe reward-history writes and invalid special expressions", () => {
+  assert.doesNotMatch(migrationWithoutComments, /pg_catalog\.GREATEST|pg_catalog\.LEAST/i);
+  assert.doesNotMatch(migrationWithoutComments, /\bpublic\.transactions\b|\btransactions\b/i);
+  assert.doesNotMatch(migrationWithoutComments, /\buser_holdings\b|\bprice_history\b|\bdaily_crew\b/i);
+  assert.doesNotMatch(migrationWithoutComments, /entry_type\s*=\s*'trivia'|'trivia'/i);
 });
