@@ -8,7 +8,7 @@ import test from "node:test";
 const source = readFileSync(join(process.cwd(), "src/lib/api/grand-line-guess.functions.ts"), "utf8");
 const routeSource = readFileSync(join(process.cwd(), "src/routes/games.grand-line-guess.tsx"), "utf8");
 const migration = readFileSync(
-  join(process.cwd(), "supabase/migrations/20260711170000_restore_grand_line_guess_reward_rpc.sql"),
+  join(process.cwd(), "supabase/migrations/20260711210000_fix_grand_line_guess_reward_greatest.sql"),
   "utf8",
 );
 
@@ -170,10 +170,24 @@ test("new migration replaces the authoritative RPC formula and accepts reward 0"
   assert.match(migration, /RETURNS void/);
   assert.match(migration, /SECURITY DEFINER/);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/);
-  assert.match(migration, /v_wrong_guesses := pg_catalog\.GREATEST\(v_attempt_number - 1, 0\)/);
-  assert.match(migration, /v_computed_reward := pg_catalog\.GREATEST\(0, 1000 - \(100 \* v_wrong_guesses\)\)/);
+  assert.doesNotMatch(migration, /pg_catalog\.GREATEST/);
+  assert.match(migration, /v_wrong_guesses := CASE\s+WHEN v_attempt_number > 1 THEN v_attempt_number - 1\s+ELSE 0\s+END/);
+  assert.match(migration, /v_computed_reward := CASE\s+WHEN 1000 - \(100 \* v_wrong_guesses\) > 0 THEN 1000 - \(100 \* v_wrong_guesses\)\s+ELSE 0\s+END/);
   assert.doesNotMatch(migration, /WHEN v_attempt_number = 1 THEN 750|WHEN v_attempt_number = 2 THEN 600|WHEN v_attempt_number = 3 THEN 500/);
   assert.doesNotMatch(migration, /_reward_amount\s*(?:<=|<)\s*0|v_computed_reward\s*(?:<=|<)\s*0/);
+});
+
+test("new migration keeps attempt six and later rewards nonnegative", () => {
+  const rewardForAttemptShape = (attemptNumber: number) => {
+    const wrongGuesses = attemptNumber > 1 ? attemptNumber - 1 : 0;
+    const reward = 1000 - 100 * wrongGuesses;
+    return reward > 0 ? reward : 0;
+  };
+
+  assert.equal(rewardForAttemptShape(6), 500);
+  assert.equal(rewardForAttemptShape(10), 100);
+  assert.equal(rewardForAttemptShape(11), 0);
+  assert.equal(rewardForAttemptShape(20), 0);
 });
 
 test("new migration ignores client reward amounts and pays the database-calculated reward", () => {
