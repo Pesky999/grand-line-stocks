@@ -8,7 +8,7 @@ import test from "node:test";
 const source = readFileSync(join(process.cwd(), "src/lib/api/grand-line-guess.functions.ts"), "utf8");
 const routeSource = readFileSync(join(process.cwd(), "src/routes/games.grand-line-guess.tsx"), "utf8");
 const migration = readFileSync(
-  join(process.cwd(), "supabase/migrations/20260708010000_update_grand_line_guess_reward_formula.sql"),
+  join(process.cwd(), "supabase/migrations/20260711170000_restore_grand_line_guess_reward_rpc.sql"),
   "utf8",
 );
 
@@ -117,6 +117,15 @@ test("reward RPC keeps compatibility arguments and logs safe diagnostics on fail
   assert.match(source, /REWARD_PAYOUT_ERROR_MESSAGE/);
 });
 
+test("server RPC argument names match the restored migration signature", () => {
+  const awardFn = between(source, "async function awardGrandLineGuessReward(", "async function awardGrandLineGuessRewardSafely");
+
+  for (const argumentName of ["_puzzle_id", "_user_id", "_attempt_number", "_reward_amount"]) {
+    assert.match(awardFn, new RegExp(`${argumentName}:`), `${argumentName} is passed by the server`);
+    assert.match(migration, new RegExp(`${argumentName} (?:uuid|integer)`), `${argumentName} exists in the RPC signature`);
+  }
+});
+
 test("retry payout uses existing correct attempt and never records a new guess", () => {
   const retryFn = between(source, "export const retryGrandLineGuessReward", "export const submitGrandLineGuess");
 
@@ -156,8 +165,9 @@ test("duplicate correct submissions retry the idempotent award path without trus
 });
 
 test("new migration replaces the authoritative RPC formula and accepts reward 0", () => {
-  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.award_grand_line_guess_reward/);
-  assert.match(migration, /_reward_amount integer/);
+  assert.match(migration, /DROP FUNCTION IF EXISTS public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\)/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.award_grand_line_guess_reward\(\s*_puzzle_id uuid,\s*_user_id uuid,\s*_attempt_number integer,\s*_reward_amount integer\s*\)/);
+  assert.match(migration, /RETURNS void/);
   assert.match(migration, /SECURITY DEFINER/);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/);
   assert.match(migration, /v_wrong_guesses := pg_catalog\.GREATEST\(v_attempt_number - 1, 0\)/);
@@ -171,6 +181,8 @@ test("new migration ignores client reward amounts and pays the database-calculat
   assert.doesNotMatch(migration, /reward_amount\s*=\s*_reward_amount/);
   assert.doesNotMatch(migration, /berries\s*=\s*berries\s*\+\s*_reward_amount/);
   assert.doesNotMatch(migration, /total_rewards_earned\s*[,=][\s\S]*_reward_amount/);
+  assert.match(migration, /INSERT INTO public\.user_wallets \(user_id\)[\s\S]*ON CONFLICT \(user_id\) DO NOTHING/);
+  assert.match(migration, /FROM public\.user_wallets[\s\S]*WHERE user_id = _user_id[\s\S]*FOR UPDATE/);
   assert.match(migration, /SET berries = berries \+ v_computed_reward/);
   assert.match(migration, /reward_amount = v_computed_reward/);
   assert.match(migration, /total_rewards_earned,[\s\S]*v_computed_reward/);
@@ -178,9 +190,11 @@ test("new migration ignores client reward amounts and pays the database-calculat
 
 test("new migration keeps duplicate-payout protection and service-role-only execution", () => {
   assert.match(migration, /FOR UPDATE/);
-  assert.match(migration, /IF v_reward_paid THEN\s+RETURN true;\s+END IF;/);
+  assert.match(migration, /IF v_reward_paid THEN\s+RETURN;\s+END IF;/);
   assert.match(migration, /UPDATE public\.user_wallets\s+SET berries = berries \+ v_computed_reward/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) FROM PUBLIC/);
   assert.match(migration, /REVOKE EXECUTE ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) FROM anon/);
   assert.match(migration, /REVOKE EXECUTE ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) FROM authenticated/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.award_grand_line_guess_reward\(uuid, uuid, integer, integer\) TO service_role/);
+  assert.match(migration, /NOTIFY pgrst, 'reload schema'/);
 });

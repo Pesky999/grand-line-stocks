@@ -1771,7 +1771,7 @@ export type Database = {
           _reward_amount: number
           _user_id: string
         }
-        Returns: boolean
+        Returns: undefined
       }
       check_achievements: { Args: { _user_id: string }; Returns: number }
       check_legacy_for_user: { Args: { _user_id: string }; Returns: undefined }
