@@ -29,21 +29,41 @@ export type TradeHistoryPage<T extends TradeHistoryCursorSource = TradeHistoryIt
   hasMore: boolean;
 };
 
-function timestampValue(value: string) {
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
+function timestampMicroseconds(value: string) {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/i,
+  );
 
-export function canonicalizeTradeHistoryCreatedAt(value: string) {
-  return new Date(value).toISOString();
+  if (!match) {
+    throw new RangeError(`Invalid trade-history timestamp: ${value}`);
+  }
+
+  const [, year, month, day, hour, minute, second, fraction = "", offset] = match;
+  const offsetMinutes =
+    offset.toUpperCase() === "Z"
+      ? 0
+      : (offset.startsWith("-") ? -1 : 1) *
+        (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6)));
+  const utcMilliseconds = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute) - offsetMinutes,
+    Number(second),
+  );
+  const fractionalMicroseconds = BigInt(fraction.padEnd(6, "0").slice(0, 6));
+
+  return BigInt(utcMilliseconds) * 1000n + fractionalMicroseconds;
 }
 
 export function compareTradeHistoryNewestFirst(
   a: TradeHistoryCursorSource,
   b: TradeHistoryCursorSource,
 ) {
-  const timeDiff = timestampValue(b.created_at) - timestampValue(a.created_at);
-  if (timeDiff !== 0) return timeDiff;
+  const aTimestamp = timestampMicroseconds(a.created_at);
+  const bTimestamp = timestampMicroseconds(b.created_at);
+  if (aTimestamp !== bTimestamp) return aTimestamp > bTimestamp ? -1 : 1;
   return b.id.localeCompare(a.id);
 }
 
@@ -51,15 +71,14 @@ export function isTradeHistoryOlderThanCursor(
   row: TradeHistoryCursorSource,
   cursor: TradeHistoryCursor,
 ) {
-  const rowTime = timestampValue(row.created_at);
-  const cursorTime = timestampValue(cursor.createdAt);
+  const rowTime = timestampMicroseconds(row.created_at);
+  const cursorTime = timestampMicroseconds(cursor.createdAt);
   if (rowTime !== cursorTime) return rowTime < cursorTime;
   return row.id.localeCompare(cursor.id) < 0;
 }
 
 export function getTradeHistoryCursorFilter(cursor: TradeHistoryCursor) {
-  const createdAt = canonicalizeTradeHistoryCreatedAt(cursor.createdAt);
-  return `created_at.lt.${createdAt},and(created_at.eq.${createdAt},id.lt.${cursor.id})`;
+  return `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`;
 }
 
 export function buildTradeHistoryPage<T extends TradeHistoryCursorSource>(

@@ -7,7 +7,6 @@ import {
   TRADE_HISTORY_DEFAULT_PAGE_SIZE,
   TRADE_HISTORY_MAX_PAGE_SIZE,
   buildTradeHistoryPage,
-  canonicalizeTradeHistoryCreatedAt,
   getTradeHistoryCursorFilter,
   type TradeHistoryItem,
 } from "@/lib/trade-history/pagination";
@@ -38,10 +37,7 @@ export type WalletLedgerEntry = z.infer<typeof walletLedgerEntrySchema>;
 
 const tradeHistoryCursorSchema = z
   .object({
-    createdAt: z
-      .string()
-      .datetime({ offset: true })
-      .transform((value) => canonicalizeTradeHistoryCreatedAt(value)),
+    createdAt: z.string().datetime({ offset: true }),
     id: z.string().uuid(),
   })
   .strict();

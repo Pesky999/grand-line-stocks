@@ -7,7 +7,6 @@ import test from "node:test";
 import {
   TRADE_HISTORY_DEFAULT_PAGE_SIZE,
   TRADE_HISTORY_MAX_PAGE_SIZE,
-  canonicalizeTradeHistoryCreatedAt,
   getTradeHistoryCursorFilter,
   selectTradeHistoryPageForTest,
   type TradeHistoryItem,
@@ -119,24 +118,43 @@ test("consecutive trade-history pages do not duplicate or skip records", () => {
   );
 });
 
+test("trade-history pagination preserves microsecond ordering across page boundaries", () => {
+  const rows = [
+    trade(1, {
+      id: "00000000-0000-4000-8000-000000000001",
+      created_at: "2026-07-12T00:00:00.123456+00:00",
+    }),
+    trade(3, {
+      id: "00000000-0000-4000-8000-000000000003",
+      created_at: "2026-07-12T00:00:00.123455+00:00",
+    }),
+    trade(2, {
+      id: "00000000-0000-4000-8000-000000000002",
+      created_at: "2026-07-12T00:00:00.123454+00:00",
+    }),
+  ];
+
+  const firstPage = selectTradeHistoryPageForTest(rows, 1);
+  const secondPage = selectTradeHistoryPageForTest(rows, 1, firstPage.nextCursor);
+  const thirdPage = selectTradeHistoryPageForTest(rows, 1, secondPage.nextCursor);
+
+  assert.equal(firstPage.items[0].created_at, "2026-07-12T00:00:00.123456+00:00");
+  assert.equal(secondPage.items[0].created_at, "2026-07-12T00:00:00.123455+00:00");
+  assert.equal(thirdPage.items[0].created_at, "2026-07-12T00:00:00.123454+00:00");
+  assert.equal(thirdPage.hasMore, false);
+  assert.equal(thirdPage.nextCursor, null);
+});
+
 test("trade-history cursor filter selects rows strictly older than the cursor", () => {
   const filter = getTradeHistoryCursorFilter({
-    createdAt: "2026-07-11T20:00:00-04:00",
+    createdAt: "2026-07-12T00:00:00.123456+00:00",
     id: "00000000-0000-4000-8000-000000000123",
   });
 
   assert.equal(
     filter,
-    "created_at.lt.2026-07-12T00:00:00.000Z,and(created_at.eq.2026-07-12T00:00:00.000Z,id.lt.00000000-0000-4000-8000-000000000123)",
+    "created_at.lt.2026-07-12T00:00:00.123456+00:00,and(created_at.eq.2026-07-12T00:00:00.123456+00:00,id.lt.00000000-0000-4000-8000-000000000123)",
   );
-});
-
-test("trade-history cursor timestamps are canonicalized before filter construction", () => {
-  assert.equal(
-    canonicalizeTradeHistoryCreatedAt("2026-07-11T20:00:00-04:00"),
-    "2026-07-12T00:00:00.000Z",
-  );
-  assert.throws(() => canonicalizeTradeHistoryCreatedAt("not-a-date"), RangeError);
 });
 
 test("wallet API validates input, removes hard-coded limit, and uses authenticated keyset query", () => {
@@ -155,10 +173,8 @@ test("wallet API validates input, removes hard-coded limit, and uses authenticat
     walletFunctionsSource,
     /cursor: tradeHistoryCursorSchema\.nullable\(\)\.optional\(\)/,
   );
-  assert.match(
-    walletFunctionsSource,
-    /datetime\(\{ offset: true \}\)[\s\S]*?canonicalizeTradeHistoryCreatedAt\(value\)/,
-  );
+  assert.match(walletFunctionsSource, /createdAt: z\.string\(\)\.datetime\(\{ offset: true \}\)/);
+  assert.doesNotMatch(walletFunctionsSource, /toISOString|canonicalizeTradeHistoryCreatedAt/);
   assert.match(listFunction, /\.from\("transactions"\)/);
   assert.match(listFunction, /\.eq\("user_id", context\.userId\)/);
   assert.match(listFunction, /\.order\("created_at", \{ ascending: false \}\)/);
