@@ -28,8 +28,14 @@ test("price history window selects the newest records when history exceeds the l
 
   assert.equal(selected.length, CHARACTER_PRICE_HISTORY_WINDOW);
   assert.equal(selected[0].id, "history-0005");
-  assert.equal(selected.at(-1)?.id, `history-${String(CHARACTER_PRICE_HISTORY_WINDOW + 4).padStart(4, "0")}`);
-  assert.equal(selected.some((row) => row.id === "history-0000"), false);
+  assert.equal(
+    selected.at(-1)?.id,
+    `history-${String(CHARACTER_PRICE_HISTORY_WINDOW + 4).padStart(4, "0")}`,
+  );
+  assert.equal(
+    selected.some((row) => row.id === "history-0000"),
+    false,
+  );
 });
 
 test("price history window returns chart data oldest-to-newest", () => {
@@ -72,7 +78,7 @@ test("price history window handles tied timestamps deterministically", () => {
 test("character API fetches newest price history first and returns a chronological chart window", () => {
   const source = readFileSync(join(process.cwd(), "src/lib/api/market.functions.ts"), "utf8");
   const historyQuery = source.match(
-    /const \{ data: history \} = await db[\s\S]*?\.returns<CharacterPriceHistoryPoint\[\]>\(\);/,
+    /const \{ data: historyRows, error: historyError \} = await db[\s\S]*?\.returns<CharacterPriceHistoryPoint\[\]>\(\);/,
   )?.[0];
 
   assert.ok(historyQuery, "character history query should exist");
@@ -81,5 +87,7 @@ test("character API fetches newest price history first and returns a chronologic
   assert.match(historyQuery, /\.order\("id", \{ ascending: false \}\)/);
   assert.match(historyQuery, /\.limit\(CHARACTER_PRICE_HISTORY_WINDOW\)/);
   assert.doesNotMatch(historyQuery, /\.limit\(200\)/);
-  assert.match(source, /selectLatestPriceHistoryWindowForChart\(history \?\? \[\]\)/);
+  assert.match(source, /if \(historyError\) throw historyError;/);
+  assert.match(source, /const history = priceHistoryRowsSchema\.parse\(historyRows \?\? \[\]\);/);
+  assert.match(source, /selectLatestPriceHistoryWindowForChart\(history\)/);
 });
