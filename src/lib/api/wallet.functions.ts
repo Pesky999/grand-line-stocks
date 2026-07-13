@@ -3,6 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
+import {
+  TRADE_HISTORY_DEFAULT_PAGE_SIZE,
+  TRADE_HISTORY_MAX_PAGE_SIZE,
+  buildTradeHistoryPage,
+  canonicalizeTradeHistoryCreatedAt,
+  getTradeHistoryCursorFilter,
+  type TradeHistoryItem,
+} from "@/lib/trade-history/pagination";
+
+export const TRADE_HISTORY_QUERY_KEY = ["trade-history"] as const;
 
 const walletLedgerEntrySchema = z
   .object({
@@ -26,7 +36,48 @@ const walletLedgerEntrySchema = z
 
 export type WalletLedgerEntry = z.infer<typeof walletLedgerEntrySchema>;
 
-type AuthenticatedTradeResult = Database["public"]["Functions"]["execute_trade_authenticated"]["Returns"];
+const tradeHistoryCursorSchema = z
+  .object({
+    createdAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((value) => canonicalizeTradeHistoryCreatedAt(value)),
+    id: z.string().uuid(),
+  })
+  .strict();
+
+const tradeHistoryInputSchema = z
+  .object({
+    pageSize: z
+      .number()
+      .int()
+      .min(1)
+      .max(TRADE_HISTORY_MAX_PAGE_SIZE)
+      .default(TRADE_HISTORY_DEFAULT_PAGE_SIZE),
+    cursor: tradeHistoryCursorSchema.nullable().optional(),
+  })
+  .strict();
+
+const tradeHistoryRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    side: z.enum(["buy", "sell"]),
+    shares: z.coerce.number(),
+    price: z.coerce.number(),
+    total: z.coerce.number(),
+    balance_after: z.coerce.number(),
+    created_at: z.string(),
+    characters: z
+      .object({
+        name: z.string(),
+        slug: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+type AuthenticatedTradeResult =
+  Database["public"]["Functions"]["execute_trade_authenticated"]["Returns"];
 type AuthClaimsWithEmail = { email?: unknown };
 type UserHoldingWithCharacter = {
   shares: number;
@@ -50,8 +101,16 @@ export const getMe = createServerFn({ method: "GET" })
     if (!context.userId) return null;
     const db = context.supabase;
     const [{ data: profile }, { data: wallet }, { data: holdings }] = await Promise.all([
-      db.from("profiles").select("id,username,display_name,created_at").eq("id", context.userId).maybeSingle(),
-      db.from("user_wallets").select("berries,updated_at").eq("user_id", context.userId).maybeSingle(),
+      db
+        .from("profiles")
+        .select("id,username,display_name,created_at")
+        .eq("id", context.userId)
+        .maybeSingle(),
+      db
+        .from("user_wallets")
+        .select("berries,updated_at")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
       db
         .from("user_holdings")
         .select("shares,avg_cost,character_id,characters(slug,name,current_price)")
@@ -75,9 +134,7 @@ export const getMe = createServerFn({ method: "GET" })
 
 export const updateProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ display_name: z.string().min(1).max(40) }).parse(d),
-  )
+  .inputValidator((d) => z.object({ display_name: z.string().min(1).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     const db = await admin();
     const { error } = await db
@@ -105,32 +162,68 @@ async function executeTrade(
 
 export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
+  .inputValidator((d) =>
+    z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares);
-    return { ok: true, price: Number(tx.price), cost: Number(tx.total), balance: Number(tx.balance_after) };
+    return {
+      ok: true,
+      price: Number(tx.price),
+      cost: Number(tx.total),
+      balance: Number(tx.balance_after),
+    };
   });
 
 export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d))
+  .inputValidator((d) =>
+    z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares);
-    return { ok: true, price: Number(tx.price), proceeds: Number(tx.total), balance: Number(tx.balance_after) };
+    return {
+      ok: true,
+      price: Number(tx.price),
+      proceeds: Number(tx.total),
+      balance: Number(tx.balance_after),
+    };
   });
 
 export const listMyTransactions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d) => tradeHistoryInputSchema.parse(d ?? {}))
+  .handler(async ({ data, context }) => {
     const db = context.supabase;
-    const { data, error } = await db
+    let query = db
       .from("transactions")
       .select("id,side,shares,price,total,balance_after,created_at,characters(name,slug)")
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .order("id", { ascending: false })
+      .limit(data.pageSize + 1);
+
+    if (data.cursor) {
+      query = query.or(getTradeHistoryCursorFilter(data.cursor));
+    }
+
+    const { data: rows, error } = await query;
     if (error) throw error;
-    return data ?? [];
+
+    const parsedRows = z.array(tradeHistoryRowSchema).parse(rows ?? []);
+    const items: TradeHistoryItem[] = parsedRows.map((row) => ({
+      id: row.id,
+      side: row.side,
+      shares: row.shares,
+      price: row.price,
+      total: row.total,
+      balance_after: row.balance_after,
+      created_at: row.created_at,
+      characterName: row.characters.name,
+      characterSlug: row.characters.slug,
+    }));
+
+    return buildTradeHistoryPage(items, data.pageSize);
   });
 
 export const listMyWalletLedgerEntries = createServerFn({ method: "GET" })
@@ -154,4 +247,3 @@ export const listMyWalletLedgerEntries = createServerFn({ method: "GET" })
 // achievements, legacy_records, transactions history) without leaving the public
 // leaderboards and reputation system inconsistent. Removed for MVP. If users
 // need a fresh start, they can create a new account.
-

@@ -11,8 +11,14 @@ const migrationPath = join(
 );
 const migration = readFileSync(migrationPath, "utf8");
 const migrationWithoutComments = migration.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-const walletFunctionsSource = readFileSync(join(process.cwd(), "src/lib/api/wallet.functions.ts"), "utf8");
-const portfolioSource = readFileSync(join(process.cwd(), "src/routes/_authenticated/portfolio.tsx"), "utf8");
+const walletFunctionsSource = readFileSync(
+  join(process.cwd(), "src/lib/api/wallet.functions.ts"),
+  "utf8",
+);
+const portfolioSource = readFileSync(
+  join(process.cwd(), "src/routes/_authenticated/portfolio.tsx"),
+  "utf8",
+);
 const typesSource = readFileSync(join(process.cwd(), "src/integrations/supabase/types.ts"), "utf8");
 
 function between(text: string, start: string, end: string): string {
@@ -47,7 +53,10 @@ test("wallet ledger Daily Crew migration exists and creates the ledger table", (
 
 test("wallet ledger table is owner-readable and not browser-writable", () => {
   assert.match(migration, /ALTER TABLE public\.wallet_ledger_entries ENABLE ROW LEVEL SECURITY/i);
-  assert.match(migration, /REVOKE ALL ON TABLE public\.wallet_ledger_entries FROM PUBLIC, anon, authenticated/i);
+  assert.match(
+    migration,
+    /REVOKE ALL ON TABLE public\.wallet_ledger_entries FROM PUBLIC, anon, authenticated/i,
+  );
   assert.match(migration, /GRANT SELECT ON TABLE public\.wallet_ledger_entries TO authenticated/i);
   assert.match(migration, /GRANT ALL ON TABLE public\.wallet_ledger_entries TO service_role/i);
   assert.match(
@@ -74,12 +83,24 @@ test("Daily Crew payout RPC inserts a positive reward ledger entry idempotently"
   );
   assert.match(migration, /SECURITY DEFINER/i);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/i);
-  assert.match(migration, /FROM public\.daily_crew_submissions[\s\S]*WHERE id = _submission_id[\s\S]*FOR UPDATE/i);
+  assert.match(
+    migration,
+    /FROM public\.daily_crew_submissions[\s\S]*WHERE id = _submission_id[\s\S]*FOR UPDATE/i,
+  );
   assert.match(migration, /v_submission\.user_id <> _user_id/i);
   assert.match(migration, /IF v_submission\.reward_paid THEN[\s\S]*'alreadyPaid', true/i);
-  assert.match(migration, /INSERT INTO public\.user_wallets \(user_id\)[\s\S]*ON CONFLICT \(user_id\) DO NOTHING/i);
-  assert.match(migration, /FROM public\.user_wallets[\s\S]*WHERE user_id = _user_id[\s\S]*FOR UPDATE/i);
-  assert.match(positiveRewardBlock, /UPDATE public\.user_wallets[\s\S]*berries = berries \+ v_submission\.reward_amount/i);
+  assert.match(
+    migration,
+    /INSERT INTO public\.user_wallets \(user_id\)[\s\S]*ON CONFLICT \(user_id\) DO NOTHING/i,
+  );
+  assert.match(
+    migration,
+    /FROM public\.user_wallets[\s\S]*WHERE user_id = _user_id[\s\S]*FOR UPDATE/i,
+  );
+  assert.match(
+    positiveRewardBlock,
+    /UPDATE public\.user_wallets[\s\S]*berries = berries \+ v_submission\.reward_amount/i,
+  );
   assert.match(positiveRewardBlock, /INSERT INTO public\.wallet_ledger_entries/i);
   assert.match(positiveRewardBlock, /'reward'/i);
   assert.match(positiveRewardBlock, /v_submission\.reward_amount/);
@@ -130,17 +151,26 @@ test("wallet API lists only the authenticated user's recent ledger entries", () 
   assert.match(listFunction, /\.order\("created_at", \{ ascending: false \}\)/);
   assert.match(listFunction, /\.limit\(25\)/);
   assert.match(listFunction, /z\.array\(walletLedgerEntrySchema\)\.parse\(data \?\? \[\]\)/);
-  assert.doesNotMatch(listFunction, /supabaseAdmin|admin\(\)|\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+  assert.doesNotMatch(
+    listFunction,
+    /supabaseAdmin|admin\(\)|\.insert\(|\.update\(|\.upsert\(|\.delete\(/,
+  );
 });
 
 test("portfolio displays Berry History separately from stock trades", () => {
   assert.match(portfolioSource, /listMyWalletLedgerEntries/);
   assert.match(portfolioSource, /queryKey: \["wallet-ledger-entries"\]/);
   assert.match(portfolioSource, /Berry History/);
+  assert.match(portfolioSource, /Trade History/);
+  assert.match(portfolioSource, /listMyTransactions/);
+  assert.match(portfolioSource, /No stock trades yet/);
   assert.match(portfolioSource, /No Berry reward activity yet/);
   assert.match(portfolioSource, /Stock trades still appear separately/);
   assert.match(portfolioSource, /formatBerries\(entry\.balance_after\)/);
-  assert.doesNotMatch(portfolioSource, /listMyTransactions/);
+  assert.ok(
+    portfolioSource.indexOf("Trade History") < portfolioSource.indexOf("Berry History"),
+    "stock Trade History should be a separate panel before Berry History",
+  );
 });
 
 test("generated Supabase types include wallet ledger entries", () => {
