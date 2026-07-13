@@ -13,6 +13,40 @@ async function admin() {
   return supabaseAdmin;
 }
 
+const numeric = z.coerce.number();
+
+const characterSelect =
+  "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,created_at,display_order";
+
+const characterRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  crew: z.string().nullable(),
+  role: z.string().nullable(),
+  bounty: numeric.nullable(),
+  image_url: z.string().nullable(),
+  description: z.string().nullable(),
+  current_price: numeric,
+  previous_price: numeric,
+  category: z.enum(["blue_chip", "growth", "speculative", "meme"]),
+  momentum: numeric,
+  created_at: z.string(),
+  updated_at: z.string(),
+  display_order: z.coerce.number().int().nullable(),
+});
+
+const priceHistoryRowsSchema = z.array(
+  z.object({
+    id: z.string().uuid(),
+    price: numeric,
+    note: z.string().nullable(),
+    created_at: z.string(),
+  }),
+);
+
+export type CharacterRow = z.infer<typeof characterRowSchema>;
+
 async function requireAdminRole(userId: string) {
   const db = await admin();
   const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -20,27 +54,18 @@ async function requireAdminRole(userId: string) {
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
-export type CharacterRow = {
-  id: string;
-  slug: string;
-  name: string;
-  crew: string | null;
-  role: string | null;
-  bounty: number | null;
-  image_url: string | null;
-  description: string | null;
-  current_price: number;
-  previous_price: number;
-  category: "blue_chip" | "growth" | "speculative" | "meme";
-  momentum: number;
-  created_at: string;
-  updated_at: string;
-  display_order: number | null;
-};
-
 type MarketPageRow = Pick<
   CharacterRow,
-  "id" | "slug" | "name" | "crew" | "bounty" | "current_price" | "previous_price" | "category" | "momentum" | "display_order"
+  | "id"
+  | "slug"
+  | "name"
+  | "crew"
+  | "bounty"
+  | "current_price"
+  | "previous_price"
+  | "category"
+  | "momentum"
+  | "display_order"
 >;
 
 export const listCharacters = createServerFn({ method: "GET" }).handler(async () => {
@@ -68,7 +93,9 @@ export const listMarketPage = createServerFn({ method: "GET" })
     const db = getPublicSupabaseClient();
     const { data: rows, error } = await db
       .from("characters")
-      .select("id,slug,name,crew,bounty,current_price,previous_price,category,momentum,display_order")
+      .select(
+        "id,slug,name,crew,bounty,current_price,previous_price,category,momentum,display_order",
+      )
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true })
       .returns<MarketPageRow[]>();
@@ -94,24 +121,29 @@ export const listMarketPage = createServerFn({ method: "GET" })
     };
   });
 
-
-
 export const getCharacter = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const db = await admin();
-    const { data: row, error } = await db.from("characters").select("*").eq("slug", data.slug).maybeSingle();
+    const db = getPublicSupabaseClient();
+    const { data: row, error } = await db
+      .from("characters")
+      .select(characterSelect)
+      .eq("slug", data.slug)
+      .maybeSingle();
     if (error) throw error;
     if (!row) throw new Error("Not found");
-    const { data: history } = await db
+    const character = characterRowSchema.parse(row);
+    const { data: historyRows, error: historyError } = await db
       .from("price_history")
       .select("id,price,note,created_at")
-      .eq("character_id", row.id)
+      .eq("character_id", character.id)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .limit(CHARACTER_PRICE_HISTORY_WINDOW)
       .returns<CharacterPriceHistoryPoint[]>();
-    return { character: row, history: selectLatestPriceHistoryWindowForChart(history ?? []) };
+    if (historyError) throw historyError;
+    const history = priceHistoryRowsSchema.parse(historyRows ?? []);
+    return { character, history: selectLatestPriceHistoryWindowForChart(history) };
   });
 
 export const listNews = createServerFn({ method: "GET" }).handler(async () => {
@@ -155,25 +187,21 @@ const nullableHttpUrl = z.preprocess(
     .nullable(),
 );
 
-const nullableSafeInteger = z.preprocess(
-  (value) => {
-    if (value == null) return null;
-    if (typeof value !== "string") return value;
-    const trimmed = value.trim();
-    if (trimmed === "") return null;
-    return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
-  }, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable()
-);
+const nullableSafeInteger = z.preprocess((value) => {
+  if (value == null) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
+}, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable());
 
-const nullableDisplayOrder = z.preprocess(
-  (value) => {
-    if (value == null) return null;
-    if (typeof value !== "string") return value;
-    const trimmed = value.trim();
-    if (trimmed === "") return null;
-    return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
-  }, z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
-);
+const nullableDisplayOrder = z.preprocess((value) => {
+  if (value == null) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : value;
+}, z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable());
 
 const slugSchema = z.preprocess(
   (value) => (typeof value === "string" ? value.trim().toLowerCase().replace(/-+/g, "-") : value),
@@ -191,9 +219,6 @@ const nameSchema = z.preprocess(
   (value) => (typeof value === "string" ? value.trim() : value),
   z.string().min(1).max(120),
 );
-
-const characterSelect =
-  "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,created_at,display_order";
 
 const adminCreateCharacterInput = z
   .object({
@@ -307,7 +332,11 @@ export const adminPostNews = createServerFn({ method: "POST" })
     const db = await admin();
     let character_id: string | null = null;
     if (data.characterSlug) {
-      const { data: c } = await db.from("characters").select("id").eq("slug", data.characterSlug).maybeSingle();
+      const { data: c } = await db
+        .from("characters")
+        .select("id")
+        .eq("slug", data.characterSlug)
+        .maybeSingle();
       character_id = c?.id ?? null;
     }
     const { error } = await db.from("news").insert({
@@ -323,6 +352,9 @@ export const adminPostNews = createServerFn({ method: "POST" })
 export const amIAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const { data } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
     return { isAdmin: !!data };
   });
