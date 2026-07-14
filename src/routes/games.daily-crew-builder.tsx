@@ -50,12 +50,13 @@ function DailyCrewBuilderPage() {
     staleTime: 5 * 60_000,
   });
 
-  const mission = missionQ.data as DailyCrewBuilderPublicMission | undefined;
+  const mission = missionQ.data as DailyCrewBuilderPublicMission | null | undefined;
   const roles = mission?.roles ?? [];
   const pool = mission?.pool ?? [];
   const jobCount = roles.length;
   const poolCount = pool.length;
-  const assignmentGridClass = jobCount <= 3 ? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5";
+  const assignmentGridClass =
+    jobCount <= 3 ? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5";
   const savedResultEnabled = Boolean(user && mission?.id);
   const savedResultKey = user?.id && mission?.id ? `${user.id}:${mission.id}` : null;
 
@@ -70,13 +71,24 @@ function DailyCrewBuilderPage() {
   });
 
   const assignedEntries = useMemo(
-    () => Object.entries(assignments).filter((entry): entry is [DailyCrewRole, string] => Boolean(entry[1])),
+    () =>
+      Object.entries(assignments).filter((entry): entry is [DailyCrewRole, string] =>
+        Boolean(entry[1]),
+      ),
     [assignments],
   );
-  const assignedIds = useMemo(() => new Set(assignedEntries.map(([, characterId]) => characterId)), [assignedEntries]);
+  const assignedIds = useMemo(
+    () => new Set(assignedEntries.map(([, characterId]) => characterId)),
+    [assignedEntries],
+  );
   const allRolesAssigned = roles.length > 0 && roles.every((role) => assignments[role.role]);
   const submissionLocked = Boolean(result?.submissionSaved);
-  const canSubmit = Boolean(user) && allRolesAssigned && !missionQ.isLoading && !savedResultQ.isLoading && !submissionLocked;
+  const canSubmit =
+    Boolean(user) &&
+    allRolesAssigned &&
+    !missionQ.isLoading &&
+    !savedResultQ.isLoading &&
+    !submissionLocked;
 
   useEffect(() => {
     if (!savedResultEnabled || !savedResultKey) {
@@ -174,7 +186,9 @@ function DailyCrewBuilderPage() {
   });
 
   const assignedRoleForCharacter = (characterId: string) => {
-    const match = assignedEntries.find(([, assignedCharacterId]) => assignedCharacterId === characterId);
+    const match = assignedEntries.find(
+      ([, assignedCharacterId]) => assignedCharacterId === characterId,
+    );
     return match ? mission?.roles.find((role) => role.role === match[0])?.name : null;
   };
 
@@ -191,7 +205,8 @@ function DailyCrewBuilderPage() {
       }
 
       const duplicateRole = Object.entries(current).find(
-        ([otherRole, assignedCharacterId]) => otherRole !== role && assignedCharacterId === characterId,
+        ([otherRole, assignedCharacterId]) =>
+          otherRole !== role && assignedCharacterId === characterId,
       );
 
       if (duplicateRole) {
@@ -231,7 +246,13 @@ function DailyCrewBuilderPage() {
         <section className="terminal-panel">
           <div className="terminal-header flex items-center justify-between">
             <span>Daily Crew Builder</span>
-            <span className="text-[10px] text-muted-foreground">{mission?.missionDate ?? "Loading"} UTC</span>
+            <span className="text-[10px] text-muted-foreground">
+              {mission?.missionDate
+                ? `${mission.missionDate} UTC`
+                : missionQ.isSuccess
+                  ? "No mission today"
+                  : "Loading"}
+            </span>
           </div>
           <div className="space-y-4 p-4 sm:p-6">
             <div>
@@ -245,8 +266,9 @@ function DailyCrewBuilderPage() {
                 </span>
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Build a {jobCount > 0 ? `${jobCount}-job` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew
-                is saved for this mission and pays its rank reward automatically.
+                {mission
+                  ? `Build a ${jobCount > 0 ? `${jobCount}-job` : "mission-ready"} crew from today's curated One Piece pool. Your first submitted crew is saved for this mission and pays its rank reward automatically.`
+                  : "A new Daily Crew Builder mission appears when today's UTC mission opens."}
               </p>
               <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
                 Daily Crew Builder is in beta. Missions, rewards, and scoring may be tuned.
@@ -265,6 +287,16 @@ function DailyCrewBuilderPage() {
               </div>
             )}
 
+            {missionQ.isSuccess && !mission && (
+              <div className="border border-border bg-card/60 p-4">
+                <h2 className="text-lg font-bold text-foreground">No mission available today</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  The next Daily Crew Builder mission has not opened yet. Check back after the next
+                  UTC reset.
+                </p>
+              </div>
+            )}
+
             {mission && (
               <div className="border border-border bg-card/60 p-4">
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -274,7 +306,10 @@ function DailyCrewBuilderPage() {
                 <p className="mt-2 text-sm text-muted-foreground">{mission.brief}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {mission.missionTags.map((tag) => (
-                    <span key={tag} className="border border-border bg-background px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <span
+                      key={tag}
+                      className="border border-border bg-background px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground"
+                    >
                       {tag}
                     </span>
                   ))}
@@ -286,7 +321,7 @@ function DailyCrewBuilderPage() {
               </div>
             )}
 
-            {!authLoading && !user && (
+            {mission && !authLoading && !user && (
               <div className="border border-border bg-card/60 p-3 text-xs text-muted-foreground">
                 You can inspect the mission and build a crew while signed out.{" "}
                 <a href="/auth" className="text-primary underline">
@@ -329,9 +364,15 @@ function DailyCrewBuilderPage() {
                       >
                         <option value="">Choose character</option>
                         {pool.map((character) => {
-                          const assignedToAnotherRole = assignedIds.has(character.id) && assignments[role.role] !== character.id;
+                          const assignedToAnotherRole =
+                            assignedIds.has(character.id) &&
+                            assignments[role.role] !== character.id;
                           return (
-                            <option key={character.id} value={character.id} disabled={assignedToAnotherRole}>
+                            <option
+                              key={character.id}
+                              value={character.id}
+                              disabled={assignedToAnotherRole}
+                            >
                               {character.name}
                             </option>
                           );
@@ -352,7 +393,10 @@ function DailyCrewBuilderPage() {
                 </div>
 
                 {submissionError && (
-                  <div role="alert" className="border border-bear/40 bg-bear/10 p-3 text-xs text-bear">
+                  <div
+                    role="alert"
+                    className="border border-bear/40 bg-bear/10 p-3 text-xs text-bear"
+                  >
                     {submissionError}
                   </div>
                 )}
@@ -392,7 +436,9 @@ function DailyCrewBuilderPage() {
                           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
                             #{character.displayOrder}
                           </div>
-                          <h3 className="mt-1 text-sm font-bold text-foreground">{character.name}</h3>
+                          <h3 className="mt-1 text-sm font-bold text-foreground">
+                            {character.name}
+                          </h3>
                         </div>
                         {assignedRole && (
                           <span className="border border-primary/40 px-2 py-1 text-[10px] uppercase tracking-widest text-primary">
@@ -402,7 +448,10 @@ function DailyCrewBuilderPage() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-1">
                         {character.visibleTags.map((tag) => (
-                          <span key={tag} className="border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground">
+                          <span
+                            key={tag}
+                            className="border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground"
+                          >
                             {tag}
                           </span>
                         ))}
@@ -426,7 +475,9 @@ function DailyCrewBuilderPage() {
                     <ResultStat label="Reward" value={`${result.rewardAmount} Berries`} />
                     <ResultStat label="Synergy" value={`+${result.synergyScore}`} />
                   </div>
-                  <div className={`border p-3 text-xs ${result.rewardPaid ? "border-primary/30 bg-primary/5 text-primary" : "border-bear/40 bg-bear/10 text-bear"}`}>
+                  <div
+                    className={`border p-3 text-xs ${result.rewardPaid ? "border-primary/30 bg-primary/5 text-primary" : "border-bear/40 bg-bear/10 text-bear"}`}
+                  >
                     {result.alreadySubmitted
                       ? "You already submitted for this mission, so your saved result is shown. "
                       : "Your first submitted crew is saved for this mission. "}
@@ -438,10 +489,17 @@ function DailyCrewBuilderPage() {
                     <div className="space-y-2">
                       <h3 className="text-sm font-bold text-foreground">Job breakdown</h3>
                       {result.roles.map((role) => (
-                        <div key={role.role} className="border border-border bg-card/60 p-3 text-xs">
+                        <div
+                          key={role.role}
+                          className="border border-border bg-card/60 p-3 text-xs"
+                        >
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-bold text-foreground">{role.roleName}: {role.characterName}</span>
-                            <span className="tabular text-primary">{role.score} / {role.maxScore}</span>
+                            <span className="font-bold text-foreground">
+                              {role.roleName}: {role.characterName}
+                            </span>
+                            <span className="tabular text-primary">
+                              {role.score} / {role.maxScore}
+                            </span>
                           </div>
                           <p className="mt-1 text-muted-foreground">{role.explanation}</p>
                         </div>
@@ -450,15 +508,22 @@ function DailyCrewBuilderPage() {
                     <div className="space-y-2">
                       <h3 className="text-sm font-bold text-foreground">Score summary</h3>
                       <div className="border border-border bg-card/60 p-3 text-xs text-muted-foreground">
-                        Base score: <span className="text-foreground tabular">{result.baseScore}</span>
+                        Base score:{" "}
+                        <span className="text-foreground tabular">{result.baseScore}</span>
                       </div>
                       <div className="border border-border bg-card/60 p-3 text-xs text-muted-foreground">
-                        Synergy score: <span className="text-foreground tabular">{result.synergyScore}</span>
+                        Synergy score:{" "}
+                        <span className="text-foreground tabular">{result.synergyScore}</span>
                       </div>
                       {result.synergy.length > 0 ? (
                         result.synergy.map((synergy) => (
-                          <div key={synergy.id} className="border border-primary/30 bg-primary/5 p-3 text-xs">
-                            <div className="font-bold text-primary">{synergy.label} +{synergy.points}</div>
+                          <div
+                            key={synergy.id}
+                            className="border border-primary/30 bg-primary/5 p-3 text-xs"
+                          >
+                            <div className="font-bold text-primary">
+                              {synergy.label} +{synergy.points}
+                            </div>
                             <p className="mt-1 text-muted-foreground">{synergy.explanation}</p>
                           </div>
                         ))
