@@ -438,10 +438,16 @@ export function updateJob(
 ): DailyCrewMissionEditor {
   const currentJob = editor.jobs.find((job) => job.displayOrder === displayOrder);
   if (!currentJob) return editor;
+  const roleChanged = patch.role != null && patch.role !== currentJob.role;
+  if (
+    roleChanged &&
+    editor.jobs.some((job) => job.displayOrder !== displayOrder && job.role === patch.role)
+  ) {
+    return editor;
+  }
   const nextJobs = editor.jobs.map((job) =>
     job.displayOrder === displayOrder ? { ...job, ...patch } : job,
   );
-  const roleChanged = patch.role != null && patch.role !== currentJob.role;
   const next = {
     ...editor,
     jobs: normalizeJobOrder(nextJobs),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -50,6 +50,17 @@ const dailyCrewAdminCharactersQO = {
 } as const;
 
 type StatusFilter = "all" | DailyCrewMissionStatus;
+type SaveMissionMutationVariables = {
+  editor: DailyCrewMissionEditor;
+  targetMissionId: string | null;
+  submittedSnapshot: string;
+  operationKey: number;
+};
+type StatusMissionMutationVariables = {
+  missionId: string;
+  action: DailyCrewStatusAction;
+  operationKey: number;
+};
 
 const STATUS_FILTERS: StatusFilter[] = ["all", "draft", "scheduled", "published", "archived"];
 const ROLE_OPTIONS: DailyCrewRole[] = ["captain", "fighter", "navigator", "strategist", "support"];
@@ -102,10 +113,15 @@ export function DailyCrewMissionStudio() {
   const [characterSearch, setCharacterSearch] = useState("");
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
   const [editor, setEditor] = useState<DailyCrewMissionEditor | null>(null);
+  const [baselineEditor, setBaselineEditor] = useState<DailyCrewMissionEditor | null>(null);
   const [baselineSnapshot, setBaselineSnapshot] = useState<string>("");
   const [slugTouched, setSlugTouched] = useState(false);
+  const selectedMissionIdRef = useRef<string | null>(selectedMissionId);
+  const editorSnapshotRef = useRef("");
+  const activeEditorOperationRef = useRef(0);
 
-  const dirty = editor ? editorSnapshot(editor) !== baselineSnapshot : false;
+  const currentEditorSnapshot = editor ? editorSnapshot(editor) : "";
+  const dirty = editor ? currentEditorSnapshot !== baselineSnapshot : false;
   const validation = useMemo(
     () => (editor ? validateDailyCrewMissionEditor(editor) : null),
     [editor],
@@ -140,6 +156,26 @@ export function DailyCrewMissionStudio() {
     return rows.slice(0, 80);
   }, [characterSearch, characters]);
 
+  useEffect(() => {
+    selectedMissionIdRef.current = selectedMissionId;
+  }, [selectedMissionId]);
+
+  useEffect(() => {
+    editorSnapshotRef.current = currentEditorSnapshot;
+  }, [currentEditorSnapshot]);
+
+  function advanceEditorOperation() {
+    activeEditorOperationRef.current += 1;
+    return activeEditorOperationRef.current;
+  }
+
+  function setEditorBaseline(nextEditor: DailyCrewMissionEditor, nextSlugTouched: boolean) {
+    setEditor(nextEditor);
+    setBaselineEditor(nextEditor);
+    setBaselineSnapshot(editorSnapshot(nextEditor));
+    setSlugTouched(nextSlugTouched);
+  }
+
   const detailQ = useQuery({
     queryKey: ["admin", "daily-crew", "mission", selectedMissionId],
     queryFn: () =>
@@ -165,24 +201,34 @@ export function DailyCrewMissionStudio() {
     if (detailQ.data.id !== selectedMissionId) return;
     if (dirty && editor?.missionId === selectedMissionId) return;
     const nextEditor = editorFromMissionDetail(detailQ.data);
-    setEditor(nextEditor);
-    setBaselineSnapshot(editorSnapshot(nextEditor));
-    setSlugTouched(true);
+    advanceEditorOperation();
+    setEditorBaseline(nextEditor, true);
   }, [detailQ.data, detailQ.isSuccess, dirty, editor?.missionId, selectedMissionId]);
 
   const saveMutation = useMutation({
-    mutationFn: async (nextEditor: DailyCrewMissionEditor) =>
-      saveAdminDailyCrewMissionDraft({ data: toMissionSavePayload(nextEditor) }),
-    onSuccess: async (result) => {
-      toast.success(editor?.missionId ? "Daily Crew draft saved." : "Daily Crew mission created.");
+    mutationFn: async (variables: SaveMissionMutationVariables) =>
+      saveAdminDailyCrewMissionDraft({ data: toMissionSavePayload(variables.editor) }),
+    onSuccess: async (result, variables) => {
+      toast.success(
+        variables.targetMissionId ? "Daily Crew draft saved." : "Daily Crew mission created.",
+      );
       await queryClient.invalidateQueries({ queryKey: ["admin", "daily-crew", "missions"] });
       const detail = await getAdminDailyCrewMission({ data: { missionId: result.missionId } });
       queryClient.setQueryData(["admin", "daily-crew", "mission", result.missionId], detail);
       const nextEditor = editorFromMissionDetail(detail);
+      const stillActiveExistingMission =
+        variables.targetMissionId != null &&
+        selectedMissionIdRef.current === variables.targetMissionId &&
+        activeEditorOperationRef.current === variables.operationKey;
+      const stillActiveNewMission =
+        variables.targetMissionId == null &&
+        selectedMissionIdRef.current == null &&
+        editorSnapshotRef.current === variables.submittedSnapshot &&
+        activeEditorOperationRef.current === variables.operationKey;
+      if (!stillActiveExistingMission && !stillActiveNewMission) return;
       setSelectedMissionId(result.missionId);
-      setEditor(nextEditor);
-      setBaselineSnapshot(editorSnapshot(nextEditor));
-      setSlugTouched(true);
+      advanceEditorOperation();
+      setEditorBaseline(nextEditor, true);
     },
     onError: (error) => {
       toast.error(messageFromError(error, "Could not save Daily Crew mission."));
@@ -190,75 +236,80 @@ export function DailyCrewMissionStudio() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: async (action: DailyCrewStatusAction) => {
-      if (!editor?.missionId) throw new Error("Save the mission before changing status.");
-      return setAdminDailyCrewMissionStatus({
+    mutationFn: async ({ missionId, action }: StatusMissionMutationVariables) =>
+      setAdminDailyCrewMissionStatus({
         data: {
-          missionId: editor.missionId,
+          missionId,
           targetStatus: action.targetStatus,
         },
-      });
-    },
-    onSuccess: async (result, action) => {
+      }),
+    onSuccess: async (result, variables) => {
       const labels: Record<DailyCrewStatusAction["action"], string> = {
         schedule: "Mission scheduled.",
         archive: "Mission archived.",
         return_to_draft: "Mission returned to draft.",
         restore_to_draft: "Mission restored to draft.",
       };
-      toast.success(labels[action.action]);
+      toast.success(labels[variables.action.action]);
       await queryClient.invalidateQueries({ queryKey: ["admin", "daily-crew", "missions"] });
       const detail = await getAdminDailyCrewMission({ data: { missionId: result.missionId } });
       queryClient.setQueryData(["admin", "daily-crew", "mission", result.missionId], detail);
       const nextEditor = editorFromMissionDetail(detail);
+      if (
+        selectedMissionIdRef.current !== variables.missionId ||
+        activeEditorOperationRef.current !== variables.operationKey
+      ) {
+        return;
+      }
       setSelectedMissionId(result.missionId);
-      setEditor(nextEditor);
-      setBaselineSnapshot(editorSnapshot(nextEditor));
-      setSlugTouched(true);
+      advanceEditorOperation();
+      setEditorBaseline(nextEditor, true);
     },
     onError: (error) => {
       toast.error(messageFromError(error, "Could not update mission status."));
     },
   });
+  const mutationBusy = saveMutation.isPending || statusMutation.isPending;
 
   function confirmDiscard(message = "Discard unsaved Daily Crew Mission Studio changes?") {
     return !dirty || window.confirm(message);
   }
 
   function selectMission(missionId: string) {
+    if (mutationBusy) return;
     if (missionId === selectedMissionId) return;
     if (!confirmDiscard("Discard unsaved changes and load another mission?")) return;
+    advanceEditorOperation();
     setSelectedMissionId(missionId);
     setEditor(null);
+    setBaselineEditor(null);
     setBaselineSnapshot("");
     setSlugTouched(true);
   }
 
   function newMission() {
+    if (mutationBusy) return;
     if (!confirmDiscard("Discard unsaved changes and start a new mission?")) return;
     const nextEditor = createNewDailyCrewMissionEditor(missions);
+    advanceEditorOperation();
     setSelectedMissionId(null);
-    setEditor(nextEditor);
-    setBaselineSnapshot(editorSnapshot(nextEditor));
-    setSlugTouched(false);
+    setEditorBaseline(nextEditor, false);
   }
 
   function resetUnsavedChanges() {
+    if (mutationBusy) return;
     if (!editor || !confirmDiscard("Reset this editor to the last loaded or saved state?")) return;
-    if (selectedMissionId && detailQ.data) {
-      const nextEditor = editorFromMissionDetail(detailQ.data);
-      setEditor(nextEditor);
-      setBaselineSnapshot(editorSnapshot(nextEditor));
-      setSlugTouched(true);
+    if (baselineEditor) {
+      advanceEditorOperation();
+      setEditor(baselineEditor);
+      setBaselineSnapshot(editorSnapshot(baselineEditor));
+      setSlugTouched(Boolean(baselineEditor.missionId));
       return;
     }
-    const nextEditor = createNewDailyCrewMissionEditor(missions);
-    setEditor(nextEditor);
-    setBaselineSnapshot(editorSnapshot(nextEditor));
-    setSlugTouched(false);
   }
 
   function updateEditor(updater: (current: DailyCrewMissionEditor) => DailyCrewMissionEditor) {
+    if (mutationBusy) return;
     setEditor((current) => (current ? updater(current) : current));
   }
 
@@ -282,7 +333,16 @@ export function DailyCrewMissionStudio() {
   }
 
   function changeJobRole(job: DailyCrewEditorJob, role: DailyCrewRole) {
+    if (mutationBusy) return;
     if (role === job.role) return;
+    if (
+      editor?.jobs.some(
+        (otherJob) => otherJob.displayOrder !== job.displayOrder && otherJob.role === role,
+      )
+    ) {
+      toast.error("That role lane is already assigned to another job.");
+      return;
+    }
     const hasPopulatedScoreData =
       editor?.scores.some(
         (score) =>
@@ -304,7 +364,7 @@ export function DailyCrewMissionStudio() {
   }
 
   function saveDraft() {
-    if (!editor || saveMutation.isPending) return;
+    if (!editor || mutationBusy) return;
     if (readOnly) {
       toast.error(readOnlyMessage ?? "This mission is read-only.");
       return;
@@ -313,20 +373,35 @@ export function DailyCrewMissionStudio() {
       toast.error("Mission is not ready to save. Review the readiness panel.");
       return;
     }
-    saveMutation.mutate(editor);
+    saveMutation.mutate({
+      editor,
+      targetMissionId: editor.missionId,
+      submittedSnapshot: currentEditorSnapshot,
+      operationKey: activeEditorOperationRef.current,
+    });
   }
 
   function runStatusAction(action: DailyCrewStatusAction) {
+    if (mutationBusy) return;
+    if (!editor?.missionId) {
+      toast.error("Save the mission before changing status.");
+      return;
+    }
     if (!action.allowed) {
       toast.error(action.reason ?? "This status action is not available.");
       return;
     }
     if (!window.confirm(action.confirmMessage)) return;
-    statusMutation.mutate(action);
+    statusMutation.mutate({
+      missionId: editor.missionId,
+      action,
+      operationKey: activeEditorOperationRef.current,
+    });
   }
 
   const actions = editor ? getDailyCrewStatusActions(editor, { dirty }) : [];
-  const canSave = Boolean(editor && !readOnly && validation?.ok && !saveMutation.isPending);
+  const editorDisabled = readOnly || mutationBusy;
+  const canSave = Boolean(editor && !readOnly && validation?.ok && !mutationBusy);
 
   return (
     <div className="space-y-4">
@@ -345,7 +420,8 @@ export function DailyCrewMissionStudio() {
             <button
               type="button"
               onClick={newMission}
-              className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90"
+              disabled={mutationBusy}
+              className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
             >
               New Mission
             </button>
@@ -353,7 +429,7 @@ export function DailyCrewMissionStudio() {
               <button
                 type="button"
                 onClick={resetUnsavedChanges}
-                disabled={!dirty}
+                disabled={!dirty || mutationBusy}
                 className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
               >
                 Reset Unsaved Changes
@@ -371,6 +447,7 @@ export function DailyCrewMissionStudio() {
           search={missionSearch}
           loading={false}
           error={null}
+          disabled={mutationBusy}
           onStatusFilter={setStatusFilter}
           onSearch={setMissionSearch}
           onSelect={selectMission}
@@ -401,8 +478,8 @@ export function DailyCrewMissionStudio() {
                 dirty={dirty}
                 canSave={canSave}
                 saving={saveMutation.isPending}
+                mutationBusy={mutationBusy}
                 statusActions={actions}
-                statusBusy={statusMutation.isPending}
                 onSave={saveDraft}
                 onStatusAction={runStatusAction}
               />
@@ -413,7 +490,7 @@ export function DailyCrewMissionStudio() {
               )}
               <MetadataEditor
                 editor={editor}
-                disabled={readOnly || saveMutation.isPending || statusMutation.isPending}
+                disabled={editorDisabled}
                 onUpdate={updateEditor}
                 onTitle={updateTitle}
                 onSlugTouched={() => setSlugTouched(true)}
@@ -424,27 +501,27 @@ export function DailyCrewMissionStudio() {
                 characterById={characterById}
                 selectedCharacterIds={selectedCharacterIds}
                 characterSearch={characterSearch}
-                disabled={readOnly || saveMutation.isPending || statusMutation.isPending}
+                disabled={editorDisabled}
                 onCharacterSearch={setCharacterSearch}
                 onAddCharacter={addCharacter}
                 onUpdate={updateEditor}
               />
               <JobsEditor
                 editor={editor}
-                disabled={readOnly || saveMutation.isPending || statusMutation.isPending}
+                disabled={editorDisabled}
                 onUpdate={updateEditor}
                 onRoleChange={changeJobRole}
               />
               <ScoreMatrixEditor
                 editor={editor}
                 characterById={characterById}
-                disabled={readOnly || saveMutation.isPending || statusMutation.isPending}
+                disabled={editorDisabled}
                 onUpdate={updateEditor}
               />
               <PerfectCrewEditor
                 editor={editor}
                 characterById={characterById}
-                disabled={readOnly || saveMutation.isPending || statusMutation.isPending}
+                disabled={editorDisabled}
                 onUpdate={updateEditor}
               />
             </>
@@ -462,6 +539,7 @@ function MissionList({
   search,
   loading,
   error,
+  disabled,
   onStatusFilter,
   onSearch,
   onSelect,
@@ -472,6 +550,7 @@ function MissionList({
   search: string;
   loading: boolean;
   error: Error | null;
+  disabled: boolean;
   onStatusFilter: (status: StatusFilter) => void;
   onSearch: (value: string) => void;
   onSelect: (missionId: string) => void;
@@ -485,8 +564,9 @@ function MissionList({
       <div className="space-y-3 border-b border-border p-3">
         <select
           value={statusFilter}
+          disabled={disabled}
           onChange={(event) => onStatusFilter(event.target.value as StatusFilter)}
-          className="w-full border border-border bg-input px-2 py-2 text-xs"
+          className="w-full border border-border bg-input px-2 py-2 text-xs disabled:opacity-50"
         >
           {STATUS_FILTERS.map((status) => (
             <option key={status} value={status}>
@@ -496,9 +576,10 @@ function MissionList({
         </select>
         <input
           value={search}
+          disabled={disabled}
           onChange={(event) => onSearch(event.target.value)}
           placeholder="Search title or slug"
-          className="w-full border border-border bg-input px-3 py-2 text-xs outline-none focus:border-primary"
+          className="w-full border border-border bg-input px-3 py-2 text-xs outline-none focus:border-primary disabled:opacity-50"
         />
       </div>
       {loading && <div className="p-4 text-xs text-muted-foreground">Loading missions...</div>}
@@ -514,9 +595,10 @@ function MissionList({
             key={mission.id}
             type="button"
             onClick={() => onSelect(mission.id)}
+            disabled={disabled}
             className={`block w-full border-b border-border p-3 text-left text-xs last:border-b-0 hover:bg-card/70 ${
               selectedMissionId === mission.id ? "bg-primary/10" : ""
-            }`}
+            } disabled:opacity-50`}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -595,8 +677,8 @@ function EditorActions({
   dirty,
   canSave,
   saving,
+  mutationBusy,
   statusActions,
-  statusBusy,
   onSave,
   onStatusAction,
 }: {
@@ -604,8 +686,8 @@ function EditorActions({
   dirty: boolean;
   canSave: boolean;
   saving: boolean;
+  mutationBusy: boolean;
   statusActions: DailyCrewStatusAction[];
-  statusBusy: boolean;
   onSave: () => void;
   onStatusAction: (action: DailyCrewStatusAction) => void;
 }) {
@@ -621,7 +703,7 @@ function EditorActions({
         <button
           type="button"
           onClick={onSave}
-          disabled={!canSave || saving}
+          disabled={!canSave || mutationBusy}
           className="bg-primary px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
         >
           {saving ? "Saving..." : "Save Complete Draft"}
@@ -631,7 +713,7 @@ function EditorActions({
             key={action.action}
             type="button"
             onClick={() => onStatusAction(action)}
-            disabled={!action.allowed || statusBusy}
+            disabled={!action.allowed || mutationBusy}
             title={action.reason ?? undefined}
             className="border border-border px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
           >
@@ -795,9 +877,10 @@ function PoolEditor({
         <div className="space-y-2">
           <input
             value={characterSearch}
+            disabled={disabled}
             onChange={(event) => onCharacterSearch(event.target.value)}
             placeholder="Search name, slug, crew"
-            className="w-full border border-border bg-input px-3 py-2 text-xs outline-none focus:border-primary"
+            className="w-full border border-border bg-input px-3 py-2 text-xs outline-none focus:border-primary disabled:opacity-50"
           />
           <div className="max-h-[360px] overflow-y-auto border border-border">
             {characters.map((character) => {
@@ -972,102 +1055,113 @@ function JobsEditor({
             </tr>
           </thead>
           <tbody>
-            {editor.jobs.map((job) => (
-              <tr key={job.displayOrder} className="border-b border-border/40">
-                <td className="px-2 py-2 tabular">{job.displayOrder}</td>
-                <td className="px-2 py-2">
-                  <select
-                    value={job.role}
-                    disabled={disabled}
-                    onChange={(event) => onRoleChange(job, event.target.value as DailyCrewRole)}
-                    className="border border-border bg-input px-2 py-1 disabled:opacity-50"
-                  >
-                    {ROLE_OPTIONS.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    value={job.subtypeKey}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onUpdate((current) =>
-                        updateJob(current, job.displayOrder, {
-                          subtypeKey: event.target.value.trim().toLowerCase(),
-                        }),
-                      )
-                    }
-                    className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    value={job.subtypeLabel ?? ""}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onUpdate((current) =>
-                        updateJob(current, job.displayOrder, {
-                          subtypeLabel: event.target.value || null,
-                        }),
-                      )
-                    }
-                    className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    value={job.displayLabel}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onUpdate((current) =>
-                        updateJob(current, job.displayOrder, {
-                          displayLabel: event.target.value,
-                        }),
-                      )
-                    }
-                    className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={job.maxPoints}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onUpdate((current) =>
-                        updateJob(current, job.displayOrder, {
-                          maxPoints: Number(event.target.value),
-                        }),
-                      )
-                    }
-                    className="w-20 border border-border bg-input px-2 py-1 tabular disabled:opacity-50"
-                  />
-                </td>
-                <td className="px-2 py-2 text-right">
-                  <button
-                    type="button"
-                    disabled={disabled || job.displayOrder === 1}
-                    onClick={() => onUpdate((current) => moveJob(current, job.displayOrder, -1))}
-                    className="mr-1 text-muted-foreground hover:text-primary disabled:opacity-40"
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled || job.displayOrder === editor.jobs.length}
-                    onClick={() => onUpdate((current) => moveJob(current, job.displayOrder, 1))}
-                    className="text-muted-foreground hover:text-primary disabled:opacity-40"
-                  >
-                    Down
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {editor.jobs.map((job) => {
+              const occupiedRoles = new Set(
+                editor.jobs
+                  .filter((otherJob) => otherJob.displayOrder !== job.displayOrder)
+                  .map((otherJob) => otherJob.role),
+              );
+              return (
+                <tr key={job.displayOrder} className="border-b border-border/40">
+                  <td className="px-2 py-2 tabular">{job.displayOrder}</td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={job.role}
+                      disabled={disabled}
+                      onChange={(event) => onRoleChange(job, event.target.value as DailyCrewRole)}
+                      className="border border-border bg-input px-2 py-1 disabled:opacity-50"
+                    >
+                      {ROLE_OPTIONS.map((role) => (
+                        <option
+                          key={role}
+                          value={role}
+                          disabled={role !== job.role && occupiedRoles.has(role)}
+                        >
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      value={job.subtypeKey}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onUpdate((current) =>
+                          updateJob(current, job.displayOrder, {
+                            subtypeKey: event.target.value.trim().toLowerCase(),
+                          }),
+                        )
+                      }
+                      className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      value={job.subtypeLabel ?? ""}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onUpdate((current) =>
+                          updateJob(current, job.displayOrder, {
+                            subtypeLabel: event.target.value || null,
+                          }),
+                        )
+                      }
+                      className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      value={job.displayLabel}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onUpdate((current) =>
+                          updateJob(current, job.displayOrder, {
+                            displayLabel: event.target.value,
+                          }),
+                        )
+                      }
+                      className="w-full border border-border bg-input px-2 py-1 disabled:opacity-50"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={job.maxPoints}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onUpdate((current) =>
+                          updateJob(current, job.displayOrder, {
+                            maxPoints: Number(event.target.value),
+                          }),
+                        )
+                      }
+                      className="w-20 border border-border bg-input px-2 py-1 tabular disabled:opacity-50"
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      disabled={disabled || job.displayOrder === 1}
+                      onClick={() => onUpdate((current) => moveJob(current, job.displayOrder, -1))}
+                      className="mr-1 text-muted-foreground hover:text-primary disabled:opacity-40"
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      disabled={disabled || job.displayOrder === editor.jobs.length}
+                      onClick={() => onUpdate((current) => moveJob(current, job.displayOrder, 1))}
+                      className="text-muted-foreground hover:text-primary disabled:opacity-40"
+                    >
+                      Down
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

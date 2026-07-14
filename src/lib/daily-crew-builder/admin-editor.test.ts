@@ -361,6 +361,43 @@ test("job role changes do not retain stale role-key entries", () => {
     changed.scores.some((score) => score.role === "fighter"),
     true,
   );
+  assert.equal(
+    changed.scores.find(
+      (score) => score.characterId === characterIds[0] && score.role === "captain",
+    )?.score,
+    30,
+  );
+  assert.equal(
+    changed.perfectSolution.find((solution) => solution.role === "captain")?.characterId,
+    characterIds[0],
+  );
+  assert.equal(
+    changed.perfectSolution.find((solution) => solution.role === "support")?.characterId,
+    characterIds[2],
+  );
+});
+
+test("job role changes reject duplicate role lanes without clearing data", () => {
+  const editor = completeValidEditor();
+  const before = editorSnapshot(editor);
+  const changed = updateJob(editor, 2, { role: "captain", subtypeKey: "duplicate_captain" });
+
+  assert.equal(changed, editor);
+  assert.equal(editorSnapshot(changed), before);
+  assert.deepEqual(
+    changed.jobs.map((job) => job.role),
+    ["captain", "navigator", "support"],
+  );
+  assert.equal(
+    changed.scores.find(
+      (score) => score.characterId === characterIds[1] && score.role === "navigator",
+    )?.score,
+    30,
+  );
+  assert.equal(
+    changed.perfectSolution.find((solution) => solution.role === "navigator")?.characterId,
+    characterIds[1],
+  );
 });
 
 test("validation accepts a complete valid 9/3 mission", () => {

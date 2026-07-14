@@ -76,11 +76,106 @@ test("Daily Crew Mission Studio labels hidden authoring data and read-only state
 });
 
 test("Daily Crew Mission Studio has dirty-state protection hooks", () => {
-  assert.match(componentSource, /editorSnapshot\(editor\) !== baselineSnapshot/);
+  assert.match(
+    componentSource,
+    /const currentEditorSnapshot = editor \? editorSnapshot\(editor\) : ""/,
+  );
+  assert.match(
+    componentSource,
+    /const dirty = editor \? currentEditorSnapshot !== baselineSnapshot : false/,
+  );
   assert.match(componentSource, /beforeunload/);
   assert.match(componentSource, /Discard unsaved changes and load another mission/);
   assert.match(componentSource, /Discard unsaved changes and start a new mission/);
   assert.match(componentSource, /Reset Unsaved Changes/);
+});
+
+test("Daily Crew Mission Studio disables editor actions while mutations are busy", () => {
+  assert.match(
+    componentSource,
+    /const mutationBusy = saveMutation\.isPending \|\| statusMutation\.isPending/,
+  );
+  assert.match(
+    componentSource,
+    /function selectMission\(missionId: string\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(componentSource, /function newMission\(\) \{\s+if \(mutationBusy\) return;/);
+  assert.match(
+    componentSource,
+    /function resetUnsavedChanges\(\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    componentSource,
+    /function updateEditor\([\s\S]*?\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    componentSource,
+    /function changeJobRole\(job: DailyCrewEditorJob, role: DailyCrewRole\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    componentSource,
+    /function saveDraft\(\) \{\s+if \(!editor \|\| mutationBusy\) return;/,
+  );
+  assert.match(
+    componentSource,
+    /function runStatusAction\(action: DailyCrewStatusAction\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(componentSource, /disabled=\{mutationBusy\}/);
+  assert.match(componentSource, /disabled=\{!dirty \|\| mutationBusy\}/);
+  assert.match(componentSource, /disabled=\{editorDisabled\}/);
+  assert.match(componentSource, /disabled=\{!canSave \|\| mutationBusy\}/);
+  assert.match(componentSource, /disabled=\{!action\.allowed \|\| mutationBusy\}/);
+});
+
+test("Daily Crew Mission Studio ignores stale save and status mutation results", () => {
+  assert.match(
+    componentSource,
+    /type SaveMissionMutationVariables = \{[\s\S]*targetMissionId: string \| null;[\s\S]*submittedSnapshot: string;[\s\S]*operationKey: number;[\s\S]*\};/,
+  );
+  assert.match(
+    componentSource,
+    /type StatusMissionMutationVariables = \{[\s\S]*missionId: string;[\s\S]*action: DailyCrewStatusAction;[\s\S]*operationKey: number;[\s\S]*\};/,
+  );
+  assert.match(componentSource, /selectedMissionIdRef\.current === variables\.targetMissionId/);
+  assert.match(componentSource, /editorSnapshotRef\.current === variables\.submittedSnapshot/);
+  assert.match(componentSource, /activeEditorOperationRef\.current === variables\.operationKey/);
+  assert.match(componentSource, /selectedMissionIdRef\.current !== variables\.missionId/);
+  assert.match(
+    componentSource,
+    /mutationFn: async \(\{ missionId, action \}: StatusMissionMutationVariables\)/,
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /mutationFn: async \(action: DailyCrewStatusAction\)[\s\S]*editor\?\.missionId/,
+  );
+});
+
+test("Daily Crew Mission Studio restores the typed baseline on reset", () => {
+  const resetUnsavedChanges = componentSource.match(
+    /function resetUnsavedChanges\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(resetUnsavedChanges, "resetUnsavedChanges should be present");
+  assert.match(componentSource, /const \[baselineEditor, setBaselineEditor\]/);
+  assert.match(componentSource, /function setEditorBaseline\(nextEditor: DailyCrewMissionEditor/);
+  assert.match(resetUnsavedChanges, /if \(baselineEditor\) \{/);
+  assert.match(resetUnsavedChanges, /setEditor\(baselineEditor\)/);
+  assert.match(resetUnsavedChanges, /setBaselineSnapshot\(editorSnapshot\(baselineEditor\)\)/);
+  assert.doesNotMatch(resetUnsavedChanges, /createNewDailyCrewMissionEditor/);
+  assert.doesNotMatch(resetUnsavedChanges, /editorFromMissionDetail/);
+});
+
+test("Daily Crew Mission Studio prevents duplicate role lanes before clearing role data", () => {
+  assert.match(editorSource, /roleChanged &&[\s\S]*job\.role === patch\.role[\s\S]*return editor;/);
+  assert.match(
+    componentSource,
+    /editor\?\.jobs\.some\(\s*\(otherJob\) =>[\s\S]*otherJob\.role === role[\s\S]*That role lane is already assigned to another job\./,
+  );
+  assert.match(componentSource, /const occupiedRoles = new Set\(/);
+  assert.match(componentSource, /disabled=\{role !== job\.role && occupiedRoles\.has\(role\)\}/);
+  assert.match(
+    componentSource,
+    /Changing this job role clears score explanations and perfect-crew selections for the old role/,
+  );
 });
 
 test("admin console links to Daily Crew Mission Studio", () => {
