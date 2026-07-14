@@ -34,6 +34,10 @@ const missionLifecycleMigrationPath = join(
   migrationsDir,
   "20260713120000_daily_crew_mission_lifecycle.sql",
 );
+const authoringBackendMigrationPath = join(
+  migrationsDir,
+  "20260713130000_daily_crew_authoring_backend.sql",
+);
 const removedDuplicateWalletMigrationPath = join(
   migrationsDir,
   "20260709010521_db0aade3-3c7b-4b2e-b4bc-ff7e1eb423cb.sql",
@@ -45,6 +49,7 @@ const roleLaneCorrectionSql = readFileSync(roleLaneCorrectionMigrationPath, "utf
 const payoutSql = readFileSync(payoutMigrationPath, "utf8");
 const simplifiedJobsSql = readFileSync(simplifiedJobsMigrationPath, "utf8");
 const missionLifecycleSql = readFileSync(missionLifecycleMigrationPath, "utf8");
+const authoringBackendSql = readFileSync(authoringBackendMigrationPath, "utf8");
 const sql = `${baseSql}\n${pool15Sql}`;
 
 function stripSqlComments(source: string): string {
@@ -81,6 +86,10 @@ function expectMissionLifecycleSql(pattern: RegExp, message: string): void {
   assert.match(missionLifecycleSql, pattern, message);
 }
 
+function expectAuthoringBackendSql(pattern: RegExp, message: string): void {
+  assert.match(authoringBackendSql, pattern, message);
+}
+
 function rejectSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(sqlWithoutComments, pattern, message);
 }
@@ -107,6 +116,10 @@ function rejectSimplifiedJobsSql(pattern: RegExp, message: string): void {
 
 function rejectMissionLifecycleSql(pattern: RegExp, message: string): void {
   assert.doesNotMatch(stripSqlComments(missionLifecycleSql), pattern, message);
+}
+
+function rejectAuthoringBackendSql(pattern: RegExp, message: string): void {
+  assert.doesNotMatch(stripSqlComments(authoringBackendSql), pattern, message);
 }
 
 const tables = [
@@ -1039,5 +1052,268 @@ test("the previously removed duplicate wallet migration is not reintroduced", ()
     existsSync(removedDuplicateWalletMigrationPath),
     false,
     "duplicate Lovable-style wallet migration should remain absent",
+  );
+});
+
+test("Daily Crew Builder authoring backend adds service-role-only atomic RPCs", () => {
+  expectAuthoringBackendSql(
+    /CREATE OR REPLACE FUNCTION public\.admin_save_daily_crew_builder_mission\(\s*_mission_id uuid,\s*_mission_date date,\s*_slug text,\s*_title text,\s*_brief text,\s*_mission_tags text\[\],\s*_reveal_policy public\.daily_crew_reveal_policy,\s*_reveal_at timestamptz,\s*_pool jsonb,\s*_jobs jsonb,\s*_scores jsonb,\s*_perfect_solution jsonb\s*\)\s*RETURNS jsonb/i,
+    "authoring RPC has the exact approved signature",
+  );
+  expectAuthoringBackendSql(
+    /CREATE OR REPLACE FUNCTION public\.admin_set_daily_crew_builder_mission_status\(\s*_mission_id uuid,\s*_target_status public\.daily_crew_mission_status\s*\)\s*RETURNS jsonb/i,
+    "status RPC has the exact approved signature",
+  );
+  for (const functionName of [
+    "admin_save_daily_crew_builder_mission",
+    "admin_set_daily_crew_builder_mission_status",
+  ]) {
+    expectAuthoringBackendSql(
+      new RegExp(
+        `CREATE OR REPLACE FUNCTION public\\.${functionName}[\\s\\S]*LANGUAGE plpgsql[\\s\\S]*SECURITY DEFINER[\\s\\S]*SET search_path = pg_catalog, public, pg_temp`,
+        "i",
+      ),
+      `${functionName} is a fixed-search-path SECURITY DEFINER function`,
+    );
+    expectAuthoringBackendSql(
+      new RegExp(
+        `REVOKE EXECUTE ON FUNCTION public\\.${functionName}[\\s\\S]*FROM PUBLIC, anon, authenticated`,
+        "i",
+      ),
+      `${functionName} is revoked from browser roles`,
+    );
+    expectAuthoringBackendSql(
+      new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${functionName}[\\s\\S]*TO service_role`, "i"),
+      `${functionName} is executable only by service_role`,
+    );
+  }
+  expectAuthoringBackendSql(/BEGIN;[\s\S]*COMMIT;/i, "migration is transactional");
+  expectAuthoringBackendSql(
+    /DELETE FROM public\.daily_crew_perfect_solution[\s\S]*DELETE FROM public\.daily_crew_character_role_scores[\s\S]*DELETE FROM public\.daily_crew_role_requirements[\s\S]*DELETE FROM public\.daily_crew_mission_pool[\s\S]*UPDATE public\.daily_crew_missions[\s\S]*INSERT INTO public\.daily_crew_mission_pool[\s\S]*INSERT INTO public\.daily_crew_role_requirements[\s\S]*INSERT INTO public\.daily_crew_character_role_scores[\s\S]*INSERT INTO public\.daily_crew_perfect_solution/i,
+    "draft updates clear children, update metadata, and insert replacement configuration in dependency-safe order",
+  );
+  expectAuthoringBackendSql(
+    /v_ready := public\.validate_daily_crew_mission\(v_mission_id\);[\s\S]*IF NOT v_ready THEN[\s\S]*RAISE EXCEPTION/i,
+    "authoring save calls final mission validation and rolls back when not ready",
+  );
+  expectAuthoringBackendSql(/NOTIFY pgrst, 'reload schema'/i, "PostgREST schema is reloaded");
+});
+
+test("Daily Crew Builder authoring save validates drafts and supported formats", () => {
+  expectAuthoringBackendSql(
+    /_mission_date IS NULL OR _mission_date < v_today/i,
+    "authoring rejects past mission dates",
+  );
+  expectAuthoringBackendSql(
+    /_slug !~ '\^\[a-z0-9\]\(\?:\[a-z0-9-\]\{0,78\}\[a-z0-9\]\)\?\$'/i,
+    "authoring validates the existing slug format",
+  );
+  expectAuthoringBackendSql(
+    /char_length\(v_title\) NOT BETWEEN 1 AND 120/i,
+    "title is trimmed and bounded",
+  );
+  expectAuthoringBackendSql(
+    /char_length\(v_brief\) NOT BETWEEN 1 AND 2000/i,
+    "brief is trimmed and bounded",
+  );
+  expectAuthoringBackendSql(
+    /array_length\(_mission_tags, 1\), 0\) > 8/i,
+    "mission tags are bounded",
+  );
+  expectAuthoringBackendSql(
+    /\(v_pool_count = 9 AND v_job_count = 3\)[\s\S]*OR \(v_pool_count = 15 AND v_job_count = 5\)/i,
+    "authoring supports exactly 9/3 and 15/5 mission formats",
+  );
+  expectAuthoringBackendSql(
+    /v_score_count <> v_pool_count \* v_job_count/i,
+    "score matrix must cover every pool character and job",
+  );
+  expectAuthoringBackendSql(
+    /v_solution_count <> v_job_count/i,
+    "perfect solution must include one row per configured job",
+  );
+  expectAuthoringBackendSql(
+    /INSERT INTO public\.daily_crew_missions[\s\S]*'draft'::public\.daily_crew_mission_status/i,
+    "created authoring missions always start as draft",
+  );
+  expectAuthoringBackendSql(
+    /IF v_existing_mission\.status <> 'draft'::public\.daily_crew_mission_status THEN[\s\S]*Only draft Daily Crew Builder missions can be edited/i,
+    "only drafts can be edited",
+  );
+  expectAuthoringBackendSql(
+    /FROM public\.daily_crew_submissions[\s\S]*WHERE mission_id = _mission_id[\s\S]*Daily Crew Builder missions with submissions cannot be edited/i,
+    "missions with submissions cannot be edited",
+  );
+  expectAuthoringBackendSql(
+    /USING ERRCODE = '23505'/i,
+    "duplicate date and slug conflicts remain explicit",
+  );
+});
+
+test("Daily Crew Builder authoring save validates pool, jobs, scores, and perfect solution", () => {
+  expectAuthoringBackendSql(
+    /count\(DISTINCT character_id\) AS character_count/i,
+    "pool rejects duplicate characters",
+  );
+  expectAuthoringBackendSql(
+    /count\(DISTINCT display_order\) AS display_order_count/i,
+    "pool and jobs reject duplicate display orders",
+  );
+  expectAuthoringBackendSql(/straw_hat_count > 5/i, "pool keeps the five Straw Hat cap");
+  expectAuthoringBackendSql(
+    /LEFT JOIN public\.characters AS characters/i,
+    "pool character IDs must exist",
+  );
+  expectAuthoringBackendSql(
+    /COALESCE\(array_length\(visible_tags, 1\), 0\) > 5/i,
+    "visible tags are bounded",
+  );
+  expectAuthoringBackendSql(
+    /value <> btrim\(value\)[\s\S]*char_length\(value\) > 40/i,
+    "tags must be trimmed and bounded",
+  );
+  expectAuthoringBackendSql(
+    /subtype_key !~ '\^\[a-z0-9\]\(\?:\[a-z0-9_-\]\{0,62\}\[a-z0-9\]\)\?\$'/i,
+    "job subtype keys use the existing format",
+  );
+  expectAuthoringBackendSql(
+    /char_length\(display_label\) NOT BETWEEN 1 AND 120/i,
+    "job labels are trimmed and bounded",
+  );
+  expectAuthoringBackendSql(
+    /max_points < 1[\s\S]*max_points > 30/i,
+    "job max points are from 1 through 30",
+  );
+  expectAuthoringBackendSql(/max_points_total <> 90/i, "job max points total exactly 90");
+  expectAuthoringBackendSql(
+    /count\(DISTINCT \(character_id, role\)\) AS pair_count/i,
+    "score matrix rejects duplicate character-role pairs",
+  );
+  expectAuthoringBackendSql(
+    /scores\.score < 0[\s\S]*scores\.score > jobs\.max_points/i,
+    "scores cannot exceed the configured job max",
+  );
+  expectAuthoringBackendSql(
+    /LEFT JOIN pool_input AS pool[\s\S]*LEFT JOIN job_input AS jobs/i,
+    "scores cannot use characters or roles outside the mission",
+  );
+  expectAuthoringBackendSql(
+    /count\(DISTINCT role\) AS role_count[\s\S]*count\(DISTINCT character_id\) AS character_count/i,
+    "perfect solution rejects duplicate roles and characters",
+  );
+  expectAuthoringBackendSql(
+    /scores\.score <> jobs\.max_points/i,
+    "perfect solution characters must be max-score fits",
+  );
+  expectAuthoringBackendSql(
+    /IF v_invalid_count > 3 THEN[\s\S]*perfect solution cannot include more than 3 Straw Hats/i,
+    "perfect solution keeps the three Straw Hat cap",
+  );
+});
+
+test("Daily Crew Builder authoring status RPC enforces allowed scheduling transitions", () => {
+  expectAuthoringBackendSql(
+    /_target_status = 'published'::public\.daily_crew_mission_status[\s\S]*cannot be manually published/i,
+    "status RPC cannot set published",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'draft'::public\.daily_crew_mission_status[\s\S]*_target_status = 'scheduled'::public\.daily_crew_mission_status/i,
+    "draft can become scheduled",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.mission_date < v_today[\s\S]*past missions cannot be scheduled/i,
+    "past draft missions cannot be scheduled",
+  );
+  expectAuthoringBackendSql(
+    /IF NOT v_ready THEN[\s\S]*mission is not ready to schedule/i,
+    "draft to scheduled requires validation readiness",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'scheduled'::public\.daily_crew_mission_status[\s\S]*_target_status = 'draft'::public\.daily_crew_mission_status[\s\S]*v_mission\.mission_date <= v_today OR v_submission_count > 0/i,
+    "scheduled can return to draft only before its UTC date and before submissions",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'draft'::public\.daily_crew_mission_status[\s\S]*_target_status = 'archived'::public\.daily_crew_mission_status/i,
+    "draft can archive",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'scheduled'::public\.daily_crew_mission_status[\s\S]*_target_status = 'archived'::public\.daily_crew_mission_status[\s\S]*v_mission\.mission_date = v_today/i,
+    "active scheduled mission cannot archive",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'archived'::public\.daily_crew_mission_status[\s\S]*_target_status = 'draft'::public\.daily_crew_mission_status[\s\S]*v_mission\.mission_date < v_today OR v_submission_count > 0/i,
+    "archived can return to draft only when current or future and without submissions",
+  );
+  expectAuthoringBackendSql(
+    /v_mission\.status = 'published'::public\.daily_crew_mission_status[\s\S]*_target_status = 'archived'::public\.daily_crew_mission_status[\s\S]*v_mission\.mission_date >= v_today/i,
+    "only past published missions can archive",
+  );
+  expectAuthoringBackendSql(
+    /RETURN jsonb_build_object\([\s\S]*'poolCount', v_pool_count,[\s\S]*'jobCount', v_job_count,[\s\S]*'scoreCount', v_score_count,[\s\S]*'submissionCount', v_submission_count/i,
+    "status RPC returns the same operational count fields as the authoring RPC",
+  );
+});
+
+test("Daily Crew Builder scheduled and published missions both require readiness", () => {
+  expectAuthoringBackendSql(
+    /CREATE OR REPLACE FUNCTION public\.enforce_daily_crew_publish_ready\(\)[\s\S]*NEW\.status IN \(\s*'scheduled'::public\.daily_crew_mission_status,\s*'published'::public\.daily_crew_mission_status\s*\)[\s\S]*NOT public\.validate_daily_crew_mission\(NEW\.id\)/i,
+    "readiness trigger now guards scheduled and published missions",
+  );
+  expectAuthoringBackendSql(
+    /REVOKE EXECUTE ON FUNCTION public\.enforce_daily_crew_publish_ready\(\)[\s\S]*FROM PUBLIC, anon, authenticated/i,
+    "readiness trigger function remains revoked from browser roles",
+  );
+  expectAuthoringBackendSql(
+    /GRANT EXECUTE ON FUNCTION public\.enforce_daily_crew_publish_ready\(\)[\s\S]*TO service_role/i,
+    "readiness trigger function remains service-role executable",
+  );
+});
+
+test("Daily Crew Builder authoring backend does not broaden gameplay or financial scope", () => {
+  rejectAuthoringBackendSql(/\bcron\b/i, "authoring backend does not add cron");
+  rejectAuthoringBackendSql(
+    /CREATE\s+TRIGGER/i,
+    "authoring backend preserves the existing trigger",
+  );
+  rejectAuthoringBackendSql(/CREATE\s+POLICY/i, "authoring backend does not change browser RLS");
+  rejectAuthoringBackendSql(
+    /record_daily_crew_builder_submission/i,
+    "authoring backend does not change submission RPC",
+  );
+  rejectAuthoringBackendSql(
+    /award_daily_crew_builder_reward/i,
+    "authoring backend does not change payout RPC",
+  );
+  rejectAuthoringBackendSql(
+    /UPDATE\s+public\.user_wallets\b/i,
+    "authoring backend does not mutate wallets",
+  );
+  rejectAuthoringBackendSql(
+    /\bwallet_ledger_entries\b/i,
+    "authoring backend does not write ledger entries",
+  );
+  rejectAuthoringBackendSql(
+    /\btransactions\b/i,
+    "authoring backend does not write stock transactions",
+  );
+  rejectAuthoringBackendSql(
+    /UPDATE\s+public\.characters\b/i,
+    "authoring backend does not change character prices",
+  );
+  rejectAuthoringBackendSql(
+    /grand_line_guess/i,
+    "authoring backend does not touch Grand Line Guess",
+  );
+  rejectAuthoringBackendSql(
+    /INSERT\s+INTO\s+public\.daily_crew_submissions\b/i,
+    "authoring backend does not create player submissions",
+  );
+  rejectAuthoringBackendSql(
+    /UPDATE\s+public\.daily_crew_submissions\b/i,
+    "authoring backend does not update player submissions",
+  );
+  rejectAuthoringBackendSql(
+    /INSERT\s+INTO\s+public\.daily_crew_submission_roles\b/i,
+    "authoring backend does not create player submission roles",
   );
 });

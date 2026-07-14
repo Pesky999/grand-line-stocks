@@ -1,0 +1,143 @@
+/// <reference types="node" />
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+const adminSource = readFileSync(
+  join(process.cwd(), "src/lib/api/daily-crew-builder-admin.functions.ts"),
+  "utf8",
+);
+const publicSource = readFileSync(
+  join(process.cwd(), "src/lib/api/daily-crew-builder.functions.ts"),
+  "utf8",
+);
+
+function functionSource(name: string): string {
+  const start = adminSource.indexOf(`export const ${name}`);
+  if (start < 0) throw new Error(`${name} not found`);
+  const next = adminSource.indexOf("\nexport const ", start + 1);
+  return adminSource.slice(start, next < 0 ? adminSource.length : next);
+}
+
+test("Daily Crew Builder admin functions require auth, admin role, and service role after authorization", () => {
+  for (const name of [
+    "listAdminDailyCrewMissions",
+    "getAdminDailyCrewMission",
+    "saveAdminDailyCrewMissionDraft",
+    "setAdminDailyCrewMissionStatus",
+  ]) {
+    const body = functionSource(name);
+    assert.match(body, /\.middleware\(\[requireSupabaseAuth\]\)/, `${name} requires auth`);
+    assert.match(body, /authorizedAdmin\(context\)/, `${name} uses the shared admin gate`);
+  }
+
+  const authHelper = adminSource.slice(
+    adminSource.indexOf("async function authorizedAdmin"),
+    adminSource.indexOf("function toJson"),
+  );
+  assert.match(authHelper, /await requireAdminRole\(context\.supabase, context\.userId\)/);
+  assert.match(authHelper, /return admin\(\)/);
+  assert.match(
+    adminSource,
+    /const \{ supabaseAdmin \} = await import\("@\/integrations\/supabase\/client\.server"\)/,
+  );
+  assert.match(adminSource, /\.rpc\("has_role", \{ _user_id: userId, _role: "admin" \}\)/);
+});
+
+test("Daily Crew Builder admin save and status writes call only approved RPCs", () => {
+  const save = functionSource("saveAdminDailyCrewMissionDraft");
+  const status = functionSource("setAdminDailyCrewMissionStatus");
+
+  assert.match(save, /\.inputValidator\(\(input\) => missionAuthoringInput\.parse\(input\)\)/);
+  assert.match(save, /\.rpc\("admin_save_daily_crew_builder_mission"/);
+  assert.match(save, /_mission_id: data\.missionId \?\? null/);
+  assert.match(save, /_pool: toJson\(data\.pool\)/);
+  assert.match(save, /_jobs: toJson\(data\.jobs\)/);
+  assert.match(save, /_scores: toJson\(data\.scores\)/);
+  assert.match(save, /_perfect_solution: toJson\(data\.perfectSolution\)/);
+  assert.doesNotMatch(save, /\.from\("daily_crew_/);
+  assert.doesNotMatch(save, /\.(insert|update|upsert|delete)\s*\(/);
+
+  assert.match(status, /\.inputValidator\(\(input\) => statusInput\.parse\(input\)\)/);
+  assert.match(status, /\.rpc\("admin_set_daily_crew_builder_mission_status"/);
+  assert.match(status, /_target_status: data\.targetStatus/);
+  assert.doesNotMatch(status, /\.from\("daily_crew_/);
+  assert.doesNotMatch(status, /\.(insert|update|upsert|delete)\s*\(/);
+});
+
+test("Daily Crew Builder admin schemas are strict and support complete authoring payloads", () => {
+  const inputSchema = adminSource.slice(
+    adminSource.indexOf("const missionAuthoringInput"),
+    adminSource.indexOf("const missionIdInput"),
+  );
+
+  assert.match(inputSchema, /\.strict\(\)/);
+  assert.match(inputSchema, /missionId: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/);
+  assert.match(inputSchema, /missionDate: missionDateSchema/);
+  assert.match(inputSchema, /slug: slugSchema/);
+  assert.match(inputSchema, /revealPolicy: z\.enum\(DAILY_CREW_REVEAL_POLICIES\)/);
+  assert.match(
+    inputSchema,
+    /revealAt: z\.string\(\)\.datetime\(\{ offset: true \}\)\.nullable\(\)/,
+  );
+  assert.match(inputSchema, /pool: z\s+\.array\(authoringPoolEntrySchema\)/);
+  assert.match(inputSchema, /jobs: z\.array\(authoringJobSchema\)/);
+  assert.match(inputSchema, /scores: z\.array\(authoringScoreSchema\)/);
+  assert.match(inputSchema, /perfectSolution: z\.array\(authoringPerfectSolutionSchema\)/);
+  assert.match(inputSchema, /value\.pool\.length === 9 && value\.jobs\.length === 3/);
+  assert.match(inputSchema, /value\.pool\.length === 15 && value\.jobs\.length === 5/);
+  assert.match(inputSchema, /value\.scores\.length !== value\.pool\.length \* value\.jobs\.length/);
+  assert.match(inputSchema, /value\.perfectSolution\.length !== value\.jobs\.length/);
+  assert.doesNotMatch(inputSchema, /status|createdAt|updatedAt|reward|wallet|submission/i);
+});
+
+test("Daily Crew Builder admin list is narrow and detail is admin-only", () => {
+  const list = functionSource("listAdminDailyCrewMissions");
+  const detail = functionSource("getAdminDailyCrewMission");
+
+  for (const field of [
+    "missionDate",
+    "slug",
+    "title",
+    "status",
+    "revealPolicy",
+    "revealAt",
+    "poolCount",
+    "jobCount",
+    "scoreCount",
+    "submissionCount",
+    "ready",
+    "createdAt",
+    "updatedAt",
+  ]) {
+    assert.match(adminSource, new RegExp(`${field}:`), `${field} is exposed in admin summaries`);
+  }
+
+  assert.match(list, /getMissionReadyMap\(db, missionIds\)/);
+  assert.match(adminSource, /\.rpc\("validate_daily_crew_mission"/);
+  assert.doesNotMatch(list, /roleScores|perfectSolution|subtypeKey|subtypeLabel|explanation/);
+  assert.match(detail, /\.from\("daily_crew_role_requirements"\)/);
+  assert.match(detail, /\.from\("daily_crew_character_role_scores"\)/);
+  assert.match(detail, /\.from\("daily_crew_perfect_solution"\)/);
+  assert.match(detail, /scores: scores\.map/);
+  assert.match(detail, /perfectSolution: perfectSolution\.map/);
+});
+
+test("Daily Crew Builder public mission and gameplay APIs remain unchanged", () => {
+  const publicMapper = publicSource.slice(
+    publicSource.indexOf("function toPublicDailyCrewBuilderMission"),
+    publicSource.indexOf("function perfectSolutionSynergyRule"),
+  );
+
+  assert.match(publicSource, /export const getTodayDailyCrewBuilderMission/);
+  assert.match(publicSource, /export const getMyTodayDailyCrewBuilderResult/);
+  assert.match(publicSource, /export const submitDailyCrewBuilderPreview/);
+  assert.doesNotMatch(publicSource, /admin_save_daily_crew_builder_mission/);
+  assert.doesNotMatch(publicSource, /admin_set_daily_crew_builder_mission_status/);
+  assert.doesNotMatch(
+    publicMapper,
+    /roleScores|roleRequirements|perfectSolution|subtypeKey|subtypeLabel/,
+  );
+});

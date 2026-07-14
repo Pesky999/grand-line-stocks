@@ -1750,6 +1750,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_save_daily_crew_builder_mission: {
+        Args: {
+          _brief: string
+          _jobs: Json
+          _mission_date: string
+          _mission_id: string | null
+          _mission_tags: string[]
+          _perfect_solution: Json
+          _pool: Json
+          _reveal_at: string | null
+          _reveal_policy: Database["public"]["Enums"]["daily_crew_reveal_policy"]
+          _scores: Json
+          _slug: string
+          _title: string
+        }
+        Returns: Json
+      }
+      admin_set_daily_crew_builder_mission_status: {
+        Args: {
+          _mission_id: string
+          _target_status: Database["public"]["Enums"]["daily_crew_mission_status"]
+        }
+        Returns: Json
+      }
       apply_market_event: {
         Args: { _event_id: string }
         Returns: {
