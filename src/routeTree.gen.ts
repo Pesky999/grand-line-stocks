@@ -30,6 +30,7 @@ import { Route as AuthenticatedPricingAdminRouteImport } from './routes/_authent
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
 import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenticated/market-admin'
 import { Route as AuthenticatedEventsAdminRouteImport } from './routes/_authenticated/events-admin'
+import { Route as AuthenticatedDailyCrewAdminRouteImport } from './routes/_authenticated/daily-crew-admin'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -139,6 +140,12 @@ const AuthenticatedEventsAdminRoute =
     path: '/events-admin',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedDailyCrewAdminRoute =
+  AuthenticatedDailyCrewAdminRouteImport.update({
+    id: '/daily-crew-admin',
+    path: '/daily-crew-admin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -157,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
@@ -179,6 +187,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
@@ -204,6 +213,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
   '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/reset-password'
     | '/admin'
+    | '/daily-crew-admin'
     | '/events-admin'
     | '/market-admin'
     | '/portfolio'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/reset-password'
     | '/admin'
+    | '/daily-crew-admin'
     | '/events-admin'
     | '/market-admin'
     | '/portfolio'
@@ -275,6 +287,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/reset-password'
     | '/_authenticated/admin'
+    | '/_authenticated/daily-crew-admin'
     | '/_authenticated/events-admin'
     | '/_authenticated/market-admin'
     | '/_authenticated/portfolio'
@@ -452,6 +465,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEventsAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/daily-crew-admin': {
+      id: '/_authenticated/daily-crew-admin'
+      path: '/daily-crew-admin'
+      fullPath: '/daily-crew-admin'
+      preLoaderRoute: typeof AuthenticatedDailyCrewAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -464,6 +484,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedDailyCrewAdminRoute: typeof AuthenticatedDailyCrewAdminRoute
   AuthenticatedEventsAdminRoute: typeof AuthenticatedEventsAdminRoute
   AuthenticatedMarketAdminRoute: typeof AuthenticatedMarketAdminRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
@@ -473,6 +494,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedDailyCrewAdminRoute: AuthenticatedDailyCrewAdminRoute,
   AuthenticatedEventsAdminRoute: AuthenticatedEventsAdminRoute,
   AuthenticatedMarketAdminRoute: AuthenticatedMarketAdminRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
