@@ -279,7 +279,7 @@ function perfectSolutionSynergyRule(fixture: DailyCrewDbMissionFixture) {
 async function loadActiveDailyCrewBuilderMissionFixture(
   db: DailyCrewDb,
   options: { missionId?: string } = {},
-): Promise<DailyCrewDbMissionFixture> {
+): Promise<DailyCrewDbMissionFixture | null> {
   const missionDate = utcDateString();
   let missionQuery = db
     .from("daily_crew_missions")
@@ -297,7 +297,7 @@ async function loadActiveDailyCrewBuilderMissionFixture(
 
   const mission = missionResult.data as DailyCrewMissionRow | null;
   if (!mission) {
-    throw new Error("No Daily Crew Builder mission is active for today.");
+    return null;
   }
   if (mission.max_score !== 100) {
     throw new Error("Daily Crew Builder mission has an unsupported max score.");
@@ -496,9 +496,10 @@ function applyDailyCrewPayoutFailure(
 }
 
 export const getTodayDailyCrewBuilderMission = createServerFn({ method: "GET" }).handler(
-  async () => {
+  async (): Promise<DailyCrewBuilderPublicMission | null> => {
     const db = await admin();
     const fixture = await loadActiveDailyCrewBuilderMissionFixture(db);
+    if (!fixture) return null;
     return toPublicDailyCrewBuilderMission(fixture);
   },
 );
@@ -511,6 +512,9 @@ export const getMyTodayDailyCrewBuilderResult = createServerFn({ method: "POST" 
     const fixture = await loadActiveDailyCrewBuilderMissionFixture(db, {
       missionId: data.missionId,
     });
+    if (!fixture) {
+      throw new Error("No Daily Crew Builder mission is active for today.");
+    }
 
     const { data: savedSubmissionRow, error } = await db
       .from("daily_crew_submissions")
@@ -543,6 +547,9 @@ export const submitDailyCrewBuilderPreview = createServerFn({ method: "POST" })
     const fixture = await loadActiveDailyCrewBuilderMissionFixture(db, {
       missionId: data.missionId,
     });
+    if (!fixture) {
+      throw new Error("No Daily Crew Builder mission is active for today.");
+    }
     const assignments = data.assignments.map((assignment) => ({
       role: assignment.role as DailyCrewRole,
       characterId: assignment.characterId,

@@ -17,11 +17,17 @@ test("Daily Crew Builder route renders the mission, jobs, pool, and saved result
   assert.match(routeSource, /createFileRoute\("\/games\/daily-crew-builder"\)/);
   assert.match(routeSource, /Daily Crew Builder/);
   assert.match(routeSource, /Beta/);
-  assert.match(routeSource, /Daily Crew Builder is in beta\. Missions, rewards, and scoring may be tuned\./);
+  assert.match(
+    routeSource,
+    /Daily Crew Builder is in beta\. Missions, rewards, and scoring may be tuned\./,
+  );
   assert.match(routeSource, /mission\.title/);
   assert.match(routeSource, /mission\.brief/);
   assert.match(routeSource, /mission\?\.id/);
-  assert.match(routeSource, /poolCount > 0 \? `\$\{poolCount\}-character pool` : "Daily mission pool"/);
+  assert.match(
+    routeSource,
+    /poolCount > 0 \? `\$\{poolCount\}-character pool` : "Daily mission pool"/,
+  );
   assert.match(routeSource, /jobCount > 0 \? `\$\{jobCount\}-job` : "mission-ready"/);
   assert.doesNotMatch(routeSource, /\$\{jobCount\}-\$\{jobWord\}/);
   assert.match(routeSource, /Crew Assignment/);
@@ -36,17 +42,45 @@ test("Daily Crew Builder route keeps hidden fixture data out of the browser-visi
   assert.match(routeSource, /getMyTodayDailyCrewBuilderResult/);
   assert.match(routeSource, /submitDailyCrewBuilderPreview/);
   assert.doesNotMatch(routeSource, /DAILY_CREW_SAMPLE_FIXTURES/);
-  assert.doesNotMatch(routeSource, /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/);
-  assert.doesNotMatch(routeSource, /Hidden command profile|Hidden combat profile|Hidden route profile/i);
+  assert.doesNotMatch(
+    routeSource,
+    /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/,
+  );
+  assert.doesNotMatch(
+    routeSource,
+    /Hidden command profile|Hidden combat profile|Hidden route profile/i,
+  );
+});
+
+test("Daily Crew Builder route renders a neutral empty state when no mission is available", () => {
+  assert.match(
+    routeSource,
+    /const mission = missionQ\.data as DailyCrewBuilderPublicMission \| null \| undefined/,
+  );
+  assert.match(routeSource, /missionQ\.isSuccess && !mission/);
+  assert.match(routeSource, /No mission available today/);
+  assert.match(
+    routeSource,
+    /The next Daily Crew Builder mission has not opened yet\. Check back after the next\s+UTC reset\./,
+  );
+  assert.match(routeSource, /\{mission && !authLoading && !user && \(/);
+  assert.match(routeSource, /\{mission && \(\s+<>/);
+  assert.match(routeSource, /Could not load Daily Crew Builder\. Please refresh and try again\./);
 });
 
 test("Daily Crew Builder route requires all jobs, prevents duplicates, and prompts signed-out users", () => {
   assert.match(routeSource, /useMe\(\)/);
   assert.match(routeSource, /Sign in to submit your crew/);
   assert.match(routeSource, /const allRolesAssigned = roles\.length > 0 && roles\.every/);
-  assert.match(routeSource, /const assignmentGridClass = jobCount <= 3 \? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5"/);
+  assert.match(
+    routeSource,
+    /const assignmentGridClass =\s+jobCount <= 3 \? "grid gap-3 md:grid-cols-3" : "grid gap-3 md:grid-cols-5"/,
+  );
   assert.match(routeSource, /const submissionLocked = Boolean\(result\?\.submissionSaved\)/);
-  assert.match(routeSource, /const canSubmit = Boolean\(user\) && allRolesAssigned && !missionQ\.isLoading && !savedResultQ\.isLoading && !submissionLocked/);
+  assert.match(
+    routeSource,
+    /const canSubmit =\s+Boolean\(user\) &&\s+allRolesAssigned &&\s+!missionQ\.isLoading &&\s+!savedResultQ\.isLoading &&\s+!submissionLocked/,
+  );
   assert.match(routeSource, /disabled=\{!canSubmit \|\| submitPreviewM\.isPending\}/);
   assert.match(routeSource, /assignedToAnotherRole/);
   assert.match(routeSource, /disabled=\{assignedToAnotherRole\}/);
@@ -70,7 +104,10 @@ test("Daily Crew Builder result panel uses saved and payout-aware reward languag
   assert.match(routeSource, /Perfect crew/);
   assert.match(routeSource, /Job breakdown/);
   assert.match(routeSource, /No synergy bonus earned/);
-  assert.doesNotMatch(routeSource, /Preview reward only|Reward payout coming later|No Berries are paid|No Berries were paid/i);
+  assert.doesNotMatch(
+    routeSource,
+    /Preview reward only|Reward payout coming later|No Berries are paid|No Berries were paid/i,
+  );
   assert.doesNotMatch(routeSource, /Retry payout/i);
 });
 
@@ -82,33 +119,54 @@ test("Daily Crew Builder refreshes account balance state after paid results", ()
 
 test("Daily Crew Builder route loads saved results for signed-in users and locks assignments", () => {
   assert.match(routeSource, /const savedResultEnabled = Boolean\(user && mission\?\.id\)/);
-  assert.match(routeSource, /const savedResultKey = user\?\.id && mission\?\.id \? `\$\{user\.id\}:\$\{mission\.id\}` : null/);
-  assert.match(routeSource, /queryKey: \["daily-crew-builder-saved-result", user\?\.id, mission\?\.id\]/);
+  assert.match(
+    routeSource,
+    /const savedResultKey = user\?\.id && mission\?\.id \? `\$\{user\.id\}:\$\{mission\.id\}` : null/,
+  );
+  assert.match(
+    routeSource,
+    /queryKey: \["daily-crew-builder-saved-result", user\?\.id, mission\?\.id\]/,
+  );
   assert.match(routeSource, /getMyTodayDailyCrewBuilderResult\(\{/);
   assert.match(routeSource, /data: \{ missionId: mission\?\.id \}/);
   assert.match(routeSource, /enabled: savedResultEnabled/);
   assert.match(routeSource, /useEffect\(\(\) => \{/);
   assert.match(routeSource, /setResult\(savedResult\)/);
   assert.match(routeSource, /setSavedResultStateKey\(savedResultKey\)/);
-  assert.match(routeSource, /savedResult\.roles\.map\(\(role\) => \[role\.role, role\.characterId\]\)/);
+  assert.match(
+    routeSource,
+    /savedResult\.roles\.map\(\(role\) => \[role\.role, role\.characterId\]\)/,
+  );
   assert.match(routeSource, /Checking for your saved crew result/);
   assert.match(routeSource, /Could not load your saved crew result/);
   assert.doesNotMatch(routeSource, /Retry payout/i);
 });
 
 test("Daily Crew Builder route clears stale saved result state on sign-out and user changes", () => {
-  assert.match(routeSource, /const \[savedResultStateKey, setSavedResultStateKey\] = useState<string \| null>\(null\)/);
+  assert.match(
+    routeSource,
+    /const \[savedResultStateKey, setSavedResultStateKey\] = useState<string \| null>\(null\)/,
+  );
   assert.match(routeSource, /if \(!savedResultEnabled \|\| !savedResultKey\) \{/);
   assert.match(routeSource, /if \(result\?\.submissionSaved \|\| savedResultStateKey\) \{/);
   assert.match(routeSource, /setResult\(null\)/);
   assert.match(routeSource, /setAssignments\(\{\}\)/);
   assert.match(routeSource, /setSavedResultStateKey\(null\)/);
-  assert.match(routeSource, /if \(savedResultStateKey && savedResultStateKey !== savedResultKey\) \{/);
+  assert.match(
+    routeSource,
+    /if \(savedResultStateKey && savedResultStateKey !== savedResultKey\) \{/,
+  );
 });
 
 test("Daily Crew Builder route clears previous saved result when the saved-result response is null", () => {
-  assert.match(routeSource, /if \(!savedResultEnabled \|\| !savedResultKey \|\| !savedResultQ\.isSuccess\) return/);
-  assert.match(routeSource, /const savedResult = savedResultQ\.data as DailyCrewBuilderPersistedResult \| null \| undefined/);
+  assert.match(
+    routeSource,
+    /if \(!savedResultEnabled \|\| !savedResultKey \|\| !savedResultQ\.isSuccess\) return/,
+  );
+  assert.match(
+    routeSource,
+    /const savedResult = savedResultQ\.data as DailyCrewBuilderPersistedResult \| null \| undefined/,
+  );
   assert.match(routeSource, /if \(!savedResult\) \{/);
   assert.match(routeSource, /savedResultStateKey === savedResultKey/);
   assert.match(routeSource, /setResult\(null\)/);

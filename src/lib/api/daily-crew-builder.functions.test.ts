@@ -209,6 +209,67 @@ test("Daily Crew Builder mission id lookup remains scoped to today's active miss
   assert.match(source, /No Daily Crew Builder mission is active for today\./);
 });
 
+test("Daily Crew Builder public mission endpoint treats an empty active query as no mission", () => {
+  const helper = source.match(
+    /async function loadActiveDailyCrewBuilderMissionFixture[\s\S]*?if \(mission\.max_score !== 100\) \{/,
+  )?.[0];
+  const publicEndpoint = source.match(
+    /export const getTodayDailyCrewBuilderMission[\s\S]*?export const getMyTodayDailyCrewBuilderResult/,
+  )?.[0];
+
+  assert.ok(helper, "active mission loader should be present");
+  assert.ok(publicEndpoint, "public mission endpoint should be present");
+  assert.match(source, /Promise<DailyCrewDbMissionFixture \| null>/);
+  assert.match(helper, /if \(missionResult\.error\) throw missionResult\.error/);
+  assert.match(helper, /const mission = missionResult\.data as DailyCrewMissionRow \| null/);
+  assert.match(helper, /if \(!mission\) \{\s+return null;\s+\}/);
+  assert.match(publicEndpoint, /async \(\): Promise<DailyCrewBuilderPublicMission \| null>/);
+  assert.match(publicEndpoint, /if \(!fixture\) return null/);
+  assert.doesNotMatch(
+    publicEndpoint,
+    /throw new Error\("No Daily Crew Builder mission is active for today\."\)/,
+  );
+});
+
+test("Daily Crew Builder active mission data errors still throw after a mission row exists", () => {
+  const helper = source.match(
+    /async function loadActiveDailyCrewBuilderMissionFixture[\s\S]*?return fixture;\s+\}/,
+  )?.[0];
+
+  assert.ok(helper, "active mission loader should be present");
+  assert.match(helper, /if \(mission\.max_score !== 100\) \{\s+throw new Error/);
+  assert.match(helper, /if \(poolResult\.error\) throw poolResult\.error/);
+  assert.match(helper, /if \(requirementsResult\.error\) throw requirementsResult\.error/);
+  assert.match(helper, /if \(scoresResult\.error\) throw scoresResult\.error/);
+  assert.match(helper, /if \(solutionResult\.error\) throw solutionResult\.error/);
+  assert.match(helper, /if \(charactersResult\.error\) throw charactersResult\.error/);
+  assert.match(
+    helper,
+    /if \(!character\) \{\s+throw new Error\("Daily Crew Builder mission references a missing market character\."\);/,
+  );
+});
+
+test("Daily Crew Builder authenticated flows reject when no current mission exists", () => {
+  const savedResultFunction = source.match(
+    /export const getMyTodayDailyCrewBuilderResult[\s\S]*?export const submitDailyCrewBuilderPreview/,
+  )?.[0];
+  const submitFunction = source.match(
+    /export const submitDailyCrewBuilderPreview[\s\S]*?return payoutAttempt\.ok/,
+  )?.[0];
+
+  assert.ok(savedResultFunction, "saved-result server function should be present");
+  assert.ok(submitFunction, "submit server function should be present");
+  assert.match(
+    savedResultFunction,
+    /const fixture = await loadActiveDailyCrewBuilderMissionFixture\(db, \{\s+missionId: data\.missionId,\s+\}\);\s+if \(!fixture\) \{\s+throw new Error\("No Daily Crew Builder mission is active for today\."\);/,
+  );
+  assert.match(
+    submitFunction,
+    /const fixture = await loadActiveDailyCrewBuilderMissionFixture\(db, \{\s+missionId: data\.missionId,\s+\}\);\s+if \(!fixture\) \{\s+throw new Error\("No Daily Crew Builder mission is active for today\."\);/,
+  );
+  assert.match(submitFunction, /scoreDailyCrewBuilderPreviewForFixture\(fixture, assignments\)/);
+});
+
 test("Daily Crew Builder server functions handle already-submitted and payout results safely", () => {
   assert.match(source, /alreadySubmitted: z\.boolean\(\)/);
   assert.match(source, /const savedBreakdown = rpcResult\.alreadySubmitted/);
