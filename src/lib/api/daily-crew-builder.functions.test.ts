@@ -193,7 +193,9 @@ test("Daily Crew Builder mission id lookup remains scoped to today's active miss
   )?.[0];
 
   assert.ok(helper, "active mission loader should be present");
-  assert.match(helper, /const missionDate = options\.missionDate \?\? utcDateString\(\)/);
+  assert.match(helper, /options: \{ missionId\?: string \} = \{\}/);
+  assert.match(helper, /const missionDate = utcDateString\(\)/);
+  assert.doesNotMatch(source, /options\.missionDate/);
   assert.match(
     helper,
     /\.eq\("mission_date", missionDate\)[\s\S]*\.in\("status", \["published", "scheduled"\]\)/,

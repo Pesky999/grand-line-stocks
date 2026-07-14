@@ -278,9 +278,9 @@ function perfectSolutionSynergyRule(fixture: DailyCrewDbMissionFixture) {
 
 async function loadActiveDailyCrewBuilderMissionFixture(
   db: DailyCrewDb,
-  options: { missionId?: string; missionDate?: string } = {},
+  options: { missionId?: string } = {},
 ): Promise<DailyCrewDbMissionFixture> {
-  const missionDate = options.missionDate ?? utcDateString();
+  const missionDate = utcDateString();
   let missionQuery = db
     .from("daily_crew_missions")
     .select("id,mission_date,slug,title,brief,mission_tags,max_score")
