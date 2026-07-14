@@ -1057,6 +1057,18 @@ test("the previously removed duplicate wallet migration is not reintroduced", ()
 
 test("Daily Crew Builder authoring backend adds service-role-only atomic RPCs", () => {
   expectAuthoringBackendSql(
+    /CREATE OR REPLACE FUNCTION public\.validate_daily_crew_mission\(\s*_mission_id uuid\s*\)\s*RETURNS boolean\s*LANGUAGE plpgsql\s*STABLE\s*SECURITY DEFINER\s*SET search_path = pg_catalog, public, pg_temp/i,
+    "validator keeps the latest effective signature, stability, security, and search path",
+  );
+  expectAuthoringBackendSql(
+    /REVOKE EXECUTE ON FUNCTION public\.validate_daily_crew_mission\(uuid\)[\s\S]*FROM PUBLIC, anon, authenticated/i,
+    "validator remains revoked from browser roles",
+  );
+  expectAuthoringBackendSql(
+    /GRANT EXECUTE ON FUNCTION public\.validate_daily_crew_mission\(uuid\)[\s\S]*TO service_role/i,
+    "validator remains executable only by service_role",
+  );
+  expectAuthoringBackendSql(
     /CREATE OR REPLACE FUNCTION public\.admin_save_daily_crew_builder_mission\(\s*_mission_id uuid,\s*_mission_date date,\s*_slug text,\s*_title text,\s*_brief text,\s*_mission_tags text\[\],\s*_reveal_policy public\.daily_crew_reveal_policy,\s*_reveal_at timestamptz,\s*_pool jsonb,\s*_jobs jsonb,\s*_scores jsonb,\s*_perfect_solution jsonb\s*\)\s*RETURNS jsonb/i,
     "authoring RPC has the exact approved signature",
   );
@@ -1097,6 +1109,53 @@ test("Daily Crew Builder authoring backend adds service-role-only atomic RPCs", 
     "authoring save calls final mission validation and rolls back when not ready",
   );
   expectAuthoringBackendSql(/NOTIFY pgrst, 'reload schema'/i, "PostgREST schema is reloaded");
+});
+
+test("Daily Crew Builder mission readiness validator requires exact format pairings", () => {
+  expectAuthoringBackendSql(
+    /\(\s*\(v_pool_count = 9 AND v_requirement_count = 3\)\s*OR \(v_pool_count = 15 AND v_requirement_count = 5\)\s*\)/i,
+    "validator accepts exactly 9/3 and 15/5 mission formats",
+  );
+  rejectAuthoringBackendSql(
+    /v_pool_count\s+IN\s*\(\s*9\s*,\s*15\s*\)[\s\S]*v_requirement_count\s+IN\s*\(\s*3\s*,\s*5\s*\)/i,
+    "validator no longer accepts independent pool/job count checks that allow 9/5 or 15/3",
+  );
+  rejectAuthoringBackendSql(
+    /v_requirement_count\s+IN\s*\(\s*3\s*,\s*5\s*\)/i,
+    "validator rejects the stale independent job-count predicate",
+  );
+  expectAuthoringBackendSql(
+    /v_pool_straw_hats <= 5/i,
+    "validator preserves the pool Straw Hat cap",
+  );
+  expectAuthoringBackendSql(
+    /v_requirement_role_count = v_requirement_count/i,
+    "validator preserves distinct role coverage",
+  );
+  expectAuthoringBackendSql(
+    /v_requirement_display_order_count = v_requirement_count/i,
+    "validator preserves distinct job display-order coverage",
+  );
+  expectAuthoringBackendSql(
+    /v_requirement_max_points_total = 90/i,
+    "validator preserves the 90 role-fit point total",
+  );
+  expectAuthoringBackendSql(
+    /v_solution_count = v_requirement_count[\s\S]*v_solution_role_count = v_requirement_count/i,
+    "validator preserves perfect-solution role coverage",
+  );
+  expectAuthoringBackendSql(
+    /v_solution_straw_hats <= 3/i,
+    "validator preserves the perfect-solution Straw Hat cap",
+  );
+  expectAuthoringBackendSql(
+    /v_score_count = v_pool_count \* v_requirement_count/i,
+    "validator preserves complete score-matrix coverage",
+  );
+  expectAuthoringBackendSql(
+    /v_solution_score_total = 90/i,
+    "validator preserves full-max perfect-solution scoring",
+  );
 });
 
 test("Daily Crew Builder authoring save validates drafts and supported formats", () => {
@@ -1255,6 +1314,10 @@ test("Daily Crew Builder authoring status RPC enforces allowed scheduling transi
 });
 
 test("Daily Crew Builder scheduled and published missions both require readiness", () => {
+  expectAuthoringBackendSql(
+    /CREATE OR REPLACE FUNCTION public\.validate_daily_crew_mission\([\s\S]*\(v_pool_count = 9 AND v_requirement_count = 3\)[\s\S]*\(v_pool_count = 15 AND v_requirement_count = 5\)[\s\S]*CREATE OR REPLACE FUNCTION public\.enforce_daily_crew_publish_ready\(\)[\s\S]*public\.validate_daily_crew_mission\(NEW\.id\)/i,
+    "scheduled and published readiness uses the corrected paired-format validator",
+  );
   expectAuthoringBackendSql(
     /CREATE OR REPLACE FUNCTION public\.enforce_daily_crew_publish_ready\(\)[\s\S]*NEW\.status IN \(\s*'scheduled'::public\.daily_crew_mission_status,\s*'published'::public\.daily_crew_mission_status\s*\)[\s\S]*NOT public\.validate_daily_crew_mission\(NEW\.id\)/i,
     "readiness trigger now guards scheduled and published missions",
