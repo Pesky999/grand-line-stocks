@@ -76,9 +76,7 @@ export type DailyCrewBuilderPersistedResult = DailyCrewBuilderPreviewResult & {
   payoutErrorStep?: DailyCrewPayoutErrorStep;
 };
 
-type DailyCrewPayoutErrorStep =
-  | "DAILY_CREW_PAYOUT_RPC_FAILED"
-  | "DAILY_CREW_PAYOUT_UNKNOWN_FAILED";
+type DailyCrewPayoutErrorStep = "DAILY_CREW_PAYOUT_RPC_FAILED" | "DAILY_CREW_PAYOUT_UNKNOWN_FAILED";
 
 const dailyCrewRankSchema = z.enum(["s", "a", "b", "c", "fail"]);
 
@@ -254,7 +252,9 @@ function toPreviewResult(result: DailyCrewScoreResult): DailyCrewBuilderPreviewR
   };
 }
 
-function toPublicDailyCrewBuilderMission(fixture: DailyCrewDbMissionFixture): DailyCrewBuilderPublicMission {
+function toPublicDailyCrewBuilderMission(
+  fixture: DailyCrewDbMissionFixture,
+): DailyCrewBuilderPublicMission {
   return {
     id: fixture.id,
     ...toPublicDailyCrewMission(fixture),
@@ -270,25 +270,26 @@ function perfectSolutionSynergyRule(fixture: DailyCrewDbMissionFixture) {
     id: `${fixture.slug}-perfect-crew`,
     label: `${fixture.title} perfect crew`,
     points: 10,
-    explanation: "The exact crew covers every hidden role profile and earns the mission synergy bonus.",
+    explanation:
+      "The exact crew covers every hidden role profile and earns the mission synergy bonus.",
     roles,
   };
 }
 
-async function loadPublishedDailyCrewBuilderMissionFixture(
+async function loadActiveDailyCrewBuilderMissionFixture(
   db: DailyCrewDb,
-  options: { missionId?: string; missionDate?: string } = {},
+  options: { missionId?: string } = {},
 ): Promise<DailyCrewDbMissionFixture> {
+  const missionDate = utcDateString();
   let missionQuery = db
     .from("daily_crew_missions")
     .select("id,mission_date,slug,title,brief,mission_tags,max_score")
-    .eq("status", "published")
+    .eq("mission_date", missionDate)
+    .in("status", ["published", "scheduled"])
     .limit(1);
 
   if (options.missionId) {
     missionQuery = missionQuery.eq("id", options.missionId);
-  } else {
-    missionQuery = missionQuery.eq("mission_date", options.missionDate ?? utcDateString());
   }
 
   const missionResult = await missionQuery.maybeSingle();
@@ -296,7 +297,7 @@ async function loadPublishedDailyCrewBuilderMissionFixture(
 
   const mission = missionResult.data as DailyCrewMissionRow | null;
   if (!mission) {
-    throw new Error("No Daily Crew Builder mission is published for today.");
+    throw new Error("No Daily Crew Builder mission is active for today.");
   }
   if (mission.max_score !== 100) {
     throw new Error("Daily Crew Builder mission has an unsupported max score.");
@@ -316,10 +317,7 @@ async function loadPublishedDailyCrewBuilderMissionFixture(
       .from("daily_crew_character_role_scores")
       .select("character_id,role,score,explanation")
       .eq("mission_id", mission.id),
-    db
-      .from("daily_crew_perfect_solution")
-      .select("role,character_id")
-      .eq("mission_id", mission.id),
+    db.from("daily_crew_perfect_solution").select("role,character_id").eq("mission_id", mission.id),
   ]);
 
   if (poolResult.error) throw poolResult.error;
@@ -367,14 +365,16 @@ async function loadPublishedDailyCrewBuilderMissionFixture(
     missionTags: mission.mission_tags,
     maxScore: 100,
     pool,
-    roleRequirements: ((requirementsResult.data ?? []) as DailyCrewRoleRequirementRow[]).map((row) => ({
-      role: row.role,
-      subtypeKey: row.subtype_key,
-      subtypeLabel: row.subtype_label ?? undefined,
-      displayLabel: row.display_label ?? undefined,
-      displayOrder: row.display_order,
-      maxPoints: row.max_points,
-    })),
+    roleRequirements: ((requirementsResult.data ?? []) as DailyCrewRoleRequirementRow[]).map(
+      (row) => ({
+        role: row.role,
+        subtypeKey: row.subtype_key,
+        subtypeLabel: row.subtype_label ?? undefined,
+        displayLabel: row.display_label ?? undefined,
+        displayOrder: row.display_order,
+        maxPoints: row.max_points,
+      }),
+    ),
     roleScores: ((scoresResult.data ?? []) as DailyCrewRoleScoreRow[]).map((row) => ({
       characterId: row.character_id,
       role: row.role,
@@ -495,18 +495,22 @@ function applyDailyCrewPayoutFailure(
   };
 }
 
-export const getTodayDailyCrewBuilderMission = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
-  const fixture = await loadPublishedDailyCrewBuilderMissionFixture(db);
-  return toPublicDailyCrewBuilderMission(fixture);
-});
+export const getTodayDailyCrewBuilderMission = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const db = await admin();
+    const fixture = await loadActiveDailyCrewBuilderMissionFixture(db);
+    return toPublicDailyCrewBuilderMission(fixture);
+  },
+);
 
 export const getMyTodayDailyCrewBuilderResult = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => savedResultInput.parse(input))
   .handler(async ({ data, context }): Promise<DailyCrewBuilderPersistedResult | null> => {
     const db = await admin();
-    const fixture = await loadPublishedDailyCrewBuilderMissionFixture(db, { missionId: data.missionId });
+    const fixture = await loadActiveDailyCrewBuilderMissionFixture(db, {
+      missionId: data.missionId,
+    });
 
     const { data: savedSubmissionRow, error } = await db
       .from("daily_crew_submissions")
@@ -536,7 +540,9 @@ export const submitDailyCrewBuilderPreview = createServerFn({ method: "POST" })
   .inputValidator((input) => previewSubmissionInput.parse(input))
   .handler(async ({ data, context }): Promise<DailyCrewBuilderPersistedResult> => {
     const db = await admin();
-    const fixture = await loadPublishedDailyCrewBuilderMissionFixture(db, { missionId: data.missionId });
+    const fixture = await loadActiveDailyCrewBuilderMissionFixture(db, {
+      missionId: data.missionId,
+    });
     const assignments = data.assignments.map((assignment) => ({
       role: assignment.role as DailyCrewRole,
       characterId: assignment.characterId,
