@@ -39,7 +39,10 @@ test("mission endpoint returns only public-safe mission data", () => {
   assert.equal(Object.hasOwn(mission, "roleRequirements"), false);
   assert.equal(Object.hasOwn(mission, "synergyRules"), false);
   assert.equal(Object.hasOwn(mission, "perfectSolution"), false);
-  assert.doesNotMatch(json, /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/i);
+  assert.doesNotMatch(
+    json,
+    /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/i,
+  );
   assert.doesNotMatch(json, /Hidden command profile|Hidden combat profile|Hidden route profile/i);
 });
 
@@ -56,13 +59,24 @@ test("submit preview helper returns safe score data without hidden tables", () =
   assert.equal(result.rewardPreviewOnly, true);
   assert.equal(result.isPerfectSolution, true);
   assert.equal(result.roles.length, 5);
-  assert.doesNotMatch(json, /roleScores|roleRequirements|subtypeKey|subtypeLabel|"perfectSolution"/i);
-  assert.equal(result.roles.some((role) => role.characterId === "char-zoro" && role.role === "navigator"), false);
-  assert.equal(result.roles.some((role) => role.characterId === "char-nami" && role.role === "fighter"), false);
+  assert.doesNotMatch(
+    json,
+    /roleScores|roleRequirements|subtypeKey|subtypeLabel|"perfectSolution"/i,
+  );
+  assert.equal(
+    result.roles.some((role) => role.characterId === "char-zoro" && role.role === "navigator"),
+    false,
+  );
+  assert.equal(
+    result.roles.some((role) => role.characterId === "char-nami" && role.role === "fighter"),
+    false,
+  );
 });
 
 test("submit preview helper supports simplified mission-defined jobs", () => {
-  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction");
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find(
+    (mission) => mission.slug === "covert-harbor-extraction",
+  );
   assert.ok(fixture);
 
   const result = scoreDailyCrewBuilderPreviewForFixture(
@@ -119,16 +133,31 @@ test("submit preview rejects missing roles, duplicate characters, and unknown ch
 test("Daily Crew Builder server functions read missions from DB and use only approved RPCs for save and payout", () => {
   const payoutCall = source.match(/\.rpc\("award_daily_crew_builder_reward"[\s\S]*?\}\);/);
 
-  assert.match(source, /export const getTodayDailyCrewBuilderMission = createServerFn\(\{ method: "GET" \}\)/);
-  assert.match(source, /loadPublishedDailyCrewBuilderMissionFixture\(db\)/);
-  assert.match(source, /export const getMyTodayDailyCrewBuilderResult = createServerFn\(\{ method: "POST" \}\)/);
-  assert.match(source, /export const submitDailyCrewBuilderPreview = createServerFn\(\{ method: "POST" \}\)/);
+  assert.match(
+    source,
+    /export const getTodayDailyCrewBuilderMission = createServerFn\(\{ method: "GET" \}\)/,
+  );
+  assert.match(source, /loadActiveDailyCrewBuilderMissionFixture\(db\)/);
+  assert.match(
+    source,
+    /export const getMyTodayDailyCrewBuilderResult = createServerFn\(\{ method: "POST" \}\)/,
+  );
+  assert.match(
+    source,
+    /export const submitDailyCrewBuilderPreview = createServerFn\(\{ method: "POST" \}\)/,
+  );
   assert.match(source, /\.middleware\(\[requireSupabaseAuth\]\)/);
   assert.match(source, /scoreDailyCrewBuilderPreviewForFixture\(fixture, assignments\)/);
   assert.match(source, /\.from\("daily_crew_missions"\)/);
+  assert.match(source, /\.eq\("mission_date", missionDate\)/);
+  assert.match(source, /\.in\("status", \["published", "scheduled"\]\)/);
+  assert.doesNotMatch(source, /\.eq\("status", "published"\)/);
   assert.match(source, /\.from\("daily_crew_mission_pool"\)/);
   assert.match(source, /\.from\("daily_crew_role_requirements"\)/);
-  assert.match(source, /\.select\("role,subtype_key,subtype_label,display_label,display_order,max_points"\)/);
+  assert.match(
+    source,
+    /\.select\("role,subtype_key,subtype_label,display_label,display_order,max_points"\)/,
+  );
   assert.match(source, /\.from\("daily_crew_character_role_scores"\)/);
   assert.match(source, /\.from\("daily_crew_perfect_solution"\)/);
   assert.match(source, /\.from\("characters"\)/);
@@ -148,8 +177,34 @@ test("Daily Crew Builder server functions read missions from DB and use only app
   assert.doesNotMatch(source, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(source, /user_wallets|wallet mutation|transactions/);
   assert.doesNotMatch(source, /\.(insert|update|upsert|delete)\s*\(/);
-  assert.match(source, /assignments: z\.array\(assignmentInput\)\.min\(1\)\.max\(DAILY_CREW_ROLES\.length\)/);
-  assert.doesNotMatch(source, /assignments: z\.array\(assignmentInput\)\.length\(DAILY_CREW_ROLES\.length\)/);
+  assert.match(
+    source,
+    /assignments: z\.array\(assignmentInput\)\.min\(1\)\.max\(DAILY_CREW_ROLES\.length\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /assignments: z\.array\(assignmentInput\)\.length\(DAILY_CREW_ROLES\.length\)/,
+  );
+});
+
+test("Daily Crew Builder mission id lookup remains scoped to today's active mission", () => {
+  const helper = source.match(
+    /async function loadActiveDailyCrewBuilderMissionFixture[\s\S]*?const missionResult = await missionQuery\.maybeSingle\(\);/,
+  )?.[0];
+
+  assert.ok(helper, "active mission loader should be present");
+  assert.match(helper, /const missionDate = options\.missionDate \?\? utcDateString\(\)/);
+  assert.match(
+    helper,
+    /\.eq\("mission_date", missionDate\)[\s\S]*\.in\("status", \["published", "scheduled"\]\)/,
+  );
+  assert.match(
+    helper,
+    /if \(options\.missionId\) \{[\s\S]*missionQuery = missionQuery\.eq\("id", options\.missionId\);[\s\S]*\}/,
+  );
+  assert.doesNotMatch(helper, /else\s*\{[\s\S]*mission_date/);
+  assert.doesNotMatch(helper, /loadPublishedDailyCrewBuilderMissionFixture/);
+  assert.match(source, /No Daily Crew Builder mission is active for today\./);
 });
 
 test("Daily Crew Builder server functions handle already-submitted and payout results safely", () => {
@@ -178,21 +233,39 @@ test("Daily Crew Builder saved-result load uses stored submission data and exist
   assert.ok(savedResultFunction, "saved-result server function should be present");
   assert.match(savedResultFunction, /\.middleware\(\[requireSupabaseAuth\]\)/);
   assert.match(savedResultFunction, /savedResultInput\.parse\(input\)/);
-  assert.match(savedResultFunction, /loadPublishedDailyCrewBuilderMissionFixture\(db, \{ missionId: data\.missionId \}\)/);
+  assert.match(
+    savedResultFunction,
+    /loadActiveDailyCrewBuilderMissionFixture\(db, \{\s*missionId: data\.missionId,?\s*\}\)/,
+  );
   assert.match(savedResultFunction, /\.from\("daily_crew_submissions"\)/);
-  assert.match(savedResultFunction, /\.select\("id,submitted_at,score,rank,reward_amount,reward_paid,score_breakdown"\)/);
+  assert.match(
+    savedResultFunction,
+    /\.select\("id,submitted_at,score,rank,reward_amount,reward_paid,score_breakdown"\)/,
+  );
   assert.match(savedResultFunction, /\.eq\("mission_id", fixture\.id\)/);
   assert.match(savedResultFunction, /\.eq\("user_id", context\.userId\)/);
   assert.match(savedResultFunction, /\.maybeSingle\(\)/);
   assert.match(savedResultFunction, /if \(!savedSubmissionRow\) return null/);
-  assert.match(savedResultFunction, /parseSavedSubmissionResult\(savedSubmissionRow as DailyCrewSubmissionRow\)/);
+  assert.match(
+    savedResultFunction,
+    /parseSavedSubmissionResult\(savedSubmissionRow as DailyCrewSubmissionRow\)/,
+  );
   assert.match(savedResultFunction, /if \(savedResult\.rewardPaid\) return savedResult/);
   assert.match(savedResultFunction, /awardDailyCrewBuilderRewardSafely\(db, \{/);
   assert.match(savedResultFunction, /submissionId: savedResult\.submissionId/);
   assert.match(savedResultFunction, /userId: context\.userId/);
-  assert.match(savedResultFunction, /applyDailyCrewPayoutResult\(savedResult, payoutAttempt\.result\)/);
-  assert.match(savedResultFunction, /applyDailyCrewPayoutFailure\(savedResult, payoutAttempt\.failure\)/);
-  assert.doesNotMatch(savedResultFunction, /_reward_amount|rewardAmount:|record_daily_crew_builder_submission/);
+  assert.match(
+    savedResultFunction,
+    /applyDailyCrewPayoutResult\(savedResult, payoutAttempt\.result\)/,
+  );
+  assert.match(
+    savedResultFunction,
+    /applyDailyCrewPayoutFailure\(savedResult, payoutAttempt\.failure\)/,
+  );
+  assert.doesNotMatch(
+    savedResultFunction,
+    /_reward_amount|rewardAmount:|record_daily_crew_builder_submission/,
+  );
   assert.doesNotMatch(savedResultFunction, /user_wallets|transactions|roleScores|perfectSolution/);
   assert.doesNotMatch(savedResultFunction, /\.(insert|update|upsert|delete)\s*\(/);
   assert.match(source, /function parseSavedSubmissionResult\(row: DailyCrewSubmissionRow\)/);
