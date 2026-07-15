@@ -40,6 +40,7 @@ type PendingTemplateImport = {
   draft: DailyCrewTemplateDraft;
   summary: Extract<DailyCrewTemplateImportResult, { ok: true }>["summary"];
   replacementRevision: number | null;
+  validatedJsonText: string;
 };
 type SaveTemplateMutationVariables = {
   draft: DailyCrewTemplateDraft;
@@ -223,6 +224,10 @@ export function DailyCrewTemplateLibrary({
   });
 
   const mutationBusy = saveMutation.isPending || createMissionMutation.isPending;
+  const pendingImportMatchesText = Boolean(
+    pendingImport && importText === pendingImport.validatedJsonText,
+  );
+  const pendingImportStale = Boolean(pendingImport && !pendingImportMatchesText);
 
   function advanceTemplateOperation() {
     activeTemplateOperationRef.current += 1;
@@ -290,11 +295,16 @@ export function DailyCrewTemplateLibrary({
     if (mutationBusy) return;
     setImportText("");
     setImportResult(null);
+    setPendingImport(null);
+  }
+
+  function updateImportText(value: string) {
+    setImportText(value);
+    setImportResult(null);
   }
 
   function validateImportText() {
     if (mutationBusy) return;
-    if (pendingImport && !window.confirm("Replace the pending imported template draft?")) return;
 
     const replacementDetail = importMode === "replace" ? selectedDetail : null;
     if (importMode === "replace" && !replacementDetail) {
@@ -306,12 +316,20 @@ export function DailyCrewTemplateLibrary({
       templateId: replacementDetail?.id ?? null,
       isActive: replacementDetail?.isActive ?? true,
     });
-    setImportResult(result);
     if (!result.ok) {
+      setImportResult(result);
       toast.error("Template JSON validation failed. Review the import errors.");
       return;
     }
+    if (
+      pendingImport &&
+      importText !== pendingImport.validatedJsonText &&
+      !window.confirm("Replace the pending imported template draft?")
+    ) {
+      return;
+    }
 
+    setImportResult(result);
     if (importMode === "new") {
       advanceTemplateOperation();
       setSelectedTemplateId(null);
@@ -322,12 +340,17 @@ export function DailyCrewTemplateLibrary({
       draft: result.draft,
       summary: result.summary,
       replacementRevision: replacementDetail ? replacementDetail.revision + 1 : null,
+      validatedJsonText: importText,
     });
     toast.success("Template JSON validated. Review the preview before saving.");
   }
 
   function savePendingImport() {
     if (!pendingImport || mutationBusy) return;
+    if (importText !== pendingImport.validatedJsonText) {
+      toast.error("The JSON has changed since validation. Validate it again before saving.");
+      return;
+    }
     const isReplacement = pendingImport.mode === "replace";
     const confirmMessage = isReplacement
       ? `Update ${pendingImport.draft.title}? This creates revision ${
@@ -414,7 +437,7 @@ export function DailyCrewTemplateLibrary({
     });
   }
 
-  const canSaveImport = Boolean(pendingImport && !mutationBusy);
+  const canSaveImport = Boolean(pendingImportMatchesText && !mutationBusy);
   const canToggle = Boolean(selectedDetail?.ready && !mutationBusy);
   const canCreateDraft = Boolean(
     selectedDetail?.isActive &&
@@ -471,9 +494,10 @@ export function DailyCrewTemplateLibrary({
           jsonText={importText}
           result={importResult}
           pendingImport={pendingImport}
+          pendingImportStale={pendingImportStale}
           disabled={mutationBusy}
           canSave={canSaveImport}
-          onJsonText={setImportText}
+          onJsonText={updateImportText}
           onValidate={validateImportText}
           onClear={clearImportPanel}
           onInsertExample={insertImportExample}
@@ -530,7 +554,8 @@ export function DailyCrewTemplateLibrary({
             <PendingImportPreview
               pendingImport={pendingImport}
               characterById={characterById}
-              disabled={mutationBusy}
+              pendingImportStale={pendingImportStale}
+              canSave={canSaveImport}
               onSave={savePendingImport}
             />
           )}
@@ -859,6 +884,7 @@ function TemplateImportPanel({
   jsonText,
   result,
   pendingImport,
+  pendingImportStale,
   disabled,
   canSave,
   onJsonText,
@@ -871,6 +897,7 @@ function TemplateImportPanel({
   jsonText: string;
   result: DailyCrewTemplateImportResult | null;
   pendingImport: PendingTemplateImport | null;
+  pendingImportStale: boolean;
   disabled: boolean;
   canSave: boolean;
   onJsonText: (value: string) => void;
@@ -935,6 +962,11 @@ function TemplateImportPanel({
           )}
         </div>
         {result && !result.ok && <ImportErrors errors={result.errors} />}
+        {pendingImportStale && (
+          <p className="text-xs font-bold text-bear">
+            JSON changed after validation. Validate again before saving.
+          </p>
+        )}
         {pendingImport && (
           <div className="border border-border bg-card/40 p-3 text-xs">
             <div className="font-bold text-foreground">Valid template preview</div>
@@ -966,12 +998,14 @@ function TemplateImportPanel({
 function PendingImportPreview({
   pendingImport,
   characterById,
-  disabled,
+  pendingImportStale,
+  canSave,
   onSave,
 }: {
   pendingImport: PendingTemplateImport;
   characterById: Map<string, CharacterRow>;
-  disabled: boolean;
+  pendingImportStale: boolean;
+  canSave: boolean;
   onSave: () => void;
 }) {
   return (
@@ -1013,10 +1047,15 @@ function PendingImportPreview({
             })}
           </div>
         </div>
+        {pendingImportStale && (
+          <p className="font-bold text-bear">
+            JSON changed after validation. Validate again before saving.
+          </p>
+        )}
         <button
           type="button"
           onClick={onSave}
-          disabled={disabled}
+          disabled={!canSave}
           className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
         >
           {pendingImport.mode === "new" ? "Save as Template" : "Update Template"}

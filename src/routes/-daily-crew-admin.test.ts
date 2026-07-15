@@ -365,6 +365,88 @@ test("Daily Crew Template Library validates JSON locally before saving", () => {
   assert.match(templateLibrarySource, /Mission date is used only to validate the JSON format/);
 });
 
+test("Daily Crew Template Library makes pending imports saveable only for the validated JSON text", () => {
+  assert.match(templateLibrarySource, /validatedJsonText: string/);
+  assert.match(templateLibrarySource, /validatedJsonText: importText/);
+  assert.match(
+    templateLibrarySource,
+    /const pendingImportMatchesText = Boolean\(\s*pendingImport && importText === pendingImport\.validatedJsonText,\s*\)/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /const canSaveImport = Boolean\(pendingImportMatchesText && !mutationBusy\)/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /if \(importText !== pendingImport\.validatedJsonText\) \{[\s\S]*The JSON has changed since validation\. Validate it again before saving\.[\s\S]*return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /JSON changed after validation\. Validate again before saving\./,
+  );
+});
+
+test("Daily Crew Template Library editing JSON makes the prior preview stale without discarding it", () => {
+  const updateImportText = templateLibrarySource.match(
+    /function updateImportText\(value: string\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(updateImportText, "updateImportText should be present");
+  assert.match(updateImportText, /setImportText\(value\)/);
+  assert.match(updateImportText, /setImportResult\(null\)/);
+  assert.doesNotMatch(updateImportText, /setPendingImport|saveAdminDailyCrewTemplate/);
+
+  const insertImportExample = templateLibrarySource.match(
+    /function insertImportExample\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(insertImportExample, "insertImportExample should be present");
+  assert.match(insertImportExample, /setImportText\(DAILY_CREW_TEMPLATE_IMPORT_EXAMPLE\)/);
+  assert.match(insertImportExample, /setImportResult\(null\)/);
+  assert.doesNotMatch(insertImportExample, /setPendingImport|saveAdminDailyCrewTemplate/);
+});
+
+test("Daily Crew Template Library clear intentionally discards import text, result, and pending draft", () => {
+  const clearImportPanel = templateLibrarySource.match(
+    /function clearImportPanel\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(clearImportPanel, "clearImportPanel should be present");
+  assert.match(clearImportPanel, /setImportText\(""\)/);
+  assert.match(clearImportPanel, /setImportResult\(null\)/);
+  assert.match(clearImportPanel, /setPendingImport\(null\)/);
+  assert.doesNotMatch(
+    clearImportPanel,
+    /setSelectedTemplateId|advanceTemplateOperation|createAdminDailyCrewMissionFromTemplate/,
+  );
+});
+
+test("Daily Crew Template Library failed revalidation retains the prior draft and cannot save stale text", () => {
+  const failureBranch = templateLibrarySource.match(
+    /if \(!result\.ok\) \{[\s\S]*?return;\s*\}/,
+  )?.[0];
+  assert.ok(failureBranch, "failed validation branch should be present");
+  assert.match(failureBranch, /setImportResult\(result\)/);
+  assert.doesNotMatch(failureBranch, /setPendingImport|saveAdminDailyCrewTemplate/);
+  assert.match(
+    templateLibrarySource,
+    /if \(!result\.ok\) \{[\s\S]*?return;\s*\}\s+if \(\s*pendingImport &&\s*importText !== pendingImport\.validatedJsonText/,
+  );
+  assert.match(templateLibrarySource, /disabled=\{!canSave\}/);
+});
+
+test("Daily Crew Template Library save buttons share the safe validated-text eligibility", () => {
+  assert.match(templateLibrarySource, /<TemplateImportPanel[\s\S]*canSave=\{canSaveImport\}/);
+  assert.match(templateLibrarySource, /<PendingImportPreview[\s\S]*canSave=\{canSaveImport\}/);
+  const templateImportPanel = templateLibrarySource.match(
+    /function TemplateImportPanel[\s\S]*?\n}\n\nfunction PendingImportPreview/,
+  )?.[0];
+  const pendingImportPreview = templateLibrarySource.match(
+    /function PendingImportPreview[\s\S]*?\n}\n\nfunction ImportErrors/,
+  )?.[0];
+  assert.ok(templateImportPanel, "TemplateImportPanel should be present");
+  assert.ok(pendingImportPreview, "PendingImportPreview should be present");
+  assert.match(templateImportPanel, /disabled=\{!canSave\}/);
+  assert.match(pendingImportPreview, /disabled=\{!canSave\}/);
+});
+
 test("Daily Crew Template Library save and replacement payloads preserve template identity rules", () => {
   assert.match(
     templateLibrarySource,
