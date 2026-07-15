@@ -464,6 +464,66 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_crew_rotation_plan_slots: {
+        Row: {
+          created_at: string
+          plan_id: string
+          slot_number: number
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          plan_id: string
+          slot_number: number
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          plan_id?: string
+          slot_number?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_rotation_plan_slots_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_rotation_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_crew_rotation_plan_slots_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_mission_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_crew_rotation_plans: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       daily_crew_mission_pool: {
         Row: {
           character_id: string
@@ -520,6 +580,9 @@ export type Database = {
           reveal_at: string | null
           reveal_policy: Database["public"]["Enums"]["daily_crew_reveal_policy"]
           slug: string
+          source_rotation_plan_id: string | null
+          source_rotation_plan_revision: number | null
+          source_rotation_slot: number | null
           source_template_id: string | null
           source_template_revision: number | null
           status: Database["public"]["Enums"]["daily_crew_mission_status"]
@@ -536,6 +599,9 @@ export type Database = {
           reveal_at?: string | null
           reveal_policy?: Database["public"]["Enums"]["daily_crew_reveal_policy"]
           slug: string
+          source_rotation_plan_id?: string | null
+          source_rotation_plan_revision?: number | null
+          source_rotation_slot?: number | null
           source_template_id?: string | null
           source_template_revision?: number | null
           status?: Database["public"]["Enums"]["daily_crew_mission_status"]
@@ -552,6 +618,9 @@ export type Database = {
           reveal_at?: string | null
           reveal_policy?: Database["public"]["Enums"]["daily_crew_reveal_policy"]
           slug?: string
+          source_rotation_plan_id?: string | null
+          source_rotation_plan_revision?: number | null
+          source_rotation_slot?: number | null
           source_template_id?: string | null
           source_template_revision?: number | null
           status?: Database["public"]["Enums"]["daily_crew_mission_status"]
@@ -559,6 +628,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "daily_crew_missions_source_rotation_plan_fkey"
+            columns: ["source_rotation_plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_rotation_plans"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "daily_crew_missions_source_template_fkey"
             columns: ["source_template_id"]
@@ -1967,8 +2043,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_generate_daily_crew_rotation: {
+        Args: {
+          _plan_id: string
+          _start_date: string
+          _target_status: Database["public"]["Enums"]["daily_crew_mission_status"]
+        }
+        Returns: Json
+      }
+      admin_preview_daily_crew_rotation: {
+        Args: {
+          _plan_id: string
+          _start_date: string
+          _target_status: Database["public"]["Enums"]["daily_crew_mission_status"]
+        }
+        Returns: Json
+      }
       admin_create_daily_crew_builder_mission_from_template: {
         Args: { _mission_date: string; _template_id: string }
+        Returns: Json
+      }
+      admin_save_daily_crew_rotation_plan: {
+        Args: { _name: string; _plan_id: string | null; _slots: Json }
         Returns: Json
       }
       admin_save_daily_crew_builder_mission: {
@@ -2408,6 +2504,10 @@ export type Database = {
       user_equity: { Args: { _user_id: string }; Returns: number }
       validate_daily_crew_mission: {
         Args: { _mission_id: string }
+        Returns: boolean
+      }
+      validate_daily_crew_rotation_plan: {
+        Args: { _plan_id: string }
         Returns: boolean
       }
       validate_daily_crew_template: {

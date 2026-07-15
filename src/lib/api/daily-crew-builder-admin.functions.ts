@@ -7,6 +7,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 const DAILY_CREW_ROLES = ["captain", "fighter", "navigator", "strategist", "support"] as const;
 const DAILY_CREW_REVEAL_POLICIES = ["immediate", "next_day", "manual"] as const;
 const DAILY_CREW_MISSION_STATUSES = ["draft", "scheduled", "published", "archived"] as const;
+const DAILY_CREW_ROTATION_TARGET_STATUSES = ["draft", "scheduled"] as const;
 const missionDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const trimmedString = (max: number) =>
   z
@@ -191,6 +192,41 @@ const createMissionFromTemplateInput = z
     missionDate: missionDateSchema,
   })
   .strict();
+const rotationPlanIdInput = z.object({ planId: z.string().uuid() }).strict();
+const rotationSlotInput = z
+  .object({
+    slotNumber: z.number().int().min(1).max(30),
+    templateId: z.string().uuid(),
+  })
+  .strict();
+const rotationPlanSaveInput = z
+  .object({
+    planId: z.string().uuid().nullable().optional(),
+    name: trimmedString(120),
+    slots: z.array(rotationSlotInput).max(30).default([]),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const seenSlots = new Set<number>();
+    for (let index = 0; index < value.slots.length; index += 1) {
+      const slot = value.slots[index];
+      if (seenSlots.has(slot.slotNumber)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Daily Crew Builder rotation slots cannot repeat slot numbers.",
+          path: ["slots", index, "slotNumber"],
+        });
+      }
+      seenSlots.add(slot.slotNumber);
+    }
+  });
+const rotationRunInput = z
+  .object({
+    planId: z.string().uuid(),
+    startDate: missionDateSchema,
+    targetStatus: z.enum(DAILY_CREW_ROTATION_TARGET_STATUSES),
+  })
+  .strict();
 
 const authoringRpcResultSchema = z
   .object({
@@ -236,6 +272,78 @@ const templateInstanceRpcResultSchema = z
   })
   .strict();
 
+const rotationPlanSaveRpcResultSchema = z
+  .object({
+    planId: z.string().uuid(),
+    name: z.string(),
+    revision: z.number().int().positive(),
+    slotCount: z.number().int().min(0).max(30),
+    uniqueTemplateCount: z.number().int().min(0).max(30),
+    ready: z.boolean(),
+  })
+  .strict();
+
+const rotationPreviewSlotSchema = z
+  .object({
+    slotNumber: z.number().int().min(1).max(30),
+    missionDate: z.string(),
+    templateId: z.string().uuid().nullable(),
+    templateTitle: z.string().nullable(),
+    templateSlug: z.string().nullable(),
+    templateRevision: z.number().int().positive().nullable(),
+    templateActive: z.boolean().nullable(),
+    templateReady: z.boolean(),
+    generatedSlug: z.string().nullable(),
+    dateConflict: z.boolean(),
+    slugConflict: z.boolean(),
+    blockingReasons: z.array(z.string()),
+  })
+  .strict();
+
+const rotationPreviewRpcResultSchema = z
+  .object({
+    planId: z.string().uuid(),
+    planName: z.string(),
+    planRevision: z.number().int().positive(),
+    startDate: z.string(),
+    endDate: z.string(),
+    targetStatus: z.enum(DAILY_CREW_ROTATION_TARGET_STATUSES),
+    slotCount: z.number().int().min(0).max(30),
+    uniqueTemplateCount: z.number().int().min(0).max(30),
+    planReady: z.boolean(),
+    conflictCount: z.number().int().nonnegative(),
+    readyToGenerate: z.boolean(),
+    slots: z.array(rotationPreviewSlotSchema).length(30),
+  })
+  .strict();
+
+const generatedRotationMissionSchema = z
+  .object({
+    slotNumber: z.number().int().min(1).max(30),
+    missionId: z.string().uuid(),
+    missionDate: z.string(),
+    slug: z.string(),
+    status: z.enum(DAILY_CREW_ROTATION_TARGET_STATUSES),
+    sourceTemplateId: z.string().uuid(),
+    sourceTemplateRevision: z.number().int().positive(),
+    sourceRotationPlanId: z.string().uuid(),
+    sourceRotationPlanRevision: z.number().int().positive(),
+  })
+  .strict();
+
+const rotationGenerateRpcResultSchema = z
+  .object({
+    planId: z.string().uuid(),
+    planName: z.string(),
+    planRevision: z.number().int().positive(),
+    startDate: z.string(),
+    endDate: z.string(),
+    targetStatus: z.enum(DAILY_CREW_ROTATION_TARGET_STATUSES),
+    createdCount: z.literal(30),
+    missions: z.array(generatedRotationMissionSchema).length(30),
+  })
+  .strict();
+
 const missionRowSchema = z
   .object({
     id: z.string().uuid(),
@@ -264,6 +372,34 @@ const templateRowSchema = z
     revision: z.number().int(),
     created_at: z.string(),
     updated_at: z.string(),
+  })
+  .strict();
+
+const rotationPlanRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    revision: z.number().int(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+
+const rotationSlotSummaryRowSchema = z
+  .object({
+    plan_id: z.string().uuid(),
+    slot_number: z.number().int(),
+    template_id: z.string().uuid(),
+  })
+  .strict();
+
+const templateBasicRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    slug: z.string(),
+    title: z.string(),
+    is_active: z.boolean(),
+    revision: z.number().int(),
   })
   .strict();
 
@@ -359,6 +495,43 @@ export type AdminDailyCrewTemplateDetail = AdminDailyCrewTemplateSummary & {
   perfectSolution: z.infer<typeof authoringPerfectSolutionSchema>[];
 };
 
+export type AdminDailyCrewRotationPlanSummary = {
+  id: string;
+  name: string;
+  revision: number;
+  slotCount: number;
+  uniqueTemplateCount: number;
+  ready: boolean;
+  generatedMissionCount: number;
+  mostRecentGeneratedMissionDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminDailyCrewRotationPlanSlotDetail = {
+  slotNumber: number;
+  templateId: string;
+  templateTitle: string;
+  templateSlug: string;
+  templateRevision: number;
+  templateActive: boolean;
+  templateReady: boolean;
+  poolCount: number;
+  jobCount: number;
+  scoreCount: number;
+};
+
+export type AdminDailyCrewRotationPlanDetail = AdminDailyCrewRotationPlanSummary & {
+  slots: AdminDailyCrewRotationPlanSlotDetail[];
+};
+
+export type AdminDailyCrewRotationPreviewSlot = z.infer<typeof rotationPreviewSlotSchema>;
+export type AdminDailyCrewRotationPreviewResult = z.infer<typeof rotationPreviewRpcResultSchema>;
+export type AdminDailyCrewGeneratedMission = z.infer<typeof generatedRotationMissionSchema>;
+export type AdminDailyCrewRotationGenerationResult = z.infer<
+  typeof rotationGenerateRpcResultSchema
+>;
+
 async function admin(): Promise<DailyCrewAdminDb> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
@@ -419,6 +592,14 @@ function countByTemplate(rows: { template_id: string }[]) {
   return counts;
 }
 
+function countByRotationPlan(rows: { plan_id: string }[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.plan_id, (counts.get(row.plan_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function summarizeTemplateInstances(rows: { source_template_id: string; mission_date: string }[]) {
   const counts = new Map<string, number>();
   const mostRecentMissionDates = new Map<string, string>();
@@ -428,6 +609,26 @@ function summarizeTemplateInstances(rows: { source_template_id: string; mission_
     const current = mostRecentMissionDates.get(row.source_template_id);
     if (!current || row.mission_date > current) {
       mostRecentMissionDates.set(row.source_template_id, row.mission_date);
+    }
+  }
+
+  return { counts, mostRecentMissionDates };
+}
+
+function summarizeRotationInstances(
+  rows: {
+    source_rotation_plan_id: string;
+    mission_date: string;
+  }[],
+) {
+  const counts = new Map<string, number>();
+  const mostRecentMissionDates = new Map<string, string>();
+
+  for (const row of rows) {
+    counts.set(row.source_rotation_plan_id, (counts.get(row.source_rotation_plan_id) ?? 0) + 1);
+    const current = mostRecentMissionDates.get(row.source_rotation_plan_id);
+    if (!current || row.mission_date > current) {
+      mostRecentMissionDates.set(row.source_rotation_plan_id, row.mission_date);
     }
   }
 
@@ -462,6 +663,20 @@ async function getTemplateReadyMap(db: DailyCrewAdminDb, templateIds: string[]) 
   return ready;
 }
 
+async function getRotationPlanReadyMap(db: DailyCrewAdminDb, planIds: string[]) {
+  const ready = new Map<string, boolean>();
+  await Promise.all(
+    planIds.map(async (planId) => {
+      const { data, error } = await db.rpc("validate_daily_crew_rotation_plan", {
+        _plan_id: planId,
+      });
+      if (error) throw error;
+      ready.set(planId, Boolean(data));
+    }),
+  );
+  return ready;
+}
+
 async function listRowsByMission(db: DailyCrewAdminDb, missionIds: string[]) {
   if (missionIds.length === 0) {
     return {
@@ -490,6 +705,21 @@ async function listRowsByMission(db: DailyCrewAdminDb, missionIds: string[]) {
     scoreRows: (scoreResult.data ?? []) as { mission_id: string }[],
     submissionRows: (submissionResult.data ?? []) as { mission_id: string }[],
   };
+}
+
+async function listTemplateBasics(db: DailyCrewAdminDb, templateIds: string[]) {
+  if (templateIds.length === 0) {
+    return new Map<string, z.infer<typeof templateBasicRowSchema>>();
+  }
+
+  const { data, error } = await db
+    .from("daily_crew_mission_templates")
+    .select("id,slug,title,is_active,revision")
+    .in("id", templateIds);
+  if (error) throw error;
+
+  const templates = templateBasicRowSchema.array().parse(data ?? []);
+  return new Map(templates.map((template) => [template.id, template]));
 }
 
 async function listRowsByTemplate(db: DailyCrewAdminDb, templateIds: string[]) {
@@ -601,6 +831,36 @@ function mapTemplateSummary(args: {
     ready: ready.get(template.id) ?? false,
     createdAt: template.created_at,
     updatedAt: template.updated_at,
+  };
+}
+
+function mapRotationPlanSummary(args: {
+  plan: z.infer<typeof rotationPlanRowSchema>;
+  slotCounts: Map<string, number>;
+  uniqueTemplateCounts: Map<string, number>;
+  generatedMissionCounts: Map<string, number>;
+  mostRecentGeneratedMissionDates: Map<string, string>;
+  ready: Map<string, boolean>;
+}): AdminDailyCrewRotationPlanSummary {
+  const {
+    plan,
+    slotCounts,
+    uniqueTemplateCounts,
+    generatedMissionCounts,
+    mostRecentGeneratedMissionDates,
+    ready,
+  } = args;
+  return {
+    id: plan.id,
+    name: plan.name,
+    revision: plan.revision,
+    slotCount: slotCounts.get(plan.id) ?? 0,
+    uniqueTemplateCount: uniqueTemplateCounts.get(plan.id) ?? 0,
+    ready: ready.get(plan.id) ?? false,
+    generatedMissionCount: generatedMissionCounts.get(plan.id) ?? 0,
+    mostRecentGeneratedMissionDate: mostRecentGeneratedMissionDates.get(plan.id) ?? null,
+    createdAt: plan.created_at,
+    updatedAt: plan.updated_at,
   };
 }
 
@@ -996,6 +1256,221 @@ export const createAdminDailyCrewMissionFromTemplate = createServerFn({ method: 
       );
       if (error) throw error;
       return templateInstanceRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const listAdminDailyCrewRotationPlans = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AdminDailyCrewRotationPlanSummary[]> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data, error } = await db
+        .from("daily_crew_rotation_plans")
+        .select("id,name,revision,created_at,updated_at")
+        .order("updated_at", { ascending: false })
+        .order("name", { ascending: true });
+      if (error) throw error;
+
+      const plans = rotationPlanRowSchema.array().parse(data ?? []);
+      const planIds = plans.map((plan) => plan.id);
+
+      if (planIds.length === 0) {
+        return [];
+      }
+
+      const [slotResult, missionResult, ready] = await Promise.all([
+        db
+          .from("daily_crew_rotation_plan_slots")
+          .select("plan_id,slot_number,template_id")
+          .in("plan_id", planIds),
+        db
+          .from("daily_crew_missions")
+          .select("source_rotation_plan_id,mission_date")
+          .in("source_rotation_plan_id", planIds),
+        getRotationPlanReadyMap(db, planIds),
+      ]);
+
+      if (slotResult.error) throw slotResult.error;
+      if (missionResult.error) throw missionResult.error;
+
+      const slotRows = rotationSlotSummaryRowSchema.array().parse(slotResult.data ?? []);
+      const missionRows = (
+        (missionResult.data ?? []) as {
+          source_rotation_plan_id: string | null;
+          mission_date: string;
+        }[]
+      ).filter(
+        (row): row is { source_rotation_plan_id: string; mission_date: string } =>
+          row.source_rotation_plan_id !== null,
+      );
+      const slotCounts = countByRotationPlan(slotRows);
+      const uniqueTemplateCounts = new Map<string, number>();
+      for (const planId of planIds) {
+        uniqueTemplateCounts.set(
+          planId,
+          new Set(
+            slotRows.filter((slot) => slot.plan_id === planId).map((slot) => slot.template_id),
+          ).size,
+        );
+      }
+      const { counts: generatedMissionCounts, mostRecentMissionDates } =
+        summarizeRotationInstances(missionRows);
+
+      return plans.map((plan) =>
+        mapRotationPlanSummary({
+          plan,
+          slotCounts,
+          uniqueTemplateCounts,
+          generatedMissionCounts,
+          mostRecentGeneratedMissionDates: mostRecentMissionDates,
+          ready,
+        }),
+      );
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const getAdminDailyCrewRotationPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => rotationPlanIdInput.parse(input))
+  .handler(async ({ data, context }): Promise<AdminDailyCrewRotationPlanDetail> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: planData, error: planError } = await db
+        .from("daily_crew_rotation_plans")
+        .select("id,name,revision,created_at,updated_at")
+        .eq("id", data.planId)
+        .maybeSingle();
+      if (planError) throw planError;
+      if (!planData) throw new Error("Daily Crew Builder rotation plan not found");
+
+      const plan = rotationPlanRowSchema.parse(planData);
+      const [slotResult, missionResult, readyResult] = await Promise.all([
+        db
+          .from("daily_crew_rotation_plan_slots")
+          .select("plan_id,slot_number,template_id")
+          .eq("plan_id", data.planId)
+          .order("slot_number", { ascending: true }),
+        db
+          .from("daily_crew_missions")
+          .select("source_rotation_plan_id,mission_date")
+          .eq("source_rotation_plan_id", data.planId),
+        db.rpc("validate_daily_crew_rotation_plan", { _plan_id: data.planId }),
+      ]);
+
+      if (slotResult.error) throw slotResult.error;
+      if (missionResult.error) throw missionResult.error;
+      if (readyResult.error) throw readyResult.error;
+
+      const slotRows = rotationSlotSummaryRowSchema.array().parse(slotResult.data ?? []);
+      const templateIds = Array.from(new Set(slotRows.map((slot) => slot.template_id)));
+      const [templateBasics, templateRows, templateReady] = await Promise.all([
+        listTemplateBasics(db, templateIds),
+        listRowsByTemplate(db, templateIds),
+        getTemplateReadyMap(db, templateIds),
+      ]);
+      const poolCounts = countByTemplate(templateRows.poolRows);
+      const jobCounts = countByTemplate(templateRows.jobRows);
+      const scoreCounts = countByTemplate(templateRows.scoreRows);
+      const missionRows = (
+        (missionResult.data ?? []) as {
+          source_rotation_plan_id: string | null;
+          mission_date: string;
+        }[]
+      ).filter(
+        (row): row is { source_rotation_plan_id: string; mission_date: string } =>
+          row.source_rotation_plan_id !== null,
+      );
+      const { counts: generatedMissionCounts, mostRecentMissionDates } =
+        summarizeRotationInstances(missionRows);
+      const summary = mapRotationPlanSummary({
+        plan,
+        slotCounts: new Map([[plan.id, slotRows.length]]),
+        uniqueTemplateCounts: new Map([[plan.id, templateIds.length]]),
+        generatedMissionCounts,
+        mostRecentGeneratedMissionDates: mostRecentMissionDates,
+        ready: new Map([[plan.id, Boolean(readyResult.data)]]),
+      });
+
+      return {
+        ...summary,
+        slots: slotRows.map((slot) => {
+          const template = templateBasics.get(slot.template_id);
+          if (!template) {
+            throw new Error("Daily Crew Builder rotation plan references an unknown template");
+          }
+
+          return {
+            slotNumber: slot.slot_number,
+            templateId: template.id,
+            templateTitle: template.title,
+            templateSlug: template.slug,
+            templateRevision: template.revision,
+            templateActive: template.is_active,
+            templateReady: templateReady.get(template.id) ?? false,
+            poolCount: poolCounts.get(template.id) ?? 0,
+            jobCount: jobCounts.get(template.id) ?? 0,
+            scoreCount: scoreCounts.get(template.id) ?? 0,
+          };
+        }),
+      };
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const saveAdminDailyCrewRotationPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => rotationPlanSaveInput.parse(input))
+  .handler(async ({ data, context }) => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc("admin_save_daily_crew_rotation_plan", {
+        _plan_id: data.planId ?? null,
+        _name: data.name,
+        _slots: toJson(data.slots),
+      });
+      if (error) throw error;
+      return rotationPlanSaveRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const previewAdminDailyCrewRotation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => rotationRunInput.parse(input))
+  .handler(async ({ data, context }): Promise<AdminDailyCrewRotationPreviewResult> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc("admin_preview_daily_crew_rotation", {
+        _plan_id: data.planId,
+        _start_date: data.startDate,
+        _target_status: data.targetStatus,
+      });
+      if (error) throw error;
+      return rotationPreviewRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const generateAdminDailyCrewRotation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => rotationRunInput.parse(input))
+  .handler(async ({ data, context }): Promise<AdminDailyCrewRotationGenerationResult> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc("admin_generate_daily_crew_rotation", {
+        _plan_id: data.planId,
+        _start_date: data.startDate,
+        _target_status: data.targetStatus,
+      });
+      if (error) throw error;
+      return rotationGenerateRpcResultSchema.parse(result);
     } catch (error) {
       throw mapAdminDailyCrewError(error);
     }
