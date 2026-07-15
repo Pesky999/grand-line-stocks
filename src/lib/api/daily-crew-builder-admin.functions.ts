@@ -27,6 +27,10 @@ const slugSchema = z
   .string()
   .transform((value) => value.trim())
   .pipe(z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/));
+const templateSlugSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,67}[a-z0-9])?$/));
 const subtypeKeySchema = z
   .string()
   .transform((value) => value.trim())
@@ -121,11 +125,70 @@ const missionAuthoringInput = z
     }
   });
 
+const templateAuthoringInput = z
+  .object({
+    templateId: z.string().uuid().nullable().optional(),
+    slug: templateSlugSchema,
+    title: trimmedString(120),
+    brief: trimmedString(2000),
+    missionTags: z.array(tagSchema).max(8).default([]),
+    revealPolicy: z.enum(DAILY_CREW_REVEAL_POLICIES),
+    isActive: z.boolean(),
+    pool: z
+      .array(authoringPoolEntrySchema)
+      .refine((pool) => pool.length === 9 || pool.length === 15, {
+        message: "Daily Crew Builder templates require 9 or 15 pool characters.",
+      }),
+    jobs: z.array(authoringJobSchema).refine((jobs) => jobs.length === 3 || jobs.length === 5, {
+      message: "Daily Crew Builder templates require 3 or 5 jobs.",
+    }),
+    scores: z.array(authoringScoreSchema),
+    perfectSolution: z.array(authoringPerfectSolutionSchema),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const supportedFormat =
+      (value.pool.length === 9 && value.jobs.length === 3) ||
+      (value.pool.length === 15 && value.jobs.length === 5);
+
+    if (!supportedFormat) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Daily Crew Builder templates must use either 9 pool characters with 3 jobs or 15 pool characters with 5 jobs.",
+        path: ["jobs"],
+      });
+    }
+
+    if (value.scores.length !== value.pool.length * value.jobs.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Daily Crew Builder template scores must cover every pool character and job.",
+        path: ["scores"],
+      });
+    }
+
+    if (value.perfectSolution.length !== value.jobs.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Daily Crew Builder template perfect solution must include one entry per job.",
+        path: ["perfectSolution"],
+      });
+    }
+  });
+
 const missionIdInput = z.object({ missionId: z.string().uuid() }).strict();
+const templateIdInput = z.object({ templateId: z.string().uuid() }).strict();
 const statusInput = z
   .object({
     missionId: z.string().uuid(),
     targetStatus: z.enum(DAILY_CREW_MISSION_STATUSES),
+  })
+  .strict();
+const createMissionFromTemplateInput = z
+  .object({
+    templateId: z.string().uuid(),
+    missionDate: missionDateSchema,
   })
   .strict();
 
@@ -143,6 +206,36 @@ const authoringRpcResultSchema = z
   })
   .strict();
 
+const templateRpcResultSchema = z
+  .object({
+    templateId: z.string().uuid(),
+    slug: z.string(),
+    revision: z.number().int().positive(),
+    isActive: z.boolean(),
+    poolCount: z.number().int().nonnegative(),
+    jobCount: z.number().int().nonnegative(),
+    scoreCount: z.number().int().nonnegative(),
+    instanceCount: z.number().int().nonnegative(),
+    ready: z.boolean(),
+  })
+  .strict();
+
+const templateInstanceRpcResultSchema = z
+  .object({
+    missionId: z.string().uuid(),
+    missionDate: z.string(),
+    slug: z.string(),
+    status: z.enum(DAILY_CREW_MISSION_STATUSES),
+    sourceTemplateId: z.string().uuid(),
+    sourceTemplateRevision: z.number().int().positive(),
+    poolCount: z.number().int().nonnegative(),
+    jobCount: z.number().int().nonnegative(),
+    scoreCount: z.number().int().nonnegative(),
+    submissionCount: z.number().int().nonnegative(),
+    ready: z.boolean(),
+  })
+  .strict();
+
 const missionRowSchema = z
   .object({
     id: z.string().uuid(),
@@ -154,6 +247,21 @@ const missionRowSchema = z
     status: z.enum(DAILY_CREW_MISSION_STATUSES),
     reveal_policy: z.enum(DAILY_CREW_REVEAL_POLICIES),
     reveal_at: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+
+const templateRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    slug: z.string(),
+    title: z.string(),
+    brief: z.string(),
+    mission_tags: z.array(z.string()),
+    reveal_policy: z.enum(DAILY_CREW_REVEAL_POLICIES),
+    is_active: z.boolean(),
+    revision: z.number().int(),
     created_at: z.string(),
     updated_at: z.string(),
   })
@@ -196,8 +304,8 @@ const perfectSolutionRowSchema = z
   .strict();
 
 type DailyCrewAdminDb = SupabaseClient<Database>;
-type MissionAuthoringInput = z.infer<typeof missionAuthoringInput>;
 type DailyCrewMissionStatus = Database["public"]["Enums"]["daily_crew_mission_status"];
+type DailyCrewRevealPolicy = Database["public"]["Enums"]["daily_crew_reveal_policy"];
 
 export type AdminDailyCrewMissionSummary = {
   id: string;
@@ -216,7 +324,33 @@ export type AdminDailyCrewMissionSummary = {
   updatedAt: string;
 };
 
+export type AdminDailyCrewTemplateSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  isActive: boolean;
+  revision: number;
+  revealPolicy: DailyCrewRevealPolicy;
+  poolCount: number;
+  jobCount: number;
+  scoreCount: number;
+  instanceCount: number;
+  mostRecentMissionDate: string | null;
+  ready: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AdminDailyCrewMissionDetail = AdminDailyCrewMissionSummary & {
+  brief: string;
+  missionTags: string[];
+  pool: z.infer<typeof authoringPoolEntrySchema>[];
+  jobs: z.infer<typeof authoringJobSchema>[];
+  scores: z.infer<typeof authoringScoreSchema>[];
+  perfectSolution: z.infer<typeof authoringPerfectSolutionSchema>[];
+};
+
+export type AdminDailyCrewTemplateDetail = AdminDailyCrewTemplateSummary & {
   brief: string;
   missionTags: string[];
   pool: z.infer<typeof authoringPoolEntrySchema>[];
@@ -277,6 +411,29 @@ function countByMission(rows: { mission_id: string }[]) {
   return counts;
 }
 
+function countByTemplate(rows: { template_id: string }[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.template_id, (counts.get(row.template_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function summarizeTemplateInstances(rows: { source_template_id: string; mission_date: string }[]) {
+  const counts = new Map<string, number>();
+  const mostRecentMissionDates = new Map<string, string>();
+
+  for (const row of rows) {
+    counts.set(row.source_template_id, (counts.get(row.source_template_id) ?? 0) + 1);
+    const current = mostRecentMissionDates.get(row.source_template_id);
+    if (!current || row.mission_date > current) {
+      mostRecentMissionDates.set(row.source_template_id, row.mission_date);
+    }
+  }
+
+  return { counts, mostRecentMissionDates };
+}
+
 async function getMissionReadyMap(db: DailyCrewAdminDb, missionIds: string[]) {
   const ready = new Map<string, boolean>();
   await Promise.all(
@@ -286,6 +443,20 @@ async function getMissionReadyMap(db: DailyCrewAdminDb, missionIds: string[]) {
       });
       if (error) throw error;
       ready.set(missionId, Boolean(data));
+    }),
+  );
+  return ready;
+}
+
+async function getTemplateReadyMap(db: DailyCrewAdminDb, templateIds: string[]) {
+  const ready = new Map<string, boolean>();
+  await Promise.all(
+    templateIds.map(async (templateId) => {
+      const { data, error } = await db.rpc("validate_daily_crew_template", {
+        _template_id: templateId,
+      });
+      if (error) throw error;
+      ready.set(templateId, Boolean(data));
     }),
   );
   return ready;
@@ -321,6 +492,55 @@ async function listRowsByMission(db: DailyCrewAdminDb, missionIds: string[]) {
   };
 }
 
+async function listRowsByTemplate(db: DailyCrewAdminDb, templateIds: string[]) {
+  if (templateIds.length === 0) {
+    return {
+      poolRows: [],
+      jobRows: [],
+      scoreRows: [],
+      instanceRows: [],
+    };
+  }
+
+  const [poolResult, jobResult, scoreResult, instanceResult] = await Promise.all([
+    db
+      .from("daily_crew_mission_template_pool")
+      .select("template_id")
+      .in("template_id", templateIds),
+    db
+      .from("daily_crew_mission_template_role_requirements")
+      .select("template_id")
+      .in("template_id", templateIds),
+    db
+      .from("daily_crew_mission_template_character_role_scores")
+      .select("template_id")
+      .in("template_id", templateIds),
+    db
+      .from("daily_crew_missions")
+      .select("source_template_id,mission_date")
+      .in("source_template_id", templateIds),
+  ]);
+
+  if (poolResult.error) throw poolResult.error;
+  if (jobResult.error) throw jobResult.error;
+  if (scoreResult.error) throw scoreResult.error;
+  if (instanceResult.error) throw instanceResult.error;
+
+  const instanceRows = (
+    (instanceResult.data ?? []) as { source_template_id: string | null; mission_date: string }[]
+  ).filter(
+    (row): row is { source_template_id: string; mission_date: string } =>
+      row.source_template_id !== null,
+  );
+
+  return {
+    poolRows: (poolResult.data ?? []) as { template_id: string }[],
+    jobRows: (jobResult.data ?? []) as { template_id: string }[],
+    scoreRows: (scoreResult.data ?? []) as { template_id: string }[],
+    instanceRows,
+  };
+}
+
 function mapMissionSummary(args: {
   mission: z.infer<typeof missionRowSchema>;
   poolCounts: Map<string, number>;
@@ -345,6 +565,42 @@ function mapMissionSummary(args: {
     ready: ready.get(mission.id) ?? false,
     createdAt: mission.created_at,
     updatedAt: mission.updated_at,
+  };
+}
+
+function mapTemplateSummary(args: {
+  template: z.infer<typeof templateRowSchema>;
+  poolCounts: Map<string, number>;
+  jobCounts: Map<string, number>;
+  scoreCounts: Map<string, number>;
+  instanceCounts: Map<string, number>;
+  mostRecentMissionDates: Map<string, string>;
+  ready: Map<string, boolean>;
+}): AdminDailyCrewTemplateSummary {
+  const {
+    template,
+    poolCounts,
+    jobCounts,
+    scoreCounts,
+    instanceCounts,
+    mostRecentMissionDates,
+    ready,
+  } = args;
+  return {
+    id: template.id,
+    slug: template.slug,
+    title: template.title,
+    isActive: template.is_active,
+    revision: template.revision,
+    revealPolicy: template.reveal_policy,
+    poolCount: poolCounts.get(template.id) ?? 0,
+    jobCount: jobCounts.get(template.id) ?? 0,
+    scoreCount: scoreCounts.get(template.id) ?? 0,
+    instanceCount: instanceCounts.get(template.id) ?? 0,
+    mostRecentMissionDate: mostRecentMissionDates.get(template.id) ?? null,
+    ready: ready.get(template.id) ?? false,
+    createdAt: template.created_at,
+    updatedAt: template.updated_at,
   };
 }
 
@@ -534,6 +790,212 @@ export const setAdminDailyCrewMissionStatus = createServerFn({ method: "POST" })
       });
       if (error) throw error;
       return authoringRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const listAdminDailyCrewTemplates = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AdminDailyCrewTemplateSummary[]> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data, error } = await db
+        .from("daily_crew_mission_templates")
+        .select(
+          "id,slug,title,brief,mission_tags,reveal_policy,is_active,revision,created_at,updated_at",
+        )
+        .order("updated_at", { ascending: false })
+        .order("slug", { ascending: true });
+      if (error) throw error;
+
+      const templates = templateRowSchema.array().parse(data ?? []);
+      const templateIds = templates.map((template) => template.id);
+      const [rows, ready] = await Promise.all([
+        listRowsByTemplate(db, templateIds),
+        getTemplateReadyMap(db, templateIds),
+      ]);
+      const poolCounts = countByTemplate(rows.poolRows);
+      const jobCounts = countByTemplate(rows.jobRows);
+      const scoreCounts = countByTemplate(rows.scoreRows);
+      const { counts: instanceCounts, mostRecentMissionDates } = summarizeTemplateInstances(
+        rows.instanceRows,
+      );
+
+      return templates.map((template) =>
+        mapTemplateSummary({
+          template,
+          poolCounts,
+          jobCounts,
+          scoreCounts,
+          instanceCounts,
+          mostRecentMissionDates,
+          ready,
+        }),
+      );
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const getAdminDailyCrewTemplate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => templateIdInput.parse(input))
+  .handler(async ({ data, context }): Promise<AdminDailyCrewTemplateDetail> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: templateData, error: templateError } = await db
+        .from("daily_crew_mission_templates")
+        .select(
+          "id,slug,title,brief,mission_tags,reveal_policy,is_active,revision,created_at,updated_at",
+        )
+        .eq("id", data.templateId)
+        .maybeSingle();
+      if (templateError) throw templateError;
+      if (!templateData) throw new Error("Daily Crew Builder template not found");
+
+      const [poolResult, jobsResult, scoresResult, solutionResult, instancesResult, readyResult] =
+        await Promise.all([
+          db
+            .from("daily_crew_mission_template_pool")
+            .select("character_id,display_order,is_straw_hat,visible_tags")
+            .eq("template_id", data.templateId)
+            .order("display_order", { ascending: true }),
+          db
+            .from("daily_crew_mission_template_role_requirements")
+            .select("role,subtype_key,subtype_label,display_label,display_order,max_points")
+            .eq("template_id", data.templateId)
+            .order("display_order", { ascending: true }),
+          db
+            .from("daily_crew_mission_template_character_role_scores")
+            .select("character_id,role,score,explanation")
+            .eq("template_id", data.templateId)
+            .order("role", { ascending: true })
+            .order("character_id", { ascending: true }),
+          db
+            .from("daily_crew_mission_template_perfect_solution")
+            .select("role,character_id")
+            .eq("template_id", data.templateId)
+            .order("role", { ascending: true }),
+          db
+            .from("daily_crew_missions")
+            .select("source_template_id,mission_date")
+            .eq("source_template_id", data.templateId),
+          db.rpc("validate_daily_crew_template", { _template_id: data.templateId }),
+        ]);
+
+      if (poolResult.error) throw poolResult.error;
+      if (jobsResult.error) throw jobsResult.error;
+      if (scoresResult.error) throw scoresResult.error;
+      if (solutionResult.error) throw solutionResult.error;
+      if (instancesResult.error) throw instancesResult.error;
+      if (readyResult.error) throw readyResult.error;
+
+      const template = templateRowSchema.parse(templateData);
+      const pool = poolRowSchema.array().parse(poolResult.data ?? []);
+      const jobs = jobRowSchema.array().parse(jobsResult.data ?? []);
+      const scores = scoreRowSchema.array().parse(scoresResult.data ?? []);
+      const perfectSolution = perfectSolutionRowSchema.array().parse(solutionResult.data ?? []);
+      const { counts: instanceCounts, mostRecentMissionDates } = summarizeTemplateInstances(
+        (
+          (instancesResult.data ?? []) as {
+            source_template_id: string | null;
+            mission_date: string;
+          }[]
+        ).filter(
+          (row): row is { source_template_id: string; mission_date: string } =>
+            row.source_template_id !== null,
+        ),
+      );
+
+      return {
+        id: template.id,
+        slug: template.slug,
+        title: template.title,
+        brief: template.brief,
+        missionTags: template.mission_tags,
+        isActive: template.is_active,
+        revision: template.revision,
+        revealPolicy: template.reveal_policy,
+        poolCount: pool.length,
+        jobCount: jobs.length,
+        scoreCount: scores.length,
+        instanceCount: instanceCounts.get(template.id) ?? 0,
+        mostRecentMissionDate: mostRecentMissionDates.get(template.id) ?? null,
+        ready: Boolean(readyResult.data),
+        createdAt: template.created_at,
+        updatedAt: template.updated_at,
+        pool: pool.map((row) => ({
+          characterId: row.character_id,
+          displayOrder: row.display_order,
+          isStrawHat: row.is_straw_hat,
+          visibleTags: row.visible_tags,
+        })),
+        jobs: jobs.map((row) => ({
+          role: row.role,
+          subtypeKey: row.subtype_key,
+          subtypeLabel: row.subtype_label,
+          displayLabel: row.display_label,
+          displayOrder: row.display_order,
+          maxPoints: row.max_points,
+        })),
+        scores: scores.map((row) => ({
+          characterId: row.character_id,
+          role: row.role,
+          score: row.score,
+          explanation: row.explanation,
+        })),
+        perfectSolution: perfectSolution.map((row) => ({
+          role: row.role,
+          characterId: row.character_id,
+        })),
+      };
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const saveAdminDailyCrewTemplate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => templateAuthoringInput.parse(input))
+  .handler(async ({ data, context }) => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc("admin_save_daily_crew_builder_template", {
+        _template_id: data.templateId ?? null,
+        _slug: data.slug,
+        _title: data.title,
+        _brief: data.brief,
+        _mission_tags: data.missionTags,
+        _reveal_policy: data.revealPolicy,
+        _is_active: data.isActive,
+        _pool: toJson(data.pool),
+        _jobs: toJson(data.jobs),
+        _scores: toJson(data.scores),
+        _perfect_solution: toJson(data.perfectSolution),
+      });
+      if (error) throw error;
+      return templateRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const createAdminDailyCrewMissionFromTemplate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => createMissionFromTemplateInput.parse(input))
+  .handler(async ({ data, context }) => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc(
+        "admin_create_daily_crew_builder_mission_from_template",
+        {
+          _template_id: data.templateId,
+          _mission_date: data.missionDate,
+        },
+      );
+      if (error) throw error;
+      return templateInstanceRpcResultSchema.parse(result);
     } catch (error) {
       throw mapAdminDailyCrewError(error);
     }
