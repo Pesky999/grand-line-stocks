@@ -203,10 +203,27 @@ export function DailyCrewRotationScheduler({
     if (detailQ.data.id !== selectedPlanId) return;
     if (dirty && editor?.planId === selectedPlanId) return;
     const nextEditor = rotationEditorFromDetail(detailQ.data);
+    const nextEditorSnapshot = rotationEditorSnapshot(nextEditor);
+    if (
+      editor?.planId === selectedPlanId &&
+      !dirty &&
+      currentEditorSnapshot === nextEditorSnapshot &&
+      baselineSnapshot === nextEditorSnapshot
+    ) {
+      return;
+    }
     advanceOperation();
     setEditorBaseline(nextEditor);
     clearPreviewState();
-  }, [detailQ.data, detailQ.isSuccess, dirty, editor?.planId, selectedPlanId]);
+  }, [
+    baselineSnapshot,
+    currentEditorSnapshot,
+    detailQ.data,
+    detailQ.isSuccess,
+    dirty,
+    editor?.planId,
+    selectedPlanId,
+  ]);
 
   function advanceOperation() {
     activeOperationRef.current += 1;

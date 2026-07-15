@@ -644,6 +644,33 @@ test("Daily Crew Rotation Scheduler protects dirty state and stale responses", (
   assert.match(rotationSchedulerSource, /disabled=\{!dirty \|\| mutationBusy\}/);
 });
 
+test("Daily Crew Rotation Scheduler ignores editor-equivalent detail refetches", () => {
+  const detailSyncEffect = rotationSchedulerSource.match(
+    /useEffect\(\(\) => \{[\s\S]*?if \(!selectedPlanId \|\| !detailQ\.isSuccess \|\| !detailQ\.data\) return;[\s\S]*?\n\s{2}\}, \[[\s\S]*?selectedPlanId,[\s\S]*?\]\);/,
+  )?.[0];
+  assert.ok(detailSyncEffect, "selected rotation-plan detail sync effect should exist");
+  assert.match(detailSyncEffect, /const nextEditor = rotationEditorFromDetail\(detailQ\.data\);/);
+  assert.match(
+    detailSyncEffect,
+    /const nextEditorSnapshot = rotationEditorSnapshot\(nextEditor\);/,
+  );
+  assert.match(detailSyncEffect, /editor\?\.planId === selectedPlanId/);
+  assert.match(detailSyncEffect, /!dirty/);
+  assert.match(detailSyncEffect, /currentEditorSnapshot === nextEditorSnapshot/);
+  assert.match(detailSyncEffect, /baselineSnapshot === nextEditorSnapshot/);
+  assert.match(
+    detailSyncEffect,
+    /baselineSnapshot === nextEditorSnapshot[\s\S]*?\) \{\s+return;\s+\}\s+advanceOperation\(\);/,
+  );
+  assert.match(
+    detailSyncEffect,
+    /return;\s+\}\s+advanceOperation\(\);\s+setEditorBaseline\(nextEditor\);\s+clearPreviewState\(\);/,
+  );
+  assert.match(detailSyncEffect, /if \(dirty && editor\?\.planId === selectedPlanId\) return/);
+  assert.match(detailSyncEffect, /baselineSnapshot/);
+  assert.match(detailSyncEffect, /currentEditorSnapshot/);
+});
+
 test("Daily Crew Rotation Scheduler preview and generation are snapshot-gated", () => {
   assert.match(rotationSchedulerSource, /previewAdminDailyCrewRotation\(\{/);
   assert.match(rotationSchedulerSource, /generateAdminDailyCrewRotation\(\{/);
@@ -667,6 +694,14 @@ test("Daily Crew Rotation Scheduler preview and generation are snapshot-gated", 
   assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "templates"\]/);
   assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "rotation-plans"\]/);
   assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "rotation-plan"/);
+  assert.match(
+    rotationSchedulerSource,
+    /await Promise\.all\(\[[\s\S]*?queryKey: \["admin", "daily-crew", "rotation-plan", variables\.snapshot\.planId\],[\s\S]*?\]\);\s+if \(/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /if \([\s\S]*?activeOperationRef\.current !== variables\.operationKey[\s\S]*?selectedPlanIdRef\.current !== variables\.snapshot\.planId[\s\S]*?!isRotationPreviewSnapshotCurrent\(previewSnapshotFromCurrent\(\), variables\.snapshot\)[\s\S]*?\) \{\s+return;\s+\}\s+setGenerationResult\(result\);/,
+  );
   assert.match(
     rotationSchedulerSource,
     /result\.slots\.slice\(\)\.sort\(\(a, b\) => a\.slotNumber - b\.slotNumber\)/,
