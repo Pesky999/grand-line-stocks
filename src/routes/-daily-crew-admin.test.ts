@@ -12,11 +12,13 @@ function read(workspacePath: string) {
 const routeSource = read("src/routes/_authenticated/daily-crew-admin.tsx");
 const componentSource = read("src/components/admin/DailyCrewMissionStudio.tsx");
 const templateLibrarySource = read("src/components/admin/DailyCrewTemplateLibrary.tsx");
+const rotationSchedulerSource = read("src/components/admin/DailyCrewRotationScheduler.tsx");
 const adminRouteSource = read("src/routes/_authenticated/admin.tsx");
 const publicDailyCrewRouteSource = read("src/routes/games.daily-crew-builder.tsx");
 const editorSource = read("src/lib/daily-crew-builder/admin-editor.ts");
 const importSource = read("src/lib/daily-crew-builder/admin-import.ts");
 const templateImportSource = read("src/lib/daily-crew-builder/template-import.ts");
+const rotationEditorSource = read("src/lib/daily-crew-builder/rotation-editor.ts");
 
 test("Daily Crew Mission Studio is a protected noindex route", () => {
   assert.match(routeSource, /createFileRoute\("\/_authenticated\/daily-crew-admin"\)/);
@@ -35,17 +37,23 @@ test("Daily Crew Mission Studio loader prefetches summaries and characters only"
   assert.ok(loader, "loader should be present");
   assert.match(loader, /ensureQueryData\(dailyCrewAdminMissionsQO\)/);
   assert.match(loader, /ensureQueryData\(dailyCrewAdminTemplatesQO\)/);
+  assert.match(loader, /ensureQueryData\(dailyCrewAdminRotationPlansQO\)/);
   assert.match(loader, /ensureQueryData\(dailyCrewAdminCharactersQO\)/);
   assert.doesNotMatch(loader, /getAdminDailyCrewMission/);
   assert.doesNotMatch(loader, /getAdminDailyCrewTemplate/);
+  assert.doesNotMatch(loader, /getAdminDailyCrewRotationPlan/);
   assert.doesNotMatch(loader, /daily_crew_character_role_scores|daily_crew_perfect_solution/);
 });
 
-test("Daily Crew admin defaults to Mission Studio and exposes Template Library mode", () => {
-  assert.match(routeSource, /type DailyCrewAdminMode = "mission-studio" \| "template-library"/);
+test("Daily Crew admin defaults to Mission Studio and exposes all three mounted modes", () => {
+  assert.match(
+    routeSource,
+    /type DailyCrewAdminMode = "mission-studio" \| "template-library" \| "rotation-scheduler"/,
+  );
   assert.match(routeSource, /useState<DailyCrewAdminMode>\("mission-studio"\)/);
   assert.match(routeSource, />\s*Mission Studio\s*<\/button>/);
   assert.match(routeSource, />\s*Template Library\s*<\/button>/);
+  assert.match(routeSource, />\s*Rotation Scheduler\s*<\/button>/);
   assert.match(
     routeSource,
     /<div hidden=\{mode !== "mission-studio"\}>[\s\S]*<DailyCrewMissionStudio \/>[\s\S]*<\/div>/,
@@ -54,7 +62,15 @@ test("Daily Crew admin defaults to Mission Studio and exposes Template Library m
     routeSource,
     /<div hidden=\{mode !== "template-library"\}>[\s\S]*<DailyCrewTemplateLibrary onOpenMissionStudio=\{\(\) => setMode\("mission-studio"\)\} \/>[\s\S]*<\/div>/,
   );
+  assert.match(
+    routeSource,
+    /<div hidden=\{mode !== "rotation-scheduler"\}>[\s\S]*<DailyCrewRotationScheduler onOpenMissionStudio=\{\(\) => setMode\("mission-studio"\)\} \/>[\s\S]*<\/div>/,
+  );
   assert.doesNotMatch(routeSource, /mode === "mission-studio"\s*\?\s*\(\s*<DailyCrewMissionStudio/);
+  assert.doesNotMatch(
+    routeSource,
+    /mode === "rotation-scheduler"\s*\?\s*\(\s*<DailyCrewRotationScheduler/,
+  );
 });
 
 test("Daily Crew Mission Studio detail loads only after a mission is selected", () => {
@@ -542,6 +558,142 @@ test("Daily Crew Template Library has stale-response and mutation-busy protectio
     /function createDatedDraft\(\) \{\s+if \(mutationBusy \|\| !selectedDetail\) return;/,
   );
   assert.match(templateLibrarySource, /Discard the pending imported template draft/);
+});
+
+test("Daily Crew Rotation Scheduler uses only approved protected rotation APIs", () => {
+  assert.match(rotationSchedulerSource, /listAdminDailyCrewRotationPlans/);
+  assert.match(rotationSchedulerSource, /getAdminDailyCrewRotationPlan/);
+  assert.match(rotationSchedulerSource, /saveAdminDailyCrewRotationPlan/);
+  assert.match(rotationSchedulerSource, /previewAdminDailyCrewRotation/);
+  assert.match(rotationSchedulerSource, /generateAdminDailyCrewRotation/);
+  assert.match(rotationSchedulerSource, /listAdminDailyCrewTemplates/);
+  assert.doesNotMatch(rotationSchedulerSource, /supabaseAdmin|getSupabaseAdmin|client\.server/);
+  assert.doesNotMatch(
+    rotationSchedulerSource,
+    /\bdb\.from\(|\.rpc\(|admin_create_daily_crew_builder_mission_from_template|admin_set_daily_crew_builder_mission_status/,
+  );
+  assert.doesNotMatch(rotationSchedulerSource, /setAdminDailyCrewMissionStatus/);
+});
+
+test("Daily Crew Rotation Scheduler keeps local slot editing separate from backend writes", () => {
+  assert.match(rotationSchedulerSource, /createBlankRotationEditor/);
+  assert.match(rotationSchedulerSource, /rotationEditorFromDetail/);
+  assert.match(rotationSchedulerSource, /rotationEditorToSavePayload/);
+  assert.match(rotationSchedulerSource, /Fill Empty Slots/);
+  assert.match(rotationSchedulerSource, /Clear All Assignments/);
+  assert.match(rotationSchedulerSource, /fillEmptyRotationSlots/);
+  assert.match(rotationSchedulerSource, /clearRotationAssignments/);
+  assert.match(rotationEditorSource, /slots: createEmptySlots\(\)/);
+  assert.match(rotationEditorSource, /filter\([\s\S]*Boolean\(slot\.templateId\)/);
+  assert.match(rotationEditorSource, /template\.isActive && template\.ready/);
+  assert.match(rotationEditorSource, /a\.title\.localeCompare\(b\.title\)/);
+  assert.match(rotationEditorSource, /a\.slug\.localeCompare\(b\.slug\)/);
+  assert.match(rotationEditorSource, /a\.id\.localeCompare\(b\.id\)/);
+  assert.match(rotationEditorSource, /parseUtcDateMs/);
+  assert.match(rotationEditorSource, /date\.toISOString\(\)\.slice\(0, 10\) !== value/);
+  assert.match(rotationEditorSource, /isDailyCrewRotationTargetStatus/);
+  assert.doesNotMatch(rotationEditorSource, /Math\.random|shuffle|drag/i);
+});
+
+test("Daily Crew Rotation Scheduler protects dirty state and stale responses", () => {
+  assert.match(rotationSchedulerSource, /beforeunload/);
+  assert.match(
+    rotationSchedulerSource,
+    /Discard unsaved rotation-plan changes and load another plan/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /Discard unsaved rotation-plan changes and clear selection/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /Discard unsaved rotation-plan changes and create a new plan/,
+  );
+  assert.match(rotationSchedulerSource, /selectedPlanIdRef/);
+  assert.match(rotationSchedulerSource, /editorSnapshotRef/);
+  assert.match(rotationSchedulerSource, /activeOperationRef/);
+  assert.match(rotationSchedulerSource, /operationKey: activeOperationRef\.current/);
+  assert.match(rotationSchedulerSource, /activeOperationRef\.current !== variables\.operationKey/);
+  assert.match(
+    rotationSchedulerSource,
+    /selectedPlanIdRef\.current !== variables\.snapshot\.planId/,
+  );
+  assert.match(rotationSchedulerSource, /isRotationPreviewSnapshotCurrent/);
+  assert.match(
+    rotationSchedulerSource,
+    /if \(dirty && editor\?\.planId === selectedPlanId\) return/,
+  );
+  assert.match(rotationSchedulerSource, /function updateEditor[\s\S]*?if \(mutationBusy\) return;/);
+  assert.match(
+    rotationSchedulerSource,
+    /function selectPlan\(planId: string\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /function createNewPlan\(\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /function updateStartDate\(value: string\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /function updateTargetStatus\(value: string\) \{\s+if \(mutationBusy \|\| !isDailyCrewRotationTargetStatus\(value\)\) return;/,
+  );
+  assert.match(rotationSchedulerSource, /disabled=\{mutationBusy\}/);
+  assert.match(rotationSchedulerSource, /disabled=\{!dirty \|\| mutationBusy\}/);
+});
+
+test("Daily Crew Rotation Scheduler preview and generation are snapshot-gated", () => {
+  assert.match(rotationSchedulerSource, /previewAdminDailyCrewRotation\(\{/);
+  assert.match(rotationSchedulerSource, /generateAdminDailyCrewRotation\(\{/);
+  assert.match(rotationSchedulerSource, /preview performs no save or generation/i);
+  assert.match(rotationSchedulerSource, /previewResult\?\.readyToGenerate/);
+  assert.match(rotationSchedulerSource, /previewCurrent/);
+  assert.match(rotationSchedulerSource, /type GenerateRotationMutationVariables = \{/);
+  assert.match(rotationSchedulerSource, /planName: string/);
+  assert.match(rotationSchedulerSource, /previewEndDate: string/);
+  assert.match(rotationSchedulerSource, /planName: previewResult\.planName/);
+  assert.match(rotationSchedulerSource, /previewEndDate: previewResult\.endDate/);
+  assert.match(
+    rotationSchedulerSource,
+    /Preview is stale\. Preview again before generating missions/,
+  );
+  assert.match(rotationSchedulerSource, /Preview must be ready before generating missions/);
+  assert.match(rotationSchedulerSource, /targetStatus === "scheduled"/);
+  assert.match(rotationSchedulerSource, /Create and schedule 30 missions/);
+  assert.match(rotationSchedulerSource, /Create 30 draft missions/);
+  assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "missions"\]/);
+  assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "templates"\]/);
+  assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "rotation-plans"\]/);
+  assert.match(rotationSchedulerSource, /queryKey: \["admin", "daily-crew", "rotation-plan"/);
+  assert.match(
+    rotationSchedulerSource,
+    /result\.slots\.slice\(\)\.sort\(\(a, b\) => a\.slotNumber - b\.slotNumber\)/,
+  );
+  assert.match(
+    rotationSchedulerSource,
+    /result\.missions\.slice\(\)\.sort\(\(a, b\) => a\.slotNumber - b\.slotNumber\)/,
+  );
+  assert.doesNotMatch(
+    rotationSchedulerSource,
+    /targetStatus:\s*"published"|targetStatus:\s*"archived"/,
+  );
+});
+
+test("Daily Crew Rotation Scheduler displays every backend blocking reason safely", () => {
+  assert.match(rotationSchedulerSource, /Plan does not contain all 30 assignments/);
+  assert.match(rotationSchedulerSource, /No template assigned/);
+  assert.match(rotationSchedulerSource, /Template is inactive/);
+  assert.match(rotationSchedulerSource, /Template is not ready/);
+  assert.match(rotationSchedulerSource, /A mission already exists on this date/);
+  assert.match(rotationSchedulerSource, /Generated mission slug already exists/);
+  assert.match(rotationSchedulerSource, /Generated mission slug is too long/);
+  assert.match(rotationSchedulerSource, /Unknown blocker: \$\{reason\}/);
+  assert.doesNotMatch(
+    rotationSchedulerSource,
+    /score\.explanation|perfectSolution|daily_crew_character_role_scores/,
+  );
 });
 
 test("Daily Crew Mission Studio reset clears imported draft when no baseline exists", () => {
