@@ -83,6 +83,17 @@ export type DailyCrewMissionImportResult =
       errors: DailyCrewMissionImportErrors;
     };
 
+export type DailyCrewMissionJsonParseResult =
+  | {
+      ok: true;
+      editor: DailyCrewMissionEditor;
+      summary: DailyCrewMissionImportSummary;
+    }
+  | {
+      ok: false;
+      errors: DailyCrewMissionImportErrors;
+    };
+
 const trimmedString = (max: number, label: string) =>
   z
     .string({ required_error: `${label} is required.` })
@@ -506,10 +517,10 @@ function editorFromImportedMission(
   };
 }
 
-export function importMissionJsonToEditor(
+export function parseDailyCrewMissionJsonToEditor(
   jsonText: string,
   characters: DailyCrewMissionStudioCharacter[],
-): DailyCrewMissionImportResult {
+): DailyCrewMissionJsonParseResult {
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(jsonText);
@@ -534,14 +545,7 @@ export function importMissionJsonToEditor(
     return { ok: false, errors };
   }
 
-  let editor = editorFromImportedMission(parsedMission.data, resolvedCharacters);
-  const validation = validateDailyCrewMissionEditor(editor);
-  editor = { ...editor, ready: validation.ok };
-  if (!validation.ok) {
-    const nextErrors = emptyErrors();
-    mergeEditorValidationErrors(nextErrors, validation);
-    return { ok: false, errors: nextErrors };
-  }
+  const editor = editorFromImportedMission(parsedMission.data, resolvedCharacters);
 
   return {
     ok: true,
@@ -556,5 +560,28 @@ export function importMissionJsonToEditor(
       perfectCrewCount: editor.perfectSolution.length,
       resolvedCharacterCount: resolvedCharacters.size,
     },
+  };
+}
+
+export function importMissionJsonToEditor(
+  jsonText: string,
+  characters: DailyCrewMissionStudioCharacter[],
+): DailyCrewMissionImportResult {
+  const parsed = parseDailyCrewMissionJsonToEditor(jsonText, characters);
+  if (!parsed.ok) return parsed;
+
+  let editor = parsed.editor;
+  const validation = validateDailyCrewMissionEditor(editor);
+  editor = { ...editor, ready: validation.ok };
+  if (!validation.ok) {
+    const nextErrors = emptyErrors();
+    mergeEditorValidationErrors(nextErrors, validation);
+    return { ok: false, errors: nextErrors };
+  }
+
+  return {
+    ok: true,
+    editor,
+    summary: parsed.summary,
   };
 }
