@@ -31,6 +31,11 @@ test("Daily Crew Builder admin functions require auth, admin role, and service r
     "getAdminDailyCrewTemplate",
     "saveAdminDailyCrewTemplate",
     "createAdminDailyCrewMissionFromTemplate",
+    "listAdminDailyCrewRotationPlans",
+    "getAdminDailyCrewRotationPlan",
+    "saveAdminDailyCrewRotationPlan",
+    "previewAdminDailyCrewRotation",
+    "generateAdminDailyCrewRotation",
   ]) {
     const body = functionSource(name);
     assert.match(body, /\.middleware\(\[requireSupabaseAuth\]\)/, `${name} requires auth`);
@@ -130,6 +135,114 @@ test("Daily Crew Builder template writes call only approved template RPCs", () =
   assert.doesNotMatch(instantiate, /\.from\("daily_crew_/);
   assert.doesNotMatch(instantiate, /\.(insert|update|upsert|delete)\s*\(/);
   assert.doesNotMatch(instantiate, /targetStatus|revealAt|reward|wallet|submission/i);
+});
+
+test("Daily Crew Builder rotation schemas are strict and allow only draft or scheduled generation", () => {
+  assert.match(
+    adminSource,
+    /const DAILY_CREW_ROTATION_TARGET_STATUSES = \["draft", "scheduled"\] as const/,
+  );
+
+  const saveInput = adminSource.slice(
+    adminSource.indexOf("const rotationPlanSaveInput"),
+    adminSource.indexOf("const rotationRunInput"),
+  );
+  assert.match(saveInput, /\.strict\(\)/);
+  assert.match(saveInput, /planId: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/);
+  assert.match(saveInput, /name: trimmedString\(120\)/);
+  assert.match(saveInput, /slots: z\.array\(rotationSlotInput\)\.max\(30\)\.default\(\[\]\)/);
+  assert.match(saveInput, /seenSlots\.has\(slot\.slotNumber\)/);
+  assert.match(saveInput, /Daily Crew Builder rotation slots cannot repeat slot numbers/);
+
+  const runInput = adminSource.slice(
+    adminSource.indexOf("const rotationRunInput"),
+    adminSource.indexOf("const authoringRpcResultSchema"),
+  );
+  assert.match(runInput, /\.strict\(\)/);
+  assert.match(runInput, /planId: z\.string\(\)\.uuid\(\)/);
+  assert.match(runInput, /startDate: missionDateSchema/);
+  assert.match(runInput, /targetStatus: z\.enum\(DAILY_CREW_ROTATION_TARGET_STATUSES\)/);
+  assert.doesNotMatch(runInput, /published|archived/);
+
+  const previewResult = adminSource.slice(
+    adminSource.indexOf("const rotationPreviewSlotSchema"),
+    adminSource.indexOf("const generatedRotationMissionSchema"),
+  );
+  assert.match(previewResult, /\.strict\(\)/);
+  assert.match(previewResult, /slots: z\.array\(rotationPreviewSlotSchema\)\.length\(30\)/);
+  assert.match(previewResult, /blockingReasons: z\.array\(z\.string\(\)\)/);
+
+  const generateResult = adminSource.slice(
+    adminSource.indexOf("const generatedRotationMissionSchema"),
+    adminSource.indexOf("const missionRowSchema"),
+  );
+  assert.match(generateResult, /status: z\.enum\(DAILY_CREW_ROTATION_TARGET_STATUSES\)/);
+  assert.match(generateResult, /createdCount: z\.literal\(30\)/);
+  assert.match(
+    generateResult,
+    /missions: z\.array\(generatedRotationMissionSchema\)\.length\(30\)/,
+  );
+});
+
+test("Daily Crew Builder rotation writes call only approved rotation RPCs", () => {
+  const save = functionSource("saveAdminDailyCrewRotationPlan");
+  const preview = functionSource("previewAdminDailyCrewRotation");
+  const generate = functionSource("generateAdminDailyCrewRotation");
+
+  assert.match(save, /\.inputValidator\(\(input\) => rotationPlanSaveInput\.parse\(input\)\)/);
+  assert.match(save, /\.rpc\("admin_save_daily_crew_rotation_plan"/);
+  assert.match(save, /_plan_id: data\.planId \?\? null/);
+  assert.match(save, /_name: data\.name/);
+  assert.match(save, /_slots: toJson\(data\.slots\)/);
+  assert.doesNotMatch(save, /\.from\("daily_crew_/);
+  assert.doesNotMatch(save, /\.(insert|update|upsert|delete)\s*\(/);
+
+  for (const [name, body, rpc] of [
+    ["preview", preview, "admin_preview_daily_crew_rotation"],
+    ["generate", generate, "admin_generate_daily_crew_rotation"],
+  ] as const) {
+    assert.match(body, /\.inputValidator\(\(input\) => rotationRunInput\.parse\(input\)\)/);
+    assert.match(body, new RegExp(`\\.rpc\\("${rpc}"`), `${name} uses approved RPC`);
+    assert.match(body, /_plan_id: data\.planId/);
+    assert.match(body, /_start_date: data\.startDate/);
+    assert.match(body, /_target_status: data\.targetStatus/);
+    assert.doesNotMatch(body, /\.from\("daily_crew_/);
+    assert.doesNotMatch(body, /\.(insert|update|upsert|delete)\s*\(/);
+    assert.doesNotMatch(body, /reward|wallet|transaction|grandLineGuess/i);
+  }
+});
+
+test("Daily Crew Builder rotation list and detail do not expose hidden template internals", () => {
+  const list = functionSource("listAdminDailyCrewRotationPlans");
+  const detail = functionSource("getAdminDailyCrewRotationPlan");
+
+  for (const field of [
+    "name",
+    "revision",
+    "slotCount",
+    "uniqueTemplateCount",
+    "ready",
+    "generatedMissionCount",
+    "mostRecentGeneratedMissionDate",
+    "createdAt",
+    "updatedAt",
+  ]) {
+    assert.match(adminSource, new RegExp(`${field}:`), `${field} is exposed in rotation summaries`);
+  }
+
+  assert.match(list, /\.from\("daily_crew_rotation_plans"\)/);
+  assert.match(list, /\.from\("daily_crew_rotation_plan_slots"\)/);
+  assert.match(list, /getRotationPlanReadyMap\(db, planIds\)/);
+  assert.match(adminSource, /\.rpc\("validate_daily_crew_rotation_plan"/);
+  assert.match(detail, /listTemplateBasics\(db, templateIds\)/);
+  assert.match(detail, /listRowsByTemplate\(db, templateIds\)/);
+  assert.match(detail, /templateReady\.get\(template\.id\)/);
+  assert.doesNotMatch(list, /scores: scores\.map|perfectSolution: perfectSolution\.map/);
+  assert.doesNotMatch(detail, /scores: scores\.map|perfectSolution: perfectSolution\.map/);
+  assert.doesNotMatch(
+    detail,
+    /explanation|daily_crew_mission_template_perfect_solution|perfect_solution/i,
+  );
 });
 
 test("Daily Crew Builder admin schemas are strict and support complete authoring payloads", () => {
@@ -235,7 +348,11 @@ test("Daily Crew Builder public mission and gameplay APIs remain unchanged", () 
   assert.doesNotMatch(publicSource, /admin_set_daily_crew_builder_mission_status/);
   assert.doesNotMatch(publicSource, /admin_save_daily_crew_builder_template/);
   assert.doesNotMatch(publicSource, /admin_create_daily_crew_builder_mission_from_template/);
+  assert.doesNotMatch(publicSource, /admin_save_daily_crew_rotation_plan/);
+  assert.doesNotMatch(publicSource, /admin_preview_daily_crew_rotation/);
+  assert.doesNotMatch(publicSource, /admin_generate_daily_crew_rotation/);
   assert.doesNotMatch(publicSource, /daily_crew_mission_templates/);
+  assert.doesNotMatch(publicSource, /daily_crew_rotation_plans/);
   assert.doesNotMatch(
     publicMapper,
     /roleScores|roleRequirements|perfectSolution|subtypeKey|subtypeLabel/,
