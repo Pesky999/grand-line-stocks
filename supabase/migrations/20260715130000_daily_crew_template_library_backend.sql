@@ -168,6 +168,7 @@ DECLARE
   v_solution_straw_hats integer;
   v_score_count integer;
   v_solution_score_total integer;
+  v_solution_nonmax_count integer;
 BEGIN
   SELECT
     count(*),
@@ -231,6 +232,22 @@ BEGIN
    AND scores.role = s.role
   WHERE s.template_id = _template_id;
 
+  SELECT count(*) FILTER (
+    WHERE requirements.template_id IS NULL
+       OR scores.template_id IS NULL
+       OR scores.score IS DISTINCT FROM requirements.max_points
+  )
+    INTO v_solution_nonmax_count
+  FROM public.daily_crew_mission_template_perfect_solution AS s
+  LEFT JOIN public.daily_crew_mission_template_role_requirements AS requirements
+    ON requirements.template_id = s.template_id
+   AND requirements.role = s.role
+  LEFT JOIN public.daily_crew_mission_template_character_role_scores AS scores
+    ON scores.template_id = s.template_id
+   AND scores.character_id = s.character_id
+   AND scores.role = s.role
+  WHERE s.template_id = _template_id;
+
   RETURN
     (
       (v_pool_count = 9 AND v_requirement_count = 3)
@@ -250,7 +267,8 @@ BEGIN
     AND v_solution_character_count = v_requirement_count
     AND v_solution_straw_hats <= 3
     AND v_score_count = v_pool_count * v_requirement_count
-    AND v_solution_score_total = 90;
+    AND v_solution_score_total = 90
+    AND v_solution_nonmax_count = 0;
 END;
 $function$;
 

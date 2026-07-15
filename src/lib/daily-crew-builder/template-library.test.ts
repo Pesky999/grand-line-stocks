@@ -208,6 +208,38 @@ test("validate_daily_crew_template mirrors the current mission readiness contrac
   assert.match(validate, /v_solution_character_count = v_requirement_count/);
   assert.match(validate, /v_solution_straw_hats <= 3/);
   assert.match(validate, /v_solution_score_total = 90/);
+  assert.match(validate, /v_solution_nonmax_count = 0/);
+});
+
+test("validate_daily_crew_template rejects total-90 perfect crews when a selected job is not maxed", () => {
+  const validate = functionSource("validate_daily_crew_template");
+
+  assert.match(validate, /v_solution_nonmax_count integer/);
+  assert.match(
+    validate,
+    /SELECT count\(\*\) FILTER \([\s\S]*INTO v_solution_nonmax_count[\s\S]*FROM public\.daily_crew_mission_template_perfect_solution AS s/i,
+    "validator counts non-max perfect rows separately from total score",
+  );
+  assert.match(
+    validate,
+    /LEFT JOIN public\.daily_crew_mission_template_role_requirements AS requirements[\s\S]*requirements\.template_id = s\.template_id[\s\S]*requirements\.role = s\.role/i,
+    "validator joins perfect solutions to template role requirements by template and role",
+  );
+  assert.match(
+    validate,
+    /LEFT JOIN public\.daily_crew_mission_template_character_role_scores AS scores[\s\S]*scores\.template_id = s\.template_id[\s\S]*scores\.character_id = s\.character_id[\s\S]*scores\.role = s\.role/i,
+    "validator joins perfect solutions to scores by template, character, and role",
+  );
+  assert.match(
+    validate,
+    /requirements\.template_id IS NULL[\s\S]*OR scores\.template_id IS NULL[\s\S]*OR scores\.score IS DISTINCT FROM requirements\.max_points/i,
+    "missing requirement rows, missing score rows, and non-max selected scores are invalid",
+  );
+  assert.match(
+    validate,
+    /v_solution_score_total = 90[\s\S]*AND v_solution_nonmax_count = 0/i,
+    "total score 90 alone is insufficient; every selected job must equal its configured max points",
+  );
 });
 
 test("template save RPC is atomic, revises templates, and never updates mission instances", () => {
