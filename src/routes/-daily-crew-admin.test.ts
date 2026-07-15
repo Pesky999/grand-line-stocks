@@ -11,10 +11,12 @@ function read(workspacePath: string) {
 
 const routeSource = read("src/routes/_authenticated/daily-crew-admin.tsx");
 const componentSource = read("src/components/admin/DailyCrewMissionStudio.tsx");
+const templateLibrarySource = read("src/components/admin/DailyCrewTemplateLibrary.tsx");
 const adminRouteSource = read("src/routes/_authenticated/admin.tsx");
 const publicDailyCrewRouteSource = read("src/routes/games.daily-crew-builder.tsx");
 const editorSource = read("src/lib/daily-crew-builder/admin-editor.ts");
 const importSource = read("src/lib/daily-crew-builder/admin-import.ts");
+const templateImportSource = read("src/lib/daily-crew-builder/template-import.ts");
 
 test("Daily Crew Mission Studio is a protected noindex route", () => {
   assert.match(routeSource, /createFileRoute\("\/_authenticated\/daily-crew-admin"\)/);
@@ -32,9 +34,27 @@ test("Daily Crew Mission Studio loader prefetches summaries and characters only"
   const loader = routeSource.match(/loader: async \(\{ context \}\) => \{[\s\S]*?\n\s{2}\},/)?.[0];
   assert.ok(loader, "loader should be present");
   assert.match(loader, /ensureQueryData\(dailyCrewAdminMissionsQO\)/);
+  assert.match(loader, /ensureQueryData\(dailyCrewAdminTemplatesQO\)/);
   assert.match(loader, /ensureQueryData\(dailyCrewAdminCharactersQO\)/);
   assert.doesNotMatch(loader, /getAdminDailyCrewMission/);
+  assert.doesNotMatch(loader, /getAdminDailyCrewTemplate/);
   assert.doesNotMatch(loader, /daily_crew_character_role_scores|daily_crew_perfect_solution/);
+});
+
+test("Daily Crew admin defaults to Mission Studio and exposes Template Library mode", () => {
+  assert.match(routeSource, /type DailyCrewAdminMode = "mission-studio" \| "template-library"/);
+  assert.match(routeSource, /useState<DailyCrewAdminMode>\("mission-studio"\)/);
+  assert.match(routeSource, />\s*Mission Studio\s*<\/button>/);
+  assert.match(routeSource, />\s*Template Library\s*<\/button>/);
+  assert.match(
+    routeSource,
+    /<div hidden=\{mode !== "mission-studio"\}>[\s\S]*<DailyCrewMissionStudio \/>[\s\S]*<\/div>/,
+  );
+  assert.match(
+    routeSource,
+    /<div hidden=\{mode !== "template-library"\}>[\s\S]*<DailyCrewTemplateLibrary onOpenMissionStudio=\{\(\) => setMode\("mission-studio"\)\} \/>[\s\S]*<\/div>/,
+  );
+  assert.doesNotMatch(routeSource, /mode === "mission-studio"\s*\?\s*\(\s*<DailyCrewMissionStudio/);
 });
 
 test("Daily Crew Mission Studio detail loads only after a mission is selected", () => {
@@ -284,11 +304,244 @@ test("Daily Crew Mission Studio import advances operation key before replacing e
 });
 
 test("Daily Crew Mission Studio does not persist pasted mission JSON outside component state", () => {
-  const importHandlingSource = `${componentSource}\n${importSource}`;
+  const importHandlingSource = `${componentSource}\n${importSource}\n${templateLibrarySource}\n${templateImportSource}`;
   assert.doesNotMatch(
     importHandlingSource,
     /console\.(log|info|warn|error)|localStorage|sessionStorage|URLSearchParams|navigator\.sendBeacon|analytics|captureException|captureMessage|Sentry/,
   );
+});
+
+test("Daily Crew Template Library uses only approved template APIs", () => {
+  assert.match(templateLibrarySource, /listAdminDailyCrewTemplates/);
+  assert.match(templateLibrarySource, /getAdminDailyCrewTemplate/);
+  assert.match(templateLibrarySource, /saveAdminDailyCrewTemplate/);
+  assert.match(templateLibrarySource, /createAdminDailyCrewMissionFromTemplate/);
+  assert.match(templateLibrarySource, /listCharacters/);
+  assert.doesNotMatch(templateLibrarySource, /supabaseAdmin|getSupabaseAdmin|client\.server/);
+  assert.doesNotMatch(
+    templateLibrarySource,
+    /\bdb\.from\(|\.rpc\(|daily_crew_mission_templates|daily_crew_missions/,
+  );
+});
+
+test("Daily Crew Template Library keeps list rows free of hidden solution data", () => {
+  const templateList = templateLibrarySource.match(
+    /function TemplateList[\s\S]*?\n}\n\nfunction TemplateDetail/,
+  )?.[0];
+  assert.ok(templateList, "TemplateList should be present");
+  assert.match(templateList, /template\.title/);
+  assert.match(templateList, /template\.slug/);
+  assert.match(templateList, /template\.isActive/);
+  assert.match(templateList, /template\.revision/);
+  assert.match(templateList, /\$\{template\.poolCount\}\/\$\{template\.jobCount\}/);
+  assert.match(templateList, /template\.scoreCount/);
+  assert.match(templateList, /template\.ready/);
+  assert.match(templateList, /template\.instanceCount/);
+  assert.match(templateList, /template\.mostRecentMissionDate/);
+  assert.doesNotMatch(templateList, /perfectSolution|scores\.map|explanation/);
+});
+
+test("Daily Crew Template Library detail may expose protected perfect crew", () => {
+  assert.match(templateLibrarySource, /getAdminDailyCrewTemplate\(\{/);
+  assert.match(templateLibrarySource, /enabled: Boolean\(selectedTemplateId\)/);
+  assert.match(templateLibrarySource, /detailQ\.data\?\.id === selectedTemplateId/);
+  assert.match(templateLibrarySource, /Protected Template Detail/);
+  assert.match(templateLibrarySource, /Jobs and perfect crew/);
+  assert.match(templateLibrarySource, /detail\.perfectSolution\.map/);
+  assert.match(templateLibrarySource, /Hidden score matrix summarized/);
+  assert.doesNotMatch(templateLibrarySource, /score\.explanation|explanations\.map/);
+});
+
+test("Daily Crew Template Library validates JSON locally before saving", () => {
+  const validateImportText = templateLibrarySource.match(
+    /function validateImportText\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(validateImportText, "validateImportText should be present");
+  assert.match(validateImportText, /importTemplateJsonToDraft\(importText, characters/);
+  assert.match(validateImportText, /setImportResult\(result\)/);
+  assert.match(validateImportText, /if \(!result\.ok\) \{[\s\S]*return;[\s\S]*\}/);
+  assert.doesNotMatch(validateImportText, /saveAdminDailyCrewTemplate/);
+  assert.doesNotMatch(validateImportText, /createAdminDailyCrewMissionFromTemplate/);
+  assert.match(templateLibrarySource, /Mission date is used only to validate the JSON format/);
+});
+
+test("Daily Crew Template Library makes pending imports saveable only for the validated JSON text", () => {
+  assert.match(templateLibrarySource, /validatedJsonText: string/);
+  assert.match(templateLibrarySource, /validatedJsonText: importText/);
+  assert.match(
+    templateLibrarySource,
+    /const pendingImportMatchesText = Boolean\(\s*pendingImport && importText === pendingImport\.validatedJsonText,\s*\)/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /const canSaveImport = Boolean\(pendingImportMatchesText && !mutationBusy\)/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /if \(importText !== pendingImport\.validatedJsonText\) \{[\s\S]*The JSON has changed since validation\. Validate it again before saving\.[\s\S]*return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /JSON changed after validation\. Validate again before saving\./,
+  );
+});
+
+test("Daily Crew Template Library editing JSON makes the prior preview stale without discarding it", () => {
+  const updateImportText = templateLibrarySource.match(
+    /function updateImportText\(value: string\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(updateImportText, "updateImportText should be present");
+  assert.match(updateImportText, /setImportText\(value\)/);
+  assert.match(updateImportText, /setImportResult\(null\)/);
+  assert.doesNotMatch(updateImportText, /setPendingImport|saveAdminDailyCrewTemplate/);
+
+  const insertImportExample = templateLibrarySource.match(
+    /function insertImportExample\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(insertImportExample, "insertImportExample should be present");
+  assert.match(insertImportExample, /setImportText\(DAILY_CREW_TEMPLATE_IMPORT_EXAMPLE\)/);
+  assert.match(insertImportExample, /setImportResult\(null\)/);
+  assert.doesNotMatch(insertImportExample, /setPendingImport|saveAdminDailyCrewTemplate/);
+});
+
+test("Daily Crew Template Library clear intentionally discards import text, result, and pending draft", () => {
+  const clearImportPanel = templateLibrarySource.match(
+    /function clearImportPanel\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(clearImportPanel, "clearImportPanel should be present");
+  assert.match(clearImportPanel, /setImportText\(""\)/);
+  assert.match(clearImportPanel, /setImportResult\(null\)/);
+  assert.match(clearImportPanel, /setPendingImport\(null\)/);
+  assert.doesNotMatch(
+    clearImportPanel,
+    /setSelectedTemplateId|advanceTemplateOperation|createAdminDailyCrewMissionFromTemplate/,
+  );
+});
+
+test("Daily Crew Template Library failed revalidation retains the prior draft and cannot save stale text", () => {
+  const failureBranch = templateLibrarySource.match(
+    /if \(!result\.ok\) \{[\s\S]*?return;\s*\}/,
+  )?.[0];
+  assert.ok(failureBranch, "failed validation branch should be present");
+  assert.match(failureBranch, /setImportResult\(result\)/);
+  assert.doesNotMatch(failureBranch, /setPendingImport|saveAdminDailyCrewTemplate/);
+  assert.match(
+    templateLibrarySource,
+    /if \(!result\.ok\) \{[\s\S]*?return;\s*\}\s+if \(\s*pendingImport &&\s*importText !== pendingImport\.validatedJsonText/,
+  );
+  assert.match(templateLibrarySource, /disabled=\{!canSave\}/);
+});
+
+test("Daily Crew Template Library save buttons share the safe validated-text eligibility", () => {
+  assert.match(templateLibrarySource, /<TemplateImportPanel[\s\S]*canSave=\{canSaveImport\}/);
+  assert.match(templateLibrarySource, /<PendingImportPreview[\s\S]*canSave=\{canSaveImport\}/);
+  const templateImportPanel = templateLibrarySource.match(
+    /function TemplateImportPanel[\s\S]*?\n}\n\nfunction PendingImportPreview/,
+  )?.[0];
+  const pendingImportPreview = templateLibrarySource.match(
+    /function PendingImportPreview[\s\S]*?\n}\n\nfunction ImportErrors/,
+  )?.[0];
+  assert.ok(templateImportPanel, "TemplateImportPanel should be present");
+  assert.ok(pendingImportPreview, "PendingImportPreview should be present");
+  assert.match(templateImportPanel, /disabled=\{!canSave\}/);
+  assert.match(pendingImportPreview, /disabled=\{!canSave\}/);
+});
+
+test("Daily Crew Template Library save and replacement payloads preserve template identity rules", () => {
+  assert.match(
+    templateLibrarySource,
+    /templateId: replacementDetail\?\.id \?\? null,[\s\S]*isActive: replacementDetail\?\.isActive \?\? true/,
+  );
+  assert.match(templateLibrarySource, /setSelectedTemplateId\(null\)/);
+  assert.match(templateLibrarySource, /Save as Template/);
+  assert.match(templateLibrarySource, /Update Template/);
+  assert.match(
+    templateLibrarySource,
+    /Update \$\{pendingImport\.draft\.title\}\? This creates revision/,
+  );
+  assert.match(templateLibrarySource, /saveAdminDailyCrewTemplate\(\{ data: draft \}\)/);
+});
+
+test("Daily Crew Template Library toggles active state through complete save API", () => {
+  const toggleActiveState = templateLibrarySource.match(
+    /function toggleActiveState\(nextIsActive: boolean\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(toggleActiveState, "toggleActiveState should be present");
+  assert.match(toggleActiveState, /if \(!selectedDetail\.ready\)/);
+  assert.match(
+    toggleActiveState,
+    /Discard the pending imported template draft before changing active state/,
+  );
+  assert.match(toggleActiveState, /creates revision/);
+  assert.match(toggleActiveState, /clearPendingImport\(\)/);
+  assert.match(toggleActiveState, /templateDetailToDraft\(selectedDetail, nextIsActive\)/);
+  assert.match(toggleActiveState, /source: "toggle"/);
+  assert.doesNotMatch(toggleActiveState, /\.from\(|\.rpc\(|update\s*\(/);
+});
+
+test("Daily Crew Template Library creates dated drafts only through instantiation API", () => {
+  const createDatedDraft = templateLibrarySource.match(
+    /function createDatedDraft\(\) \{[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(createDatedDraft, "createDatedDraft should be present");
+  assert.match(createDatedDraft, /!selectedDetail\.isActive/);
+  assert.match(createDatedDraft, /!selectedDetail\.ready/);
+  assert.match(createDatedDraft, /isCurrentOrFutureUtcDate\(draftMissionDate\)/);
+  assert.match(
+    createDatedDraft,
+    /Discard the pending imported template draft before creating a dated mission/,
+  );
+  assert.match(createDatedDraft, /This will not schedule or publish it/);
+  assert.match(createDatedDraft, /clearPendingImport\(\)/);
+  assert.match(templateLibrarySource, /createAdminDailyCrewMissionFromTemplate\(\{/);
+  assert.match(templateLibrarySource, /queryKey: \["admin", "daily-crew", "missions"\]/);
+  assert.match(templateLibrarySource, /queryKey: \["admin", "daily-crew", "templates"\]/);
+  assert.match(templateLibrarySource, /Open Mission Studio/);
+  assert.doesNotMatch(templateLibrarySource, /setAdminDailyCrewMissionStatus|targetStatus/);
+});
+
+test("Daily Crew Template Library has stale-response and mutation-busy protections", () => {
+  assert.match(templateLibrarySource, /activeTemplateOperationRef/);
+  assert.match(templateLibrarySource, /pendingDraftSnapshotRef/);
+  assert.match(templateLibrarySource, /submittedSnapshot: string/);
+  assert.match(
+    templateLibrarySource,
+    /pendingDraftSnapshotRef\.current === variables\.submittedSnapshot/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /activeTemplateOperationRef\.current !== variables\.operationKey/,
+  );
+  assert.match(templateLibrarySource, /detailQ\.data\?\.id === selectedTemplateId/);
+  assert.match(
+    templateLibrarySource,
+    /const mutationBusy = saveMutation\.isPending \|\| createMissionMutation\.isPending/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function selectTemplate\(templateId: string\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function clearSelection\(\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function openImport\(mode: ImportMode\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function validateImportText\(\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function savePendingImport\(\) \{\s+if \(!pendingImport \|\| mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function createDatedDraft\(\) \{\s+if \(mutationBusy \|\| !selectedDetail\) return;/,
+  );
+  assert.match(templateLibrarySource, /Discard the pending imported template draft/);
 });
 
 test("Daily Crew Mission Studio reset clears imported draft when no baseline exists", () => {
