@@ -3,9 +3,11 @@ import { useState } from "react";
 import { queryOptions } from "@tanstack/react-query";
 import { TerminalShell } from "@/components/TerminalShell";
 import { DailyCrewMissionStudio } from "@/components/admin/DailyCrewMissionStudio";
+import { DailyCrewRotationScheduler } from "@/components/admin/DailyCrewRotationScheduler";
 import { DailyCrewTemplateLibrary } from "@/components/admin/DailyCrewTemplateLibrary";
 import {
   listAdminDailyCrewMissions,
+  listAdminDailyCrewRotationPlans,
   listAdminDailyCrewTemplates,
 } from "@/lib/api/daily-crew-builder-admin.functions";
 import { amIAdmin, listCharacters } from "@/lib/api/market.functions";
@@ -25,6 +27,11 @@ const dailyCrewAdminTemplatesQO = queryOptions({
   queryFn: () => listAdminDailyCrewTemplates(),
 });
 
+const dailyCrewAdminRotationPlansQO = queryOptions({
+  queryKey: ["admin", "daily-crew", "rotation-plans"],
+  queryFn: () => listAdminDailyCrewRotationPlans(),
+});
+
 export const Route = createFileRoute("/_authenticated/daily-crew-admin")({
   head: () => ({
     meta: [
@@ -38,6 +45,7 @@ export const Route = createFileRoute("/_authenticated/daily-crew-admin")({
     await Promise.all([
       context.queryClient.ensureQueryData(dailyCrewAdminMissionsQO),
       context.queryClient.ensureQueryData(dailyCrewAdminTemplatesQO),
+      context.queryClient.ensureQueryData(dailyCrewAdminRotationPlansQO),
       context.queryClient.ensureQueryData(dailyCrewAdminCharactersQO),
     ]);
   },
@@ -50,7 +58,7 @@ export const Route = createFileRoute("/_authenticated/daily-crew-admin")({
   notFoundComponent: () => null,
 });
 
-type DailyCrewAdminMode = "mission-studio" | "template-library";
+type DailyCrewAdminMode = "mission-studio" | "template-library" | "rotation-scheduler";
 
 function DailyCrewAdmin() {
   const [mode, setMode] = useState<DailyCrewAdminMode>("mission-studio");
@@ -86,6 +94,17 @@ function DailyCrewAdmin() {
             >
               Template Library
             </button>
+            <button
+              type="button"
+              onClick={() => setMode("rotation-scheduler")}
+              className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-widest ${
+                mode === "rotation-scheduler"
+                  ? "border-primary text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Rotation Scheduler
+            </button>
           </div>
         </section>
 
@@ -94,6 +113,9 @@ function DailyCrewAdmin() {
         </div>
         <div hidden={mode !== "template-library"}>
           <DailyCrewTemplateLibrary onOpenMissionStudio={() => setMode("mission-studio")} />
+        </div>
+        <div hidden={mode !== "rotation-scheduler"}>
+          <DailyCrewRotationScheduler onOpenMissionStudio={() => setMode("mission-studio")} />
         </div>
       </div>
     </TerminalShell>
