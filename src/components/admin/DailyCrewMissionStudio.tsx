@@ -37,6 +37,11 @@ import {
   type DailyCrewMissionStatus,
   type DailyCrewStatusAction,
 } from "@/lib/daily-crew-builder/admin-editor";
+import {
+  DAILY_CREW_MISSION_IMPORT_EXAMPLE,
+  importMissionJsonToEditor,
+  type DailyCrewMissionImportResult,
+} from "@/lib/daily-crew-builder/admin-import";
 import type { DailyCrewRole } from "@/lib/daily-crew-builder/scoring";
 
 const dailyCrewAdminMissionsQO = {
@@ -116,6 +121,9 @@ export function DailyCrewMissionStudio() {
   const [baselineEditor, setBaselineEditor] = useState<DailyCrewMissionEditor | null>(null);
   const [baselineSnapshot, setBaselineSnapshot] = useState<string>("");
   const [slugTouched, setSlugTouched] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importResult, setImportResult] = useState<DailyCrewMissionImportResult | null>(null);
   const selectedMissionIdRef = useRef<string | null>(selectedMissionId);
   const editorSnapshotRef = useRef("");
   const activeEditorOperationRef = useRef(0);
@@ -306,6 +314,12 @@ export function DailyCrewMissionStudio() {
       setSlugTouched(Boolean(baselineEditor.missionId));
       return;
     }
+    advanceEditorOperation();
+    setSelectedMissionId(null);
+    setEditor(null);
+    setBaselineEditor(null);
+    setBaselineSnapshot("");
+    setSlugTouched(false);
   }
 
   function updateEditor(updater: (current: DailyCrewMissionEditor) => DailyCrewMissionEditor) {
@@ -399,6 +413,49 @@ export function DailyCrewMissionStudio() {
     });
   }
 
+  function clearImportText() {
+    if (mutationBusy) return;
+    setImportText("");
+    setImportResult(null);
+  }
+
+  function insertImportExample() {
+    if (mutationBusy) return;
+    setImportText(DAILY_CREW_MISSION_IMPORT_EXAMPLE);
+    setImportResult(null);
+  }
+
+  function toggleImportPanel() {
+    if (mutationBusy) return;
+    setImportOpen((open) => !open);
+  }
+
+  function loadImportedMission() {
+    if (mutationBusy) return;
+    const result = importMissionJsonToEditor(importText, characters);
+    if (!result.ok) {
+      setImportResult(result);
+      toast.error("Mission JSON import failed. Review the import errors.");
+      return;
+    }
+    if (
+      dirty &&
+      !window.confirm("Replace the current unsaved editor with this imported mission JSON?")
+    ) {
+      return;
+    }
+    advanceEditorOperation();
+    setSelectedMissionId(null);
+    setEditor(result.editor);
+    setBaselineEditor(null);
+    setBaselineSnapshot("");
+    setSlugTouched(true);
+    setImportText("");
+    setImportResult(null);
+    setImportOpen(false);
+    toast.success("Mission JSON loaded into the editor. Click Save Complete Draft to save it.");
+  }
+
   const actions = editor ? getDailyCrewStatusActions(editor, { dirty }) : [];
   const editorDisabled = readOnly || mutationBusy;
   const canSave = Boolean(editor && !readOnly && validation?.ok && !mutationBusy);
@@ -425,6 +482,14 @@ export function DailyCrewMissionStudio() {
             >
               New Mission
             </button>
+            <button
+              type="button"
+              onClick={toggleImportPanel}
+              disabled={mutationBusy}
+              className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+            >
+              Import Mission JSON
+            </button>
             {editor && (
               <button
                 type="button"
@@ -438,6 +503,18 @@ export function DailyCrewMissionStudio() {
           </div>
         </div>
       </section>
+
+      {importOpen && (
+        <ImportMissionPanel
+          jsonText={importText}
+          result={importResult}
+          disabled={mutationBusy}
+          onJsonText={setImportText}
+          onInsertExample={insertImportExample}
+          onClear={clearImportText}
+          onLoad={loadImportedMission}
+        />
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
         <MissionList
@@ -529,6 +606,119 @@ export function DailyCrewMissionStudio() {
         </section>
       </div>
     </div>
+  );
+}
+
+function importErrorEntries(result: DailyCrewMissionImportResult | null) {
+  if (!result || result.ok) return [];
+  return Object.entries(result.errors).filter(([, messages]) => messages.length > 0);
+}
+
+function ImportMissionPanel({
+  jsonText,
+  result,
+  disabled,
+  onJsonText,
+  onInsertExample,
+  onClear,
+  onLoad,
+}: {
+  jsonText: string;
+  result: DailyCrewMissionImportResult | null;
+  disabled: boolean;
+  onJsonText: (value: string) => void;
+  onInsertExample: () => void;
+  onClear: () => void;
+  onLoad: () => void;
+}) {
+  const errors = importErrorEntries(result);
+  return (
+    <section className="terminal-panel">
+      <div className="terminal-header flex flex-wrap items-center justify-between gap-2">
+        <span>Import Mission JSON</span>
+        <span className="text-muted-foreground">Local validation only</span>
+      </div>
+      <div className="space-y-4 p-4 text-xs">
+        <div className="space-y-2 text-muted-foreground">
+          <p>
+            Paste one complete mission object using schemaVersion 1. Mission packs and arrays are
+            not supported here.
+          </p>
+          <p className="font-bold text-foreground">
+            Importing fills the editor only. It does not save or schedule the mission.
+          </p>
+          <p>
+            Use roster slugs such as <code>nami</code> in <code>characterSlug</code> fields. The
+            importer resolves those slugs against the already loaded admin character list.
+          </p>
+        </div>
+        <textarea
+          value={jsonText}
+          disabled={disabled}
+          rows={14}
+          spellCheck={false}
+          onChange={(event) => onJsonText(event.target.value)}
+          placeholder="Paste one Daily Crew mission JSON object..."
+          className="w-full border border-border bg-input p-3 font-mono text-xs text-foreground outline-none focus:border-primary disabled:opacity-50"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onLoad}
+            disabled={disabled}
+            className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
+          >
+            Validate and Load
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={disabled || jsonText.length === 0}
+            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={onInsertExample}
+            disabled={disabled}
+            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+          >
+            Insert Example
+          </button>
+        </div>
+        {result?.ok && (
+          <div className="border border-bull/40 bg-bull/10 p-3 text-xs text-bull">
+            <div className="font-bold">Import is valid.</div>
+            <div className="mt-2 grid gap-1 text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
+              <span>{result.summary.title}</span>
+              <span>{result.summary.missionDate} UTC</span>
+              <span>{result.summary.format}</span>
+              <span>{result.summary.scoreCount} scores</span>
+              <span>{result.summary.perfectCrewCount} perfect crew rows</span>
+              <span>{result.summary.resolvedCharacterCount} resolved characters</span>
+            </div>
+          </div>
+        )}
+        {errors.length > 0 && (
+          <div role="alert" className="space-y-3 border border-bear/40 bg-bear/10 p-3 text-bear">
+            <div className="font-bold">Mission JSON could not be imported.</div>
+            {errors.map(([group, messages]) => (
+              <div key={group}>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-foreground">
+                  {group}
+                </div>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                  {messages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
