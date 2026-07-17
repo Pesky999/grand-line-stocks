@@ -2043,6 +2043,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_bulk_import_daily_crew_builder_templates: {
+        Args: { _templates: Json }
+        Returns: Json
+      }
       admin_generate_daily_crew_rotation: {
         Args: {
           _plan_id: string

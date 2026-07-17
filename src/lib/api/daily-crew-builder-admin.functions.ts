@@ -178,6 +178,63 @@ const templateAuthoringInput = z
     }
   });
 
+const bulkTemplateAuthoringInput = z
+  .object({
+    slug: templateSlugSchema,
+    title: trimmedString(120),
+    brief: trimmedString(2000),
+    missionTags: z.array(tagSchema).max(8).default([]),
+    revealPolicy: z.enum(DAILY_CREW_REVEAL_POLICIES),
+    isActive: z.literal(true),
+    pool: z
+      .array(authoringPoolEntrySchema)
+      .refine((pool) => pool.length === 9 || pool.length === 15, {
+        message: "Daily Crew Builder templates require 9 or 15 pool characters.",
+      }),
+    jobs: z.array(authoringJobSchema).refine((jobs) => jobs.length === 3 || jobs.length === 5, {
+      message: "Daily Crew Builder templates require 3 or 5 jobs.",
+    }),
+    scores: z.array(authoringScoreSchema),
+    perfectSolution: z.array(authoringPerfectSolutionSchema),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const supportedFormat =
+      (value.pool.length === 9 && value.jobs.length === 3) ||
+      (value.pool.length === 15 && value.jobs.length === 5);
+
+    if (!supportedFormat) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Daily Crew Builder templates must use either 9 pool characters with 3 jobs or 15 pool characters with 5 jobs.",
+        path: ["jobs"],
+      });
+    }
+
+    if (value.scores.length !== value.pool.length * value.jobs.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Daily Crew Builder template scores must cover every pool character and job.",
+        path: ["scores"],
+      });
+    }
+
+    if (value.perfectSolution.length !== value.jobs.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Daily Crew Builder template perfect solution must include one entry per job.",
+        path: ["perfectSolution"],
+      });
+    }
+  });
+
+const bulkTemplateImportInput = z
+  .object({
+    templates: z.array(bulkTemplateAuthoringInput).min(1).max(50),
+  })
+  .strict();
+
 const missionIdInput = z.object({ missionId: z.string().uuid() }).strict();
 const templateIdInput = z.object({ templateId: z.string().uuid() }).strict();
 const statusInput = z
@@ -255,6 +312,22 @@ const templateRpcResultSchema = z
     ready: z.boolean(),
   })
   .strict();
+
+const bulkTemplateImportRpcResultSchema = z
+  .object({
+    importedCount: z.number().int().min(1).max(50),
+    templates: z.array(templateRpcResultSchema).min(1).max(50),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.importedCount !== value.templates.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Daily Crew Builder bulk template import result count mismatch.",
+        path: ["importedCount"],
+      });
+    }
+  });
 
 const templateInstanceRpcResultSchema = z
   .object({
@@ -530,6 +603,9 @@ export type AdminDailyCrewRotationPreviewResult = z.infer<typeof rotationPreview
 export type AdminDailyCrewGeneratedMission = z.infer<typeof generatedRotationMissionSchema>;
 export type AdminDailyCrewRotationGenerationResult = z.infer<
   typeof rotationGenerateRpcResultSchema
+>;
+export type AdminDailyCrewBulkTemplateImportResult = z.infer<
+  typeof bulkTemplateImportRpcResultSchema
 >;
 
 async function admin(): Promise<DailyCrewAdminDb> {
@@ -1236,6 +1312,25 @@ export const saveAdminDailyCrewTemplate = createServerFn({ method: "POST" })
       });
       if (error) throw error;
       return templateRpcResultSchema.parse(result);
+    } catch (error) {
+      throw mapAdminDailyCrewError(error);
+    }
+  });
+
+export const bulkImportAdminDailyCrewTemplates = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => bulkTemplateImportInput.parse(input))
+  .handler(async ({ data, context }): Promise<AdminDailyCrewBulkTemplateImportResult> => {
+    try {
+      const db = await authorizedAdmin(context);
+      const { data: result, error } = await db.rpc(
+        "admin_bulk_import_daily_crew_builder_templates",
+        {
+          _templates: toJson(data.templates),
+        },
+      );
+      if (error) throw error;
+      return bulkTemplateImportRpcResultSchema.parse(result);
     } catch (error) {
       throw mapAdminDailyCrewError(error);
     }

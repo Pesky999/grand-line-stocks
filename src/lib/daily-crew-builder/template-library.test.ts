@@ -11,13 +11,21 @@ const migrationPath = join(
   "migrations",
   "20260715130000_daily_crew_template_library_backend.sql",
 );
+const bulkMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716120000_daily_crew_bulk_template_import.sql",
+);
 const sql = readFileSync(migrationPath, "utf8");
+const bulkSql = readFileSync(bulkMigrationPath, "utf8");
 
 function stripSqlComments(source: string): string {
   return source.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 const executableSql = stripSqlComments(sql);
+const executableBulkSql = stripSqlComments(bulkSql);
 
 function expectSql(pattern: RegExp, message: string): void {
   assert.match(sql, pattern, message);
@@ -33,6 +41,14 @@ function functionSource(name: string): string {
   const end = sql.indexOf("$function$;", start);
   assert.notEqual(end, -1, `${name} function closes`);
   return sql.slice(start, end + "$function$;".length);
+}
+
+function bulkFunctionSource(name: string): string {
+  const start = bulkSql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  assert.notEqual(start, -1, `${name} function exists`);
+  const end = bulkSql.indexOf("$function$;", start);
+  assert.notEqual(end, -1, `${name} function closes`);
+  return bulkSql.slice(start, end + "$function$;".length);
 }
 
 test("Daily Crew Builder template migration is additive and transactional", () => {
@@ -378,6 +394,86 @@ test("template RPCs are executable only by service role", () => {
       "service role execute is granted",
     );
   }
+});
+
+test("bulk template import migration is additive, service-role-only, and transactional", () => {
+  const bulkImport = bulkFunctionSource("admin_bulk_import_daily_crew_builder_templates");
+
+  assert.match(bulkSql, /^BEGIN;\s*/);
+  assert.match(bulkSql, /\bCOMMIT;\s*NOTIFY pgrst, 'reload schema';\s*$/);
+  assert.match(bulkImport, /RETURNS jsonb/);
+  assert.match(bulkImport, /LANGUAGE plpgsql/);
+  assert.match(bulkImport, /SECURITY DEFINER/);
+  assert.match(bulkImport, /SET search_path = pg_catalog, public, pg_temp/);
+  assert.match(bulkImport, /jsonb_typeof\(_templates\) <> 'array'/);
+  assert.match(bulkImport, /v_template_count < 1 OR v_template_count > 50/);
+  assert.match(bulkImport, /jsonb_typeof\(entries\.value\) <> 'object'/);
+  assert.match(bulkImport, /btrim\(entries\.value->>'slug'\) = ''/);
+  assert.match(
+    bulkImport,
+    /\?\| ARRAY\[[\s\S]*'templateId'[\s\S]*'missionDate'[\s\S]*'revealAt'[\s\S]*'status'[\s\S]*'rotationPlanId'/,
+  );
+  assert.match(bulkImport, /GROUP BY normalized\.slug[\s\S]*HAVING count\(\*\) > 1/);
+  assert.match(
+    bulkImport,
+    /JOIN public\.daily_crew_mission_templates AS existing[\s\S]*ON lower\(btrim\(existing\.slug\)\) = normalized\.slug/,
+  );
+  assert.match(bulkImport, /USING ERRCODE = '23505'/);
+  const creationLoopIndex = bulkImport.indexOf("FOR v_item, v_item_index IN");
+  assert.ok(creationLoopIndex > 0, "bulk import creation loop should be present");
+  for (const preflight of [
+    "jsonb_typeof(_templates) <> 'array'",
+    "v_template_count < 1 OR v_template_count > 50",
+    "jsonb_typeof(entries.value) <> 'object'",
+    "btrim(entries.value->>'slug') = ''",
+    "HAVING count(*) > 1",
+    "JOIN public.daily_crew_mission_templates AS existing",
+  ]) {
+    const preflightIndex = bulkImport.indexOf(preflight);
+    assert.ok(
+      preflightIndex > -1 && preflightIndex < creationLoopIndex,
+      `${preflight} should be checked before the creation loop`,
+    );
+  }
+  assert.match(
+    bulkImport,
+    /FROM jsonb_array_elements\(_templates\) WITH ORDINALITY[\s\S]*ORDER BY entries\.ordinality/,
+    "bulk import iterates in input order",
+  );
+  assert.match(
+    bulkImport,
+    /public\.admin_save_daily_crew_builder_template\([\s\S]*_template_id := NULL[\s\S]*_is_active := TRUE/s,
+    "bulk import delegates creation to the existing single-template RPC",
+  );
+  assert.match(bulkImport, /v_error_message = MESSAGE_TEXT/);
+  assert.match(bulkImport, /v_error_state = RETURNED_SQLSTATE/);
+  assert.match(bulkImport, /failed at item % \(%\): %/);
+  assert.match(bulkImport, /v_results := v_results \|\| jsonb_build_array\(v_result\)/);
+  assert.match(bulkImport, /\(v_result->>'isActive'\)::boolean IS DISTINCT FROM TRUE/);
+  assert.match(bulkImport, /\(v_result->>'ready'\)::boolean IS DISTINCT FROM TRUE/);
+  assert.match(bulkImport, /\(v_result->>'revision'\)::integer <> 1/);
+  assert.match(bulkImport, /\(v_result->>'instanceCount'\)::integer <> 0/);
+  assert.match(bulkImport, /jsonb_array_length\(v_results\) <> v_template_count/);
+  assert.match(bulkImport, /'importedCount', v_template_count/);
+  assert.match(bulkImport, /'templates', v_results/);
+  assert.match(
+    bulkSql,
+    /REVOKE EXECUTE ON FUNCTION public\.admin_bulk_import_daily_crew_builder_templates\(jsonb\)[\s\S]*FROM PUBLIC, anon, authenticated/i,
+  );
+  assert.match(
+    bulkSql,
+    /GRANT EXECUTE ON FUNCTION public\.admin_bulk_import_daily_crew_builder_templates\(jsonb\)[\s\S]*TO service_role/i,
+  );
+  assert.doesNotMatch(bulkImport, /INSERT INTO public\.daily_crew_missions\b/i);
+  assert.doesNotMatch(bulkImport, /daily_crew_rotation|admin_generate_daily_crew_rotation/i);
+  assert.doesNotMatch(
+    bulkImport,
+    /UPDATE public\.daily_crew_mission_templates|UPSERT|ON CONFLICT/i,
+  );
+  assert.doesNotMatch(
+    executableBulkSql,
+    /daily_crew_submissions|reward_paid|user_wallets|wallet_ledger_entries|transactions|grand_line_guess/i,
+  );
 });
 
 test("template library migration has no gameplay or financial scope creep", () => {
