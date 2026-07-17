@@ -2,15 +2,22 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  bulkImportAdminDailyCrewTemplates,
   createAdminDailyCrewMissionFromTemplate,
   getAdminDailyCrewTemplate,
   listAdminDailyCrewMissions,
   listAdminDailyCrewTemplates,
   saveAdminDailyCrewTemplate,
+  type AdminDailyCrewBulkTemplateImportResult,
   type AdminDailyCrewTemplateDetail,
   type AdminDailyCrewTemplateSummary,
 } from "@/lib/api/daily-crew-builder-admin.functions";
 import { listCharacters, type CharacterRow } from "@/lib/api/market.functions";
+import {
+  DAILY_CREW_TEMPLATE_BATCH_IMPORT_EXAMPLE,
+  importTemplateBatchJsonToDrafts,
+  type DailyCrewTemplateBatchImportResult,
+} from "@/lib/daily-crew-builder/template-bulk-import";
 import {
   DAILY_CREW_TEMPLATE_IMPORT_EXAMPLE,
   importTemplateJsonToDraft,
@@ -42,11 +49,19 @@ type PendingTemplateImport = {
   replacementRevision: number | null;
   validatedJsonText: string;
 };
+type PendingTemplateBatchImport = Extract<DailyCrewTemplateBatchImportResult, { ok: true }> & {
+  validatedJsonText: string;
+};
 type SaveTemplateMutationVariables = {
   draft: DailyCrewTemplateDraft;
   submittedSnapshot: string;
   operationKey: number;
   source: "new" | "replace" | "toggle";
+};
+type BulkTemplateMutationVariables = {
+  drafts: DailyCrewTemplateDraft[];
+  submittedText: string;
+  operationKey: number;
 };
 type CreateMissionMutationVariables = {
   templateId: string;
@@ -97,6 +112,21 @@ function templateDetailToDraft(
   };
 }
 
+function templateDraftToCreatePayload(draft: DailyCrewTemplateDraft) {
+  return {
+    slug: draft.slug,
+    title: draft.title,
+    brief: draft.brief,
+    missionTags: draft.missionTags,
+    revealPolicy: draft.revealPolicy,
+    isActive: true as const,
+    pool: draft.pool,
+    jobs: draft.jobs,
+    scores: draft.scores,
+    perfectSolution: draft.perfectSolution,
+  };
+}
+
 function isCurrentOrFutureUtcDate(value: string) {
   return UTC_DATE_RE.test(value) && value >= todayUtcDate();
 }
@@ -117,6 +147,10 @@ export function DailyCrewTemplateLibrary({
   const [importText, setImportText] = useState("");
   const [importResult, setImportResult] = useState<DailyCrewTemplateImportResult | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingTemplateImport | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [batchResult, setBatchResult] = useState<DailyCrewTemplateBatchImportResult | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<PendingTemplateBatchImport | null>(null);
   const [draftMissionDate, setDraftMissionDate] = useState(todayUtcDate());
   const [lastCreatedMission, setLastCreatedMission] = useState<{
     title: string;
@@ -125,9 +159,14 @@ export function DailyCrewTemplateLibrary({
     status: string;
     sourceTemplateRevision: number;
   } | null>(null);
+  const [lastBulkImport, setLastBulkImport] = useState<{
+    importedCount: number;
+    slugs: string[];
+  } | null>(null);
   const selectedTemplateIdRef = useRef<string | null>(selectedTemplateId);
   const activeTemplateOperationRef = useRef(0);
   const pendingDraftSnapshotRef = useRef("");
+  const pendingBatchTextRef = useRef("");
 
   const characterById = useMemo(
     () => new Map(characters.map((character) => [character.id, character])),
@@ -166,6 +205,10 @@ export function DailyCrewTemplateLibrary({
     pendingDraftSnapshotRef.current = templateDraftSnapshot(pendingImport?.draft ?? null);
   }, [pendingImport]);
 
+  useEffect(() => {
+    pendingBatchTextRef.current = pendingBatch?.validatedJsonText ?? "";
+  }, [pendingBatch]);
+
   const saveMutation = useMutation({
     mutationFn: async ({ draft }: SaveTemplateMutationVariables) =>
       saveAdminDailyCrewTemplate({ data: draft }),
@@ -197,6 +240,36 @@ export function DailyCrewTemplateLibrary({
     },
   });
 
+  const bulkImportMutation = useMutation({
+    mutationFn: async ({ drafts }: BulkTemplateMutationVariables) =>
+      bulkImportAdminDailyCrewTemplates({
+        data: { templates: drafts.map(templateDraftToCreatePayload) },
+      }),
+    onSuccess: async (result: AdminDailyCrewBulkTemplateImportResult, variables) => {
+      toast.success(`${result.importedCount} Daily Crew templates imported.`);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "daily-crew", "templates"] });
+      const stillActiveBatch =
+        activeTemplateOperationRef.current === variables.operationKey &&
+        pendingBatchTextRef.current === variables.submittedText;
+      if (!stillActiveBatch) return;
+      setSelectedTemplateId(null);
+      setPendingImport(null);
+      setImportResult(null);
+      setImportOpen(false);
+      setBatchText("");
+      setBatchResult(null);
+      setPendingBatch(null);
+      setBatchOpen(false);
+      setLastBulkImport({
+        importedCount: result.importedCount,
+        slugs: result.templates.map((template) => template.slug),
+      });
+    },
+    onError: (error) => {
+      toast.error(messageFromError(error, "Could not import Daily Crew template batch."));
+    },
+  });
+
   const createMissionMutation = useMutation({
     mutationFn: async ({ templateId, missionDate }: CreateMissionMutationVariables) =>
       createAdminDailyCrewMissionFromTemplate({ data: { templateId, missionDate } }),
@@ -223,11 +296,16 @@ export function DailyCrewTemplateLibrary({
     },
   });
 
-  const mutationBusy = saveMutation.isPending || createMissionMutation.isPending;
+  const mutationBusy =
+    saveMutation.isPending || bulkImportMutation.isPending || createMissionMutation.isPending;
   const pendingImportMatchesText = Boolean(
     pendingImport && importText === pendingImport.validatedJsonText,
   );
   const pendingImportStale = Boolean(pendingImport && !pendingImportMatchesText);
+  const pendingBatchMatchesText = Boolean(
+    pendingBatch && batchText === pendingBatch.validatedJsonText,
+  );
+  const pendingBatchStale = Boolean(pendingBatch && !pendingBatchMatchesText);
 
   function advanceTemplateOperation() {
     activeTemplateOperationRef.current += 1;
@@ -235,12 +313,14 @@ export function DailyCrewTemplateLibrary({
   }
 
   function confirmDiscardPending(message: string) {
-    return !pendingImport || window.confirm(message);
+    return (!pendingImport && !pendingBatch) || window.confirm(message);
   }
 
   function clearPendingImport() {
     setPendingImport(null);
     setImportResult(null);
+    setPendingBatch(null);
+    setBatchResult(null);
   }
 
   function selectTemplate(templateId: string) {
@@ -253,7 +333,10 @@ export function DailyCrewTemplateLibrary({
     setSelectedTemplateId(templateId);
     setPendingImport(null);
     setImportResult(null);
+    setPendingBatch(null);
+    setBatchResult(null);
     setImportOpen(false);
+    setBatchOpen(false);
     setLastCreatedMission(null);
   }
 
@@ -268,6 +351,8 @@ export function DailyCrewTemplateLibrary({
     setSelectedTemplateId(null);
     setPendingImport(null);
     setImportResult(null);
+    setPendingBatch(null);
+    setBatchResult(null);
     setLastCreatedMission(null);
   }
 
@@ -283,6 +368,23 @@ export function DailyCrewTemplateLibrary({
     setImportText("");
     setImportResult(null);
     setPendingImport(null);
+    setBatchText("");
+    setBatchResult(null);
+    setPendingBatch(null);
+    setBatchOpen(false);
+  }
+
+  function openBatchImport() {
+    if (mutationBusy) return;
+    if (!confirmDiscardPending("Replace the pending imported template work?")) return;
+    setBatchOpen(true);
+    setImportText("");
+    setImportResult(null);
+    setPendingImport(null);
+    setImportOpen(false);
+    setBatchText("");
+    setBatchResult(null);
+    setPendingBatch(null);
   }
 
   function insertImportExample() {
@@ -301,6 +403,24 @@ export function DailyCrewTemplateLibrary({
   function updateImportText(value: string) {
     setImportText(value);
     setImportResult(null);
+  }
+
+  function insertBatchExample() {
+    if (mutationBusy) return;
+    setBatchText(DAILY_CREW_TEMPLATE_BATCH_IMPORT_EXAMPLE);
+    setBatchResult(null);
+  }
+
+  function clearBatchPanel() {
+    if (mutationBusy) return;
+    setBatchText("");
+    setBatchResult(null);
+    setPendingBatch(null);
+  }
+
+  function updateBatchText(value: string) {
+    setBatchText(value);
+    setBatchResult(null);
   }
 
   function validateImportText() {
@@ -345,6 +465,24 @@ export function DailyCrewTemplateLibrary({
     toast.success("Template JSON validated. Review the preview before saving.");
   }
 
+  function validateBatchText() {
+    if (mutationBusy) return;
+
+    const result = importTemplateBatchJsonToDrafts(batchText, characters, templates);
+    setBatchResult(result);
+    if (!result.ok) {
+      toast.error("Template batch JSON validation failed. Review the batch errors.");
+      return;
+    }
+
+    setPendingBatch({
+      ...result,
+      validatedJsonText: batchText,
+    });
+    setLastBulkImport(null);
+    toast.success(`${result.aggregate.templateCount} templates validated. Review before import.`);
+  }
+
   function savePendingImport() {
     if (!pendingImport || mutationBusy) return;
     if (importText !== pendingImport.validatedJsonText) {
@@ -363,6 +501,27 @@ export function DailyCrewTemplateLibrary({
       submittedSnapshot: templateDraftSnapshot(pendingImport.draft),
       operationKey: advanceTemplateOperation(),
       source: isReplacement ? "replace" : "new",
+    });
+  }
+
+  function importPendingBatch() {
+    if (!pendingBatch || mutationBusy) return;
+    if (batchText !== pendingBatch.validatedJsonText) {
+      toast.error("The batch JSON has changed since validation. Validate it again before import.");
+      return;
+    }
+    const count = pendingBatch.aggregate.templateCount;
+    if (
+      !window.confirm(
+        `Import all ${count} new active Daily Crew templates? This operation is atomic: all templates will be created or none will be created. Existing templates will not be replaced.`,
+      )
+    ) {
+      return;
+    }
+    bulkImportMutation.mutate({
+      drafts: pendingBatch.drafts,
+      submittedText: pendingBatch.validatedJsonText,
+      operationKey: advanceTemplateOperation(),
     });
   }
 
@@ -438,6 +597,7 @@ export function DailyCrewTemplateLibrary({
   }
 
   const canSaveImport = Boolean(pendingImportMatchesText && !mutationBusy);
+  const canImportBatch = Boolean(pendingBatchMatchesText && !mutationBusy);
   const canToggle = Boolean(selectedDetail?.ready && !mutationBusy);
   const canCreateDraft = Boolean(
     selectedDetail?.isActive &&
@@ -478,6 +638,14 @@ export function DailyCrewTemplateLibrary({
             </button>
             <button
               type="button"
+              onClick={openBatchImport}
+              disabled={mutationBusy}
+              className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+            >
+              Import Template Batch JSON
+            </button>
+            <button
+              type="button"
               onClick={clearSelection}
               disabled={!selectedTemplateId || mutationBusy}
               className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
@@ -503,6 +671,36 @@ export function DailyCrewTemplateLibrary({
           onInsertExample={insertImportExample}
           onSave={savePendingImport}
         />
+      )}
+
+      {batchOpen && (
+        <TemplateBatchImportPanel
+          jsonText={batchText}
+          result={batchResult}
+          pendingBatch={pendingBatch}
+          pendingBatchStale={pendingBatchStale}
+          disabled={mutationBusy}
+          canImport={canImportBatch}
+          onJsonText={updateBatchText}
+          onValidate={validateBatchText}
+          onClear={clearBatchPanel}
+          onInsertExample={insertBatchExample}
+          onImport={importPendingBatch}
+        />
+      )}
+
+      {lastBulkImport && (
+        <section className="terminal-panel border-bull/60">
+          <div className="terminal-header">Batch Import Complete</div>
+          <div className="space-y-2 p-4 text-xs">
+            <p className="font-bold text-bull">
+              Imported {lastBulkImport.importedCount} active Daily Crew templates.
+            </p>
+            <p className="text-muted-foreground">
+              Created slugs: {lastBulkImport.slugs.join(", ")}
+            </p>
+          </div>
+        </section>
       )}
 
       <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
@@ -879,6 +1077,153 @@ function TemplateContentDetail({
   );
 }
 
+function TemplateBatchImportPanel({
+  jsonText,
+  result,
+  pendingBatch,
+  pendingBatchStale,
+  disabled,
+  canImport,
+  onJsonText,
+  onValidate,
+  onClear,
+  onInsertExample,
+  onImport,
+}: {
+  jsonText: string;
+  result: DailyCrewTemplateBatchImportResult | null;
+  pendingBatch: PendingTemplateBatchImport | null;
+  pendingBatchStale: boolean;
+  disabled: boolean;
+  canImport: boolean;
+  onJsonText: (value: string) => void;
+  onValidate: () => void;
+  onClear: () => void;
+  onInsertExample: () => void;
+  onImport: () => void;
+}) {
+  return (
+    <section className="terminal-panel">
+      <div className="terminal-header flex flex-wrap items-center justify-between gap-2">
+        <span>Import Template Batch JSON</span>
+        <span className="text-muted-foreground">Validation performs no writes</span>
+      </div>
+      <div className="space-y-3 p-4">
+        <p className="text-xs text-muted-foreground">
+          Paste a JSON array of 1 to 50 complete Mission JSON objects. Each validated item becomes a
+          new active reusable template; mission dates validate source data but are stored as none.
+        </p>
+        <textarea
+          value={jsonText}
+          rows={14}
+          disabled={disabled}
+          onChange={(event) => onJsonText(event.target.value)}
+          className="w-full border border-border bg-input p-3 font-mono text-xs disabled:opacity-50"
+          placeholder="Paste a JSON array of complete Mission JSON objects"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onValidate}
+            disabled={disabled || jsonText.trim().length === 0}
+            className="bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
+          >
+            Validate Batch
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={disabled}
+            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={onInsertExample}
+            disabled={disabled}
+            className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
+          >
+            Insert Batch Example
+          </button>
+          {pendingBatch && (
+            <button
+              type="button"
+              onClick={onImport}
+              disabled={!canImport}
+              className="border border-bull px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-bull hover:bg-bull/10 disabled:opacity-40"
+            >
+              Import All Templates
+            </button>
+          )}
+        </div>
+        {result && !result.ok && <BatchImportErrors result={result} />}
+        {pendingBatchStale && (
+          <p className="text-xs font-bold text-bear">
+            Batch JSON changed after validation. Validate again before importing.
+          </p>
+        )}
+        {pendingBatch && (
+          <div className="space-y-3 border border-border bg-card/40 p-3 text-xs">
+            <div className="font-bold text-foreground">Validated batch preview</div>
+            <div className="grid gap-2 md:grid-cols-5">
+              <Metric label="Templates" value={String(pendingBatch.aggregate.templateCount)} />
+              <Metric label="Pool rows" value={String(pendingBatch.aggregate.totalPoolRows)} />
+              <Metric label="Jobs" value={String(pendingBatch.aggregate.totalJobs)} />
+              <Metric label="Score rows" value={String(pendingBatch.aggregate.totalScoreRows)} />
+              <Metric
+                label="Perfect crew rows"
+                value={String(pendingBatch.aggregate.totalPerfectCrewRows)}
+              />
+            </div>
+            <div className="max-h-[420px] overflow-auto border border-border">
+              <table className="w-full min-w-[960px] text-xs">
+                <thead className="bg-card text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="px-2 py-2 text-left">#</th>
+                    <th className="px-2 py-2 text-left">Title</th>
+                    <th className="px-2 py-2 text-left">Slug</th>
+                    <th className="px-2 py-2 text-left">Format</th>
+                    <th className="px-2 py-2 text-right">Pool</th>
+                    <th className="px-2 py-2 text-right">Jobs</th>
+                    <th className="px-2 py-2 text-right">Scores</th>
+                    <th className="px-2 py-2 text-right">Perfect</th>
+                    <th className="px-2 py-2 text-left">Source date</th>
+                    <th className="px-2 py-2 text-left">Stored date</th>
+                    <th className="px-2 py-2 text-left">Active</th>
+                    <th className="px-2 py-2 text-left">Validation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingBatch.summaries.map((summary) => (
+                    <tr
+                      key={`${summary.position}-${summary.slug}`}
+                      className="border-b border-border/40"
+                    >
+                      <td className="px-2 py-2 tabular">{summary.position}</td>
+                      <td className="px-2 py-2 font-bold text-foreground">{summary.title}</td>
+                      <td className="px-2 py-2 text-muted-foreground">{summary.slug}</td>
+                      <td className="px-2 py-2">{summary.format}</td>
+                      <td className="px-2 py-2 text-right tabular">{summary.poolCount}</td>
+                      <td className="px-2 py-2 text-right tabular">{summary.jobCount}</td>
+                      <td className="px-2 py-2 text-right tabular">{summary.scoreCount}</td>
+                      <td className="px-2 py-2 text-right tabular">{summary.perfectCrewCount}</td>
+                      <td className="px-2 py-2">{summary.sourceMissionDate}</td>
+                      <td className="px-2 py-2">none</td>
+                      <td className="px-2 py-2">active</td>
+                      <td className="px-2 py-2 text-bull">{summary.validationStatus}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function TemplateImportPanel({
   mode,
   jsonText,
@@ -1062,6 +1407,53 @@ function PendingImportPreview({
         </button>
       </div>
     </section>
+  );
+}
+
+function BatchImportErrors({
+  result,
+}: {
+  result: Extract<DailyCrewTemplateBatchImportResult, { ok: false }>;
+}) {
+  return (
+    <div role="alert" className="space-y-3 border border-bear bg-bear/10 p-3 text-xs">
+      <div className="font-bold text-bear">Template batch validation errors</div>
+      {result.errors.batch.length > 0 && (
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Batch
+          </div>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-bear">
+            {result.errors.batch.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {result.errors.items.map((item) => (
+        <div key={item.position}>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Item {item.position}
+            {item.title ? ` - ${item.title}` : ""}
+            {item.slug ? ` (${item.slug})` : ""}
+          </div>
+          {Object.entries(item.errors).map(([group, messages]) =>
+            messages.length ? (
+              <div key={group} className="mt-1">
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  {group}
+                </div>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-bear">
+                  {messages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 

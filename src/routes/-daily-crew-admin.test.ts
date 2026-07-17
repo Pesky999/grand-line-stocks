@@ -18,6 +18,7 @@ const publicDailyCrewRouteSource = read("src/routes/games.daily-crew-builder.tsx
 const editorSource = read("src/lib/daily-crew-builder/admin-editor.ts");
 const importSource = read("src/lib/daily-crew-builder/admin-import.ts");
 const templateImportSource = read("src/lib/daily-crew-builder/template-import.ts");
+const templateBulkImportSource = read("src/lib/daily-crew-builder/template-bulk-import.ts");
 const rotationEditorSource = read("src/lib/daily-crew-builder/rotation-editor.ts");
 
 test("Daily Crew Mission Studio is a protected noindex route", () => {
@@ -320,7 +321,7 @@ test("Daily Crew Mission Studio import advances operation key before replacing e
 });
 
 test("Daily Crew Mission Studio does not persist pasted mission JSON outside component state", () => {
-  const importHandlingSource = `${componentSource}\n${importSource}\n${templateLibrarySource}\n${templateImportSource}`;
+  const importHandlingSource = `${componentSource}\n${importSource}\n${templateLibrarySource}\n${templateImportSource}\n${templateBulkImportSource}`;
   assert.doesNotMatch(
     importHandlingSource,
     /console\.(log|info|warn|error)|localStorage|sessionStorage|URLSearchParams|navigator\.sendBeacon|analytics|captureException|captureMessage|Sentry/,
@@ -331,6 +332,7 @@ test("Daily Crew Template Library uses only approved template APIs", () => {
   assert.match(templateLibrarySource, /listAdminDailyCrewTemplates/);
   assert.match(templateLibrarySource, /getAdminDailyCrewTemplate/);
   assert.match(templateLibrarySource, /saveAdminDailyCrewTemplate/);
+  assert.match(templateLibrarySource, /bulkImportAdminDailyCrewTemplates/);
   assert.match(templateLibrarySource, /createAdminDailyCrewMissionFromTemplate/);
   assert.match(templateLibrarySource, /listCharacters/);
   assert.doesNotMatch(templateLibrarySource, /supabaseAdmin|getSupabaseAdmin|client\.server/);
@@ -338,6 +340,112 @@ test("Daily Crew Template Library uses only approved template APIs", () => {
     templateLibrarySource,
     /\bdb\.from\(|\.rpc\(|daily_crew_mission_templates|daily_crew_missions/,
   );
+});
+
+test("Daily Crew Template Library supports atomic create-only batch imports", () => {
+  assert.match(templateLibrarySource, /Import Template Batch JSON/);
+  assert.match(templateLibrarySource, /TemplateBatchImportPanel/);
+  assert.match(
+    templateLibrarySource,
+    /Paste a JSON array of 1 to 50 complete Mission JSON objects/,
+  );
+  assert.match(templateLibrarySource, /Validation performs no writes/);
+  assert.match(templateLibrarySource, /Validate Batch/);
+  assert.match(templateLibrarySource, /Insert Batch Example/);
+  assert.match(templateLibrarySource, /Import All Templates/);
+  assert.match(
+    templateLibrarySource,
+    /importTemplateBatchJsonToDrafts\(batchText, characters, templates\)/,
+  );
+  assert.match(templateLibrarySource, /batchText === pendingBatch\.validatedJsonText/);
+  assert.match(
+    templateLibrarySource,
+    /The batch JSON has changed since validation\. Validate it again before import\./,
+  );
+  assert.match(
+    templateLibrarySource,
+    /Import all \$\{count\} new active Daily Crew templates\? This operation is atomic: all templates will be created or none will be created\. Existing templates will not be replaced\./,
+  );
+  assert.match(templateLibrarySource, /bulkImportAdminDailyCrewTemplates\(\{/);
+  assert.match(templateLibrarySource, /templates: drafts\.map\(templateDraftToCreatePayload\)/);
+  assert.match(templateLibrarySource, /queryKey: \["admin", "daily-crew", "templates"\]/);
+  assert.match(templateLibrarySource, /setBatchOpen\(false\)/);
+  assert.match(templateLibrarySource, /setSelectedTemplateId\(null\)/);
+  const bulkImportMutation = templateLibrarySource.match(
+    /const bulkImportMutation = useMutation\(\{[\s\S]*?\n\s{2}\}\);\s+\n\s{2}const createMissionMutation/,
+  )?.[0];
+  assert.ok(bulkImportMutation, "bulk import mutation should be present");
+  assert.equal((bulkImportMutation.match(/bulkImportAdminDailyCrewTemplates/g) ?? []).length, 1);
+  assert.doesNotMatch(bulkImportMutation, /saveAdminDailyCrewTemplate/);
+  assert.doesNotMatch(
+    bulkImportMutation,
+    /createAdminDailyCrewMissionFromTemplate|generateAdminDailyCrewRotation|setAdminDailyCrewMissionStatus/,
+  );
+  assert.match(
+    bulkImportMutation,
+    /onError: \(error\) => \{\s+toast\.error\(messageFromError\(error, "Could not import Daily Crew template batch\."\)\);\s+\}/,
+    "bulk import failure should preserve the validated batch state by only reporting the error",
+  );
+});
+
+test("Daily Crew Template Library clears confirmed abandoned cross-panel import state", () => {
+  const openImport = templateLibrarySource.match(
+    /function openImport\(mode: ImportMode\) \{[\s\S]*?\n\s{2}function openBatchImport/,
+  )?.[0];
+  const openBatchImport = templateLibrarySource.match(
+    /function openBatchImport\(\) \{[\s\S]*?\n\s{2}function insertImportExample/,
+  )?.[0];
+  assert.ok(openImport, "openImport should be present");
+  assert.ok(openBatchImport, "openBatchImport should be present");
+
+  assert.match(
+    openImport,
+    /if \(!confirmDiscardPending\("Replace the pending imported template draft\?"\)\) return;/,
+    "single import should stop before clearing batch state when confirmation is declined",
+  );
+  assert.match(openImport, /setImportOpen\(true\)/);
+  assert.match(openImport, /setImportText\(""\)/);
+  assert.match(openImport, /setImportResult\(null\)/);
+  assert.match(openImport, /setPendingImport\(null\)/);
+  assert.match(openImport, /setBatchText\(""\)/);
+  assert.match(openImport, /setBatchResult\(null\)/);
+  assert.match(openImport, /setPendingBatch\(null\)/);
+  assert.match(openImport, /setBatchOpen\(false\)/);
+
+  assert.match(
+    openBatchImport,
+    /if \(!confirmDiscardPending\("Replace the pending imported template work\?"\)\) return;/,
+    "batch import should stop before clearing single-template state when confirmation is declined",
+  );
+  assert.match(openBatchImport, /setBatchOpen\(true\)/);
+  assert.match(openBatchImport, /setImportText\(""\)/);
+  assert.match(openBatchImport, /setImportResult\(null\)/);
+  assert.match(openBatchImport, /setPendingImport\(null\)/);
+  assert.match(openBatchImport, /setImportOpen\(false\)/);
+  assert.match(openBatchImport, /setBatchText\(""\)/);
+  assert.match(openBatchImport, /setBatchResult\(null\)/);
+  assert.match(openBatchImport, /setPendingBatch\(null\)/);
+});
+
+test("Daily Crew Template Library batch preview is summary-only", () => {
+  const batchPanel = templateLibrarySource.match(
+    /function TemplateBatchImportPanel[\s\S]*?\n}\n\nfunction TemplateImportPanel/,
+  )?.[0];
+  assert.ok(batchPanel, "TemplateBatchImportPanel should be present");
+  assert.match(batchPanel, /template count|Templates/i);
+  assert.match(batchPanel, /totalPoolRows|Pool rows/);
+  assert.match(batchPanel, /totalJobs|Jobs/);
+  assert.match(batchPanel, /totalScoreRows|Score rows/);
+  assert.match(batchPanel, /totalPerfectCrewRows|Perfect crew rows/);
+  assert.match(batchPanel, /summary\.position/);
+  assert.match(batchPanel, /summary\.title/);
+  assert.match(batchPanel, /summary\.slug/);
+  assert.match(batchPanel, /summary\.format/);
+  assert.match(batchPanel, /summary\.sourceMissionDate/);
+  assert.match(batchPanel, /none/);
+  assert.match(batchPanel, /active/);
+  assert.match(batchPanel, /summary\.validationStatus/);
+  assert.doesNotMatch(batchPanel, /explanation|scores\.map|perfectSolution\.map/);
 });
 
 test("Daily Crew Template Library keeps list rows free of hidden solution data", () => {
@@ -531,7 +639,7 @@ test("Daily Crew Template Library has stale-response and mutation-busy protectio
   assert.match(templateLibrarySource, /detailQ\.data\?\.id === selectedTemplateId/);
   assert.match(
     templateLibrarySource,
-    /const mutationBusy = saveMutation\.isPending \|\| createMissionMutation\.isPending/,
+    /saveMutation\.isPending \|\| bulkImportMutation\.isPending \|\| createMissionMutation\.isPending/,
   );
   assert.match(
     templateLibrarySource,
@@ -553,6 +661,19 @@ test("Daily Crew Template Library has stale-response and mutation-busy protectio
     templateLibrarySource,
     /function savePendingImport\(\) \{\s+if \(!pendingImport \|\| mutationBusy\) return;/,
   );
+  assert.match(
+    templateLibrarySource,
+    /function validateBatchText\(\) \{\s+if \(mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /function importPendingBatch\(\) \{\s+if \(!pendingBatch \|\| mutationBusy\) return;/,
+  );
+  assert.match(
+    templateLibrarySource,
+    /if \(batchText !== pendingBatch\.validatedJsonText\) \{[\s\S]*?Validate it again before import\.[\s\S]*?return;[\s\S]*?\}/,
+  );
+  assert.match(templateLibrarySource, /disabled=\{!canImport\}/);
   assert.match(
     templateLibrarySource,
     /function createDatedDraft\(\) \{\s+if \(mutationBusy \|\| !selectedDetail\) return;/,

@@ -30,6 +30,7 @@ test("Daily Crew Builder admin functions require auth, admin role, and service r
     "listAdminDailyCrewTemplates",
     "getAdminDailyCrewTemplate",
     "saveAdminDailyCrewTemplate",
+    "bulkImportAdminDailyCrewTemplates",
     "createAdminDailyCrewMissionFromTemplate",
     "listAdminDailyCrewRotationPlans",
     "getAdminDailyCrewRotationPlan",
@@ -111,6 +112,7 @@ test("Daily Crew Builder admin save and status writes call only approved RPCs", 
 
 test("Daily Crew Builder template writes call only approved template RPCs", () => {
   const save = functionSource("saveAdminDailyCrewTemplate");
+  const bulkImport = functionSource("bulkImportAdminDailyCrewTemplates");
   const instantiate = functionSource("createAdminDailyCrewMissionFromTemplate");
 
   assert.match(save, /\.inputValidator\(\(input\) => templateAuthoringInput\.parse\(input\)\)/);
@@ -126,6 +128,22 @@ test("Daily Crew Builder template writes call only approved template RPCs", () =
   assert.doesNotMatch(save, /missionDate|targetStatus|revealAt|reward|wallet|submission/i);
 
   assert.match(
+    bulkImport,
+    /\.inputValidator\(\(input\) => bulkTemplateImportInput\.parse\(input\)\)/,
+  );
+  assert.match(bulkImport, /\.rpc\(\s*"admin_bulk_import_daily_crew_builder_templates"/);
+  assert.equal((bulkImport.match(/\.rpc\(/g) ?? []).length, 1);
+  assert.match(bulkImport, /_templates: toJson\(data\.templates\)/);
+  assert.match(bulkImport, /bulkTemplateImportRpcResultSchema\.parse\(result\)/);
+  assert.doesNotMatch(bulkImport, /admin_save_daily_crew_builder_template/);
+  assert.doesNotMatch(bulkImport, /\.from\("daily_crew_/);
+  assert.doesNotMatch(bulkImport, /\.(insert|update|upsert|delete)\s*\(/);
+  assert.doesNotMatch(
+    bulkImport,
+    /createAdminDailyCrewMissionFromTemplate|admin_create_daily_crew_builder_mission_from_template|rotation|schedule|publish|targetStatus|revealAt|reward|wallet|submission/i,
+  );
+
+  assert.match(
     instantiate,
     /\.inputValidator\(\(input\) => createMissionFromTemplateInput\.parse\(input\)\)/,
   );
@@ -135,6 +153,41 @@ test("Daily Crew Builder template writes call only approved template RPCs", () =
   assert.doesNotMatch(instantiate, /\.from\("daily_crew_/);
   assert.doesNotMatch(instantiate, /\.(insert|update|upsert|delete)\s*\(/);
   assert.doesNotMatch(instantiate, /targetStatus|revealAt|reward|wallet|submission/i);
+});
+
+test("Daily Crew Builder bulk template import schema is strict create-only", () => {
+  const inputSchema = adminSource.slice(
+    adminSource.indexOf("const bulkTemplateAuthoringInput"),
+    adminSource.indexOf("const missionIdInput"),
+  );
+
+  assert.match(inputSchema, /\.strict\(\)/);
+  assert.match(
+    inputSchema,
+    /templates: z\.array\(bulkTemplateAuthoringInput\)\.min\(1\)\.max\(50\)/,
+  );
+  assert.match(inputSchema, /isActive: z\.literal\(true\)/);
+  assert.match(inputSchema, /slug: templateSlugSchema/);
+  assert.match(inputSchema, /pool: z\s+\.array\(authoringPoolEntrySchema\)/);
+  assert.match(inputSchema, /jobs: z\.array\(authoringJobSchema\)/);
+  assert.match(inputSchema, /scores: z\.array\(authoringScoreSchema\)/);
+  assert.match(inputSchema, /perfectSolution: z\.array\(authoringPerfectSolutionSchema\)/);
+  assert.match(inputSchema, /value\.pool\.length === 9 && value\.jobs\.length === 3/);
+  assert.match(inputSchema, /value\.pool\.length === 15 && value\.jobs\.length === 5/);
+  assert.match(inputSchema, /value\.scores\.length !== value\.pool\.length \* value\.jobs\.length/);
+  assert.match(inputSchema, /value\.perfectSolution\.length !== value\.jobs\.length/);
+  assert.doesNotMatch(
+    inputSchema,
+    /templateId|missionDate|targetStatus|revealAt|status|rotation|schedule|publish|reward|wallet|submission/i,
+  );
+
+  const resultSchema = adminSource.slice(
+    adminSource.indexOf("const bulkTemplateImportRpcResultSchema"),
+    adminSource.indexOf("const templateInstanceRpcResultSchema"),
+  );
+  assert.match(resultSchema, /importedCount: z\.number\(\)\.int\(\)\.min\(1\)\.max\(50\)/);
+  assert.match(resultSchema, /templates: z\.array\(templateRpcResultSchema\)\.min\(1\)\.max\(50\)/);
+  assert.match(resultSchema, /value\.importedCount !== value\.templates\.length/);
 });
 
 test("Daily Crew Builder rotation schemas are strict and allow only draft or scheduled generation", () => {
