@@ -135,8 +135,8 @@ BEGIN
 
     IF (v_result->>'isActive')::boolean IS DISTINCT FROM TRUE
        OR (v_result->>'ready')::boolean IS DISTINCT FROM TRUE
-       OR (v_result->>'revision')::integer <> 1
-       OR (v_result->>'instanceCount')::integer <> 0 THEN
+       OR (v_result->>'revision')::integer IS DISTINCT FROM 1
+       OR (v_result->>'instanceCount')::integer IS DISTINCT FROM 0 THEN
       RAISE EXCEPTION 'Daily Crew Builder bulk template import returned an invalid result at item % (%)',
         v_item_index,
         v_slug;

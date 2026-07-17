@@ -451,8 +451,8 @@ test("bulk template import migration is additive, service-role-only, and transac
   assert.match(bulkImport, /v_results := v_results \|\| jsonb_build_array\(v_result\)/);
   assert.match(bulkImport, /\(v_result->>'isActive'\)::boolean IS DISTINCT FROM TRUE/);
   assert.match(bulkImport, /\(v_result->>'ready'\)::boolean IS DISTINCT FROM TRUE/);
-  assert.match(bulkImport, /\(v_result->>'revision'\)::integer <> 1/);
-  assert.match(bulkImport, /\(v_result->>'instanceCount'\)::integer <> 0/);
+  assert.match(bulkImport, /\(v_result->>'revision'\)::integer IS DISTINCT FROM 1/);
+  assert.match(bulkImport, /\(v_result->>'instanceCount'\)::integer IS DISTINCT FROM 0/);
   assert.match(bulkImport, /jsonb_array_length\(v_results\) <> v_template_count/);
   assert.match(bulkImport, /'importedCount', v_template_count/);
   assert.match(bulkImport, /'templates', v_results/);

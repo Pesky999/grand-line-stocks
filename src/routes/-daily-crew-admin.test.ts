@@ -388,6 +388,45 @@ test("Daily Crew Template Library supports atomic create-only batch imports", ()
   );
 });
 
+test("Daily Crew Template Library clears confirmed abandoned cross-panel import state", () => {
+  const openImport = templateLibrarySource.match(
+    /function openImport\(mode: ImportMode\) \{[\s\S]*?\n\s{2}function openBatchImport/,
+  )?.[0];
+  const openBatchImport = templateLibrarySource.match(
+    /function openBatchImport\(\) \{[\s\S]*?\n\s{2}function insertImportExample/,
+  )?.[0];
+  assert.ok(openImport, "openImport should be present");
+  assert.ok(openBatchImport, "openBatchImport should be present");
+
+  assert.match(
+    openImport,
+    /if \(!confirmDiscardPending\("Replace the pending imported template draft\?"\)\) return;/,
+    "single import should stop before clearing batch state when confirmation is declined",
+  );
+  assert.match(openImport, /setImportOpen\(true\)/);
+  assert.match(openImport, /setImportText\(""\)/);
+  assert.match(openImport, /setImportResult\(null\)/);
+  assert.match(openImport, /setPendingImport\(null\)/);
+  assert.match(openImport, /setBatchText\(""\)/);
+  assert.match(openImport, /setBatchResult\(null\)/);
+  assert.match(openImport, /setPendingBatch\(null\)/);
+  assert.match(openImport, /setBatchOpen\(false\)/);
+
+  assert.match(
+    openBatchImport,
+    /if \(!confirmDiscardPending\("Replace the pending imported template work\?"\)\) return;/,
+    "batch import should stop before clearing single-template state when confirmation is declined",
+  );
+  assert.match(openBatchImport, /setBatchOpen\(true\)/);
+  assert.match(openBatchImport, /setImportText\(""\)/);
+  assert.match(openBatchImport, /setImportResult\(null\)/);
+  assert.match(openBatchImport, /setPendingImport\(null\)/);
+  assert.match(openBatchImport, /setImportOpen\(false\)/);
+  assert.match(openBatchImport, /setBatchText\(""\)/);
+  assert.match(openBatchImport, /setBatchResult\(null\)/);
+  assert.match(openBatchImport, /setPendingBatch\(null\)/);
+});
+
 test("Daily Crew Template Library batch preview is summary-only", () => {
   const batchPanel = templateLibrarySource.match(
     /function TemplateBatchImportPanel[\s\S]*?\n}\n\nfunction TemplateImportPanel/,

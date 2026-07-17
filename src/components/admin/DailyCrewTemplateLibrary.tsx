@@ -368,6 +368,9 @@ export function DailyCrewTemplateLibrary({
     setImportText("");
     setImportResult(null);
     setPendingImport(null);
+    setBatchText("");
+    setBatchResult(null);
+    setPendingBatch(null);
     setBatchOpen(false);
   }
 
@@ -375,6 +378,9 @@ export function DailyCrewTemplateLibrary({
     if (mutationBusy) return;
     if (!confirmDiscardPending("Replace the pending imported template work?")) return;
     setBatchOpen(true);
+    setImportText("");
+    setImportResult(null);
+    setPendingImport(null);
     setImportOpen(false);
     setBatchText("");
     setBatchResult(null);
