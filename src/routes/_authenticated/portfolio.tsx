@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import {
   TRADE_HISTORY_QUERY_KEY,
@@ -17,6 +17,16 @@ import {
 } from "@/lib/trade-history/pagination";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
+import {
+  calculateMaxSellQuantity,
+  formatShares,
+  normalizeShareQuantityText,
+} from "@/lib/trading/fractional-shares";
+import {
+  clearTradeRequestId,
+  clearTradeRequestIdForPayloadConflict,
+  getOrCreateTradeRequestId,
+} from "@/lib/trading/trade-request-id";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/portfolio")({
@@ -25,9 +35,10 @@ export const Route = createFileRoute("/_authenticated/portfolio")({
 });
 
 function Portfolio() {
-  const { data, isLoading } = useMe();
+  const { data, isLoading, user } = useMe();
   const invalidate = useInvalidateMe();
   const queryClient = useQueryClient();
+  const [busySellRequests, setBusySellRequests] = useState<Record<string, boolean>>({});
   const walletLedgerQ = useQuery({
     queryKey: ["wallet-ledger-entries"],
     queryFn: () => listMyWalletLedgerEntries(),
@@ -73,13 +84,41 @@ function Portfolio() {
   const netWorth = data.berries + marketValue;
 
   async function handleSellAll(slug: string, shares: number) {
+    if (!user?.id) {
+      toast.error("Sign in to sell shares.");
+      return;
+    }
+
+    const sellSharesQuantity = calculateMaxSellQuantity(shares);
+    if (sellSharesQuantity <= 0) return;
+
+    const requestKey = `${user.id}:sell:${slug}:${normalizeShareQuantityText(sellSharesQuantity)}`;
+    if (busySellRequests[requestKey]) return;
+    const intent = {
+      userId: user.id,
+      slug,
+      side: "sell" as const,
+      shares: sellSharesQuantity,
+    };
+    const requestId = getOrCreateTradeRequestId(intent);
+
+    setBusySellRequests((current) => ({ ...current, [requestKey]: true }));
+
     try {
-      await sellShares({ data: { slug, shares } });
+      await sellShares({ data: { slug, shares: sellSharesQuantity, requestId } });
       await invalidate();
       await queryClient.invalidateQueries({ queryKey: TRADE_HISTORY_QUERY_KEY });
-      toast.success(`Sold ${shares} ${slug.toUpperCase()}`);
+      clearTradeRequestId(intent);
+      toast.success(`Sold ${formatShares(sellSharesQuantity)} ${slug.toUpperCase()}`);
     } catch (e: unknown) {
+      clearTradeRequestIdForPayloadConflict(e, intent);
       toast.error(e instanceof Error ? e.message : "Could not sell shares.");
+    } finally {
+      setBusySellRequests((current) => {
+        const next = { ...current };
+        delete next[requestKey];
+        return next;
+      });
     }
   }
 
@@ -132,6 +171,9 @@ function Portfolio() {
                 {holdings.map((h) => {
                   const mv = h.shares * h.currentPrice;
                   const pl = (h.currentPrice - h.avgCost) * h.shares;
+                  const sellQuantity = calculateMaxSellQuantity(h.shares);
+                  const sellKey = `${user?.id ?? "anonymous"}:sell:${h.slug}:${normalizeShareQuantityText(sellQuantity)}`;
+                  const sellLabel = h.shares > 10000 ? "Sell max" : "Sell all";
                   return (
                     <tr key={h.slug} className="border-b border-border/40 hover:bg-secondary/50">
                       <td className="px-3 py-2">
@@ -144,7 +186,7 @@ function Portfolio() {
                         </Link>
                         <span className="ml-2 text-muted-foreground">{h.name}</span>
                       </td>
-                      <td className="px-3 py-2 text-right">{h.shares}</td>
+                      <td className="px-3 py-2 text-right">{formatShares(h.shares)}</td>
                       <td className="px-3 py-2 text-right">{h.avgCost.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right">{h.currentPrice.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right">{mv.toFixed(2)}</td>
@@ -155,9 +197,10 @@ function Portfolio() {
                       <td className="px-3 py-2 text-right">
                         <button
                           onClick={() => handleSellAll(h.slug, h.shares)}
-                          className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground"
+                          disabled={busySellRequests[sellKey] || sellQuantity <= 0}
+                          className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
                         >
-                          Sell all
+                          {sellLabel}
                         </button>
                       </td>
                     </tr>
@@ -270,7 +313,7 @@ function TradeHistoryRow({ entry }: { entry: TradeHistoryItem }) {
         </Link>
         <span className="ml-2 text-muted-foreground">{entry.characterName}</span>
       </div>
-      <div className="tabular md:text-right">{entry.shares} shares</div>
+      <div className="tabular md:text-right">{formatShares(entry.shares)} shares</div>
       <div className="tabular text-muted-foreground md:text-right">
         @ {"\u0e3f"}
         {formatBerries(entry.price)}

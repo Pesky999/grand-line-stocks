@@ -4,12 +4,16 @@ import { getPublicProfile, listLegacy } from "@/lib/api/legendary.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL, TIER_TONE, rankDeltaLabel } from "@/lib/legendary";
+import { formatShares } from "@/lib/trading/fractional-shares";
 
 export const Route = createFileRoute("/u/$username")({
   head: ({ params }) => ({
     meta: [
       { title: `@${params.username} — Legendary Investor` },
-      { name: "description", content: `Public investor profile for @${params.username} on Berry Street.` },
+      {
+        name: "description",
+        content: `Public investor profile for @${params.username} on Berry Street.`,
+      },
     ],
   }),
   errorComponent: ({ error }) => (
@@ -82,7 +86,11 @@ function PublicProfile() {
   });
 
   if (q.isLoading) {
-    return <TerminalShell><div className="p-8 text-xs text-muted-foreground">Loading investor profile…</div></TerminalShell>;
+    return (
+      <TerminalShell>
+        <div className="p-8 text-xs text-muted-foreground">Loading investor profile…</div>
+      </TerminalShell>
+    );
   }
   if (q.isError || !q.data) {
     throw notFound();
@@ -93,7 +101,9 @@ function PublicProfile() {
   const closed = (s.wins ?? 0) + (s.losses ?? 0);
   const winRate = closed > 0 ? ((s.wins ?? 0) * 100) / closed : 0;
   const delta = rankDeltaLabel(d.prev_rank, d.rank ?? 9999);
-  const userLegacy = ((legacy.data ?? []) as PublicLegacyRecord[]).filter((l) => l.username === username);
+  const userLegacy = ((legacy.data ?? []) as PublicLegacyRecord[]).filter(
+    (l) => l.username === username,
+  );
   const title = s.title ?? "rookie_pirate";
   const specialization = s.specialization ?? "generalist";
 
@@ -102,7 +112,9 @@ function PublicProfile() {
       <div className="border-b border-border bg-card/60 px-4 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="text-2xl font-bold tracking-widest text-primary">@{d.profile.username}</h1>
-          <span className={`border px-2 py-1 text-[10px] uppercase tracking-widest ${TITLE_TONE[title] ?? ""}`}>
+          <span
+            className={`border px-2 py-1 text-[10px] uppercase tracking-widest ${TITLE_TONE[title] ?? ""}`}
+          >
             {TITLE_LABEL[title] ?? "Rookie Pirate"}
           </span>
           <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -115,7 +127,8 @@ function PublicProfile() {
           )}
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">
-          Joined {new Date(d.profile.created_at).toLocaleDateString()} · {s.days_active ?? 1} days active · Reputation {s.reputation_score ?? 0}/1000
+          Joined {new Date(d.profile.created_at).toLocaleDateString()} · {s.days_active ?? 1} days
+          active · Reputation {s.reputation_score ?? 0}/1000
         </div>
       </div>
 
@@ -123,7 +136,11 @@ function PublicProfile() {
         <Stat label="Net Worth" value={`฿${formatBerries(d.net_worth)}`} tone="accent" />
         <Stat label="Cash" value={`฿${formatBerries(d.cash)}`} />
         <Stat label="Portfolio Value" value={`฿${formatBerries(d.equity)}`} />
-        <Stat label="Total Return" value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`} tone={totalReturn >= 0 ? "bull" : "bear"} />
+        <Stat
+          label="Total Return"
+          value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`}
+          tone={totalReturn >= 0 ? "bull" : "bear"}
+        />
       </div>
 
       <div className="grid gap-4 p-4 lg:grid-cols-3">
@@ -132,22 +149,57 @@ function PublicProfile() {
             <div className="terminal-header">Investment Statistics</div>
             <div className="grid grid-cols-2 gap-px bg-border text-xs">
               <Cell label="Total Trades" value={s.total_trades ?? 0} />
-              <Cell label="Win Rate" value={`${winRate.toFixed(1)}% (${s.wins ?? 0}W / ${s.losses ?? 0}L)`} />
-              <Cell label="Realized P/L" value={`${(s.realized_pnl ?? 0) >= 0 ? "+" : ""}฿${formatBerries(s.realized_pnl ?? 0)}`} />
+              <Cell
+                label="Win Rate"
+                value={`${winRate.toFixed(1)}% (${s.wins ?? 0}W / ${s.losses ?? 0}L)`}
+              />
+              <Cell
+                label="Realized P/L"
+                value={`${(s.realized_pnl ?? 0) >= 0 ? "+" : ""}฿${formatBerries(s.realized_pnl ?? 0)}`}
+              />
               <Cell label="Avg Holding" value={`${(s.avg_holding_days ?? 0).toFixed(1)} days`} />
-              <Cell label="Best Trade" value={s.best_trade_slug ? `${s.best_trade_slug.toUpperCase()} (+฿${formatBerries(s.best_trade_pnl ?? 0)})` : "—"} />
-              <Cell label="Worst Trade" value={s.worst_trade_slug ? `${s.worst_trade_slug.toUpperCase()} (฿${formatBerries(s.worst_trade_pnl ?? 0)})` : "—"} />
-              <Cell label="Largest Position" value={s.largest_position_slug ? `${s.largest_position_slug.toUpperCase()} (฿${formatBerries(s.largest_position_value ?? 0)})` : "—"} />
+              <Cell
+                label="Best Trade"
+                value={
+                  s.best_trade_slug
+                    ? `${s.best_trade_slug.toUpperCase()} (+฿${formatBerries(s.best_trade_pnl ?? 0)})`
+                    : "—"
+                }
+              />
+              <Cell
+                label="Worst Trade"
+                value={
+                  s.worst_trade_slug
+                    ? `${s.worst_trade_slug.toUpperCase()} (฿${formatBerries(s.worst_trade_pnl ?? 0)})`
+                    : "—"
+                }
+              />
+              <Cell
+                label="Largest Position"
+                value={
+                  s.largest_position_slug
+                    ? `${s.largest_position_slug.toUpperCase()} (฿${formatBerries(s.largest_position_value ?? 0)})`
+                    : "—"
+                }
+              />
               <Cell label="Highest Rank" value={s.highest_rank ? `#${s.highest_rank}` : "—"} />
             </div>
           </div>
 
           <div className="terminal-panel">
-            <div className="terminal-header">Net Worth History · {d.snapshots.length} snapshots</div>
+            <div className="terminal-header">
+              Net Worth History · {d.snapshots.length} snapshots
+            </div>
             {d.snapshots.length === 0 ? (
-              <div className="p-4 text-xs text-muted-foreground">Not enough history yet. Snapshots accumulate daily.</div>
+              <div className="p-4 text-xs text-muted-foreground">
+                Not enough history yet. Snapshots accumulate daily.
+              </div>
             ) : (
-              <Sparkline points={(d.snapshots as PublicProfileSnapshot[]).map((snapshot) => Number(snapshot.net_worth))} />
+              <Sparkline
+                points={(d.snapshots as PublicProfileSnapshot[]).map((snapshot) =>
+                  Number(snapshot.net_worth),
+                )}
+              />
             )}
           </div>
 
@@ -159,10 +211,18 @@ function PublicProfile() {
               <ul className="divide-y divide-border text-xs">
                 {d.holdings.map((h) => (
                   <li key={h.slug} className="flex items-center justify-between px-3 py-2">
-                    <Link to="/character/$slug" params={{ slug: h.slug }} className="text-primary hover:underline">
-                      <span className="font-bold">{h.slug.toUpperCase().slice(0, 4)}</span> · {h.name}
+                    <Link
+                      to="/character/$slug"
+                      params={{ slug: h.slug }}
+                      className="text-primary hover:underline"
+                    >
+                      <span className="font-bold">{h.slug.toUpperCase().slice(0, 4)}</span> ·{" "}
+                      {h.name}
                     </Link>
-                    <span className="tabular">{h.shares} sh @ ฿{h.avgCost.toFixed(2)} · ฿{formatBerries(h.shares * h.currentPrice)}</span>
+                    <span className="tabular">
+                      {formatShares(h.shares)} sh @ ฿{h.avgCost.toFixed(2)} · ฿
+                      {formatBerries(h.shares * h.currentPrice)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -180,10 +240,18 @@ function PublicProfile() {
                 {(d.achievements as PublicProfileAchievement[]).map((ua) => (
                   <li key={ua.achievements.code} className="px-3 py-2">
                     <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-bold">{ua.achievements.icon} {ua.achievements.name}</span>
-                      <span className={`border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}>{ua.achievements.tier}</span>
+                      <span className="text-sm font-bold">
+                        {ua.achievements.icon} {ua.achievements.name}
+                      </span>
+                      <span
+                        className={`border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}
+                      >
+                        {ua.achievements.tier}
+                      </span>
                     </div>
-                    <div className="text-[11px] text-muted-foreground">{ua.achievements.description}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {ua.achievements.description}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -209,8 +277,23 @@ function PublicProfile() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "bull" | "bear" | "accent" }) {
-  const c = tone === "bull" ? "text-bull" : tone === "bear" ? "text-bear" : tone === "accent" ? "text-accent" : "text-foreground";
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "bull" | "bear" | "accent";
+}) {
+  const c =
+    tone === "bull"
+      ? "text-bull"
+      : tone === "bear"
+        ? "text-bear"
+        : tone === "accent"
+          ? "text-accent"
+          : "text-foreground";
   return (
     <div className="bg-card px-4 py-3">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
@@ -229,7 +312,8 @@ function Cell({ label, value }: { label: string; value: string | number }) {
 }
 
 function Sparkline({ points }: { points: number[] }) {
-  if (points.length < 2) return <div className="p-4 text-xs text-muted-foreground">Not enough data.</div>;
+  if (points.length < 2)
+    return <div className="p-4 text-xs text-muted-foreground">Not enough data.</div>;
   const w = 600;
   const h = 120;
   const min = Math.min(...points);
@@ -246,7 +330,12 @@ function Sparkline({ points }: { points: number[] }) {
   return (
     <div className="px-3 py-2">
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full" preserveAspectRatio="none">
-        <path d={d} fill="none" stroke={positive ? "hsl(var(--bull))" : "hsl(var(--bear))"} strokeWidth="1.5" />
+        <path
+          d={d}
+          fill="none"
+          stroke={positive ? "hsl(var(--bull))" : "hsl(var(--bear))"}
+          strokeWidth="1.5"
+        />
       </svg>
       <div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular">
         <span>฿{formatBerries(min)}</span>
