@@ -56,6 +56,10 @@ function recalcUserStatsFunction() {
   );
 }
 
+function finalDerivedRefreshBlock() {
+  return between(migration, "DO $$\nDECLARE\n  v_user RECORD;", "END $$;");
+}
+
 function refreshLeaderboardsFunction() {
   return between(
     readFileSync(
@@ -87,8 +91,9 @@ test("migration adds holding and transaction accounting columns", () => {
     migration,
     /ALTER TABLE public\.transactions\s+ADD COLUMN IF NOT EXISTS cost_basis numeric,[\s\S]*ADD COLUMN IF NOT EXISTS realized_pnl numeric,[\s\S]*ADD COLUMN IF NOT EXISTS holding_shares_before numeric,[\s\S]*ADD COLUMN IF NOT EXISTS holding_avg_cost_after numeric;/i,
   );
-  assert.match(migration, /ALTER COLUMN total_cost_basis SET DEFAULT 0;/i);
+  assert.doesNotMatch(migration, /ALTER COLUMN total_cost_basis SET DEFAULT 0;/i);
   assert.match(migration, /ALTER COLUMN total_cost_basis SET NOT NULL;/i);
+  assert.match(migration, /ALTER COLUMN total_cost_basis DROP DEFAULT;/i);
   assert.match(
     migration,
     /ALTER TABLE public\.transactions\s+ALTER COLUMN holding_shares_before SET NOT NULL,[\s\S]*ALTER COLUMN holding_avg_cost_after SET NOT NULL;/i,
@@ -270,6 +275,33 @@ test("transaction trigger and derived systems are preserved", () => {
   assert.doesNotMatch(migration, /DROP FUNCTION[\s\S]*after_transaction/i);
   assert.match(migration, /public\.recalc_user_stats\(v_user\.user_id\);/);
   assert.match(migration, /public\.refresh_leaderboards\(\);/);
+  assert.match(migration, /public\.check_achievements\(v_user\.user_id\);/);
+});
+
+test("historical exact stats refresh leaderboards before idempotent achievement checks", () => {
+  const derivedRefresh = finalDerivedRefreshBlock();
+  const firstStats = derivedRefresh.indexOf("PERFORM public.recalc_user_stats(v_user.user_id);");
+  const refresh = derivedRefresh.indexOf("PERFORM public.refresh_leaderboards();");
+  const achievements = derivedRefresh.indexOf("PERFORM public.check_achievements(v_user.user_id);");
+  const secondStats = derivedRefresh.indexOf(
+    "PERFORM public.recalc_user_stats(v_user.user_id);",
+    firstStats + 1,
+  );
+
+  assert.notEqual(firstStats, -1, "exact stats should be recalculated before leaderboard refresh");
+  assert.notEqual(refresh, -1, "leaderboard cache should refresh before rank-dependent checks");
+  assert.notEqual(achievements, -1, "existing achievement checks should run");
+  assert.notEqual(secondStats, -1, "stats should recalculate after achievement grants");
+  assert.ok(firstStats < refresh, "exact stats must be available before leaderboard refresh");
+  assert.ok(refresh < achievements, "achievement checks should see current leaderboard cache");
+  assert.ok(
+    achievements < secondStats,
+    "stats should include reputation rewards from newly granted achievements",
+  );
+  assert.equal(
+    (derivedRefresh.match(/PERFORM public\.refresh_leaderboards\(\);/g) ?? []).length,
+    1,
+  );
 });
 
 test("broad leaderboard refresh does not rewrite wallets or holdings", () => {
@@ -327,7 +359,12 @@ test("transaction history query and pagination remain unchanged except selected 
 });
 
 test("Supabase types reflect exact accounting fields and unchanged RPC arguments", () => {
+  const userHoldings = between(typesSource, "user_holdings: {", "Relationships: [");
+  const userHoldingsInsert = between(userHoldings, "Insert: {", "Update: {");
+
   assert.match(typesSource, /user_holdings: \{[\s\S]*total_cost_basis: number/);
+  assert.match(userHoldingsInsert, /total_cost_basis: number/);
+  assert.doesNotMatch(userHoldingsInsert, /total_cost_basis\?: number/);
   assert.match(typesSource, /transactions: \{[\s\S]*cost_basis: number \| null/);
   assert.match(typesSource, /transactions: \{[\s\S]*realized_pnl: number \| null/);
   assert.match(typesSource, /transactions: \{[\s\S]*holding_cost_basis_after: number/);

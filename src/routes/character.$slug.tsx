@@ -31,6 +31,7 @@ import {
   getOrCreateTradeRequestId,
   type TradeSide,
 } from "@/lib/trading/trade-request-id";
+import { formatRealizedPnl } from "@/lib/trading/weighted-average-accounting";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries, formatBounty } from "@/lib/wallet";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
@@ -155,6 +156,7 @@ function CharacterPage() {
   const tradeTotal = parsedQty == null ? 0 : calculateRoundedTradeTotal(price, parsedQty);
   const maxBuyQuantity = calculateMaxAffordableShares(me?.berries ?? 0, price);
   const maxSellQuantity = calculateMaxSellQuantity(held?.shares ?? 0);
+  const tradeDeskUnrealizedPnl = held ? price * held.shares - held.totalCostBasis : 0;
   const buyDisabled =
     busy || parsedQty == null || tradeTotal < MIN_TRADE_TOTAL || tradeTotal > (me?.berries ?? 0);
   const sellDisabled =
@@ -219,11 +221,13 @@ function CharacterPage() {
     const { intent, requestId } = tradeRequest("sell", parsedQty);
     setBusy(true);
     try {
-      await sellShares({ data: { slug, shares: parsedQty, requestId } });
+      const result = await sellShares({ data: { slug, shares: parsedQty, requestId } });
       await invalidateMe();
       await router.invalidate();
       clearTradeRequestId(intent);
-      toast.success(`Sold ${formatShares(parsedQty)} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`);
+      toast.success(
+        `Sold ${formatShares(parsedQty)} ${slug.toUpperCase()} - Realized ${formatRealizedPnl(result.realizedPnl)}`,
+      );
     } catch (e: unknown) {
       clearTradeRequestIdForPayloadConflict(e, intent);
       toast.error(errorMessage(e));
@@ -415,8 +419,16 @@ function CharacterPage() {
                   {held && (
                     <div className="flex justify-between text-xs tabular">
                       <span className="text-muted-foreground">Unrealized P/L</span>
-                      <span className={price >= held.avgCost ? "text-bull" : "text-bear"}>
-                        {((price - held.avgCost) * held.shares).toFixed(2)}
+                      <span
+                        className={
+                          tradeDeskUnrealizedPnl > 0
+                            ? "text-bull"
+                            : tradeDeskUnrealizedPnl < 0
+                              ? "text-bear"
+                              : "text-muted-foreground"
+                        }
+                      >
+                        {formatRealizedPnl(tradeDeskUnrealizedPnl)}
                       </span>
                     </div>
                   )}

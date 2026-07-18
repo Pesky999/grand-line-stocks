@@ -1870,7 +1870,7 @@ export type Database = {
           created_at?: string
           id?: string
           shares?: number
-          total_cost_basis?: number
+          total_cost_basis: number
           updated_at?: string
           user_id: string
         }

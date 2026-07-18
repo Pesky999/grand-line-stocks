@@ -211,15 +211,15 @@ BEGIN
 END;
 $exact_trade_accounting_backfill$;
 
-ALTER TABLE public.user_holdings
-  ALTER COLUMN total_cost_basis SET DEFAULT 0;
-
 UPDATE public.user_holdings
   SET total_cost_basis = COALESCE(total_cost_basis, round(avg_cost * shares, 2))
 WHERE total_cost_basis IS NULL;
 
 ALTER TABLE public.user_holdings
   ALTER COLUMN total_cost_basis SET NOT NULL;
+
+ALTER TABLE public.user_holdings
+  ALTER COLUMN total_cost_basis DROP DEFAULT;
 
 ALTER TABLE public.transactions
   ALTER COLUMN holding_shares_before SET NOT NULL,
@@ -831,6 +831,15 @@ BEGIN
   END LOOP;
 
   PERFORM public.refresh_leaderboards();
+
+  FOR v_user IN
+    SELECT user_id FROM public.user_wallets
+    UNION
+    SELECT user_id FROM public.transactions
+  LOOP
+    PERFORM public.check_achievements(v_user.user_id);
+    PERFORM public.recalc_user_stats(v_user.user_id);
+  END LOOP;
 END $$;
 
 COMMIT;

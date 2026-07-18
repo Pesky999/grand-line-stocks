@@ -9,6 +9,7 @@ const portfolioSource = readFileSync(
   join(process.cwd(), "src/routes/_authenticated/portfolio.tsx"),
   "utf8",
 );
+const characterSource = readFileSync(join(process.cwd(), "src/routes/character.$slug.tsx"), "utf8");
 const publicProfileSource = readFileSync(join(process.cwd(), "src/routes/u.$username.tsx"), "utf8");
 const leaderboardsSource = readFileSync(join(process.cwd(), "src/routes/leaderboards.tsx"), "utf8");
 
@@ -18,6 +19,14 @@ function tradeHistoryRowSource() {
   const end = portfolioSource.indexOf("function formatTradeDate", start);
   assert.notEqual(end, -1, "formatTradeDate should follow TradeHistoryRow");
   return portfolioSource.slice(start, end);
+}
+
+function characterHandleSellSource() {
+  const start = characterSource.indexOf("async function handleSell()");
+  assert.notEqual(start, -1, "character handleSell should exist");
+  const end = characterSource.indexOf("return (", start);
+  assert.notEqual(end, -1, "character render should follow handleSell");
+  return characterSource.slice(start, end);
 }
 
 test("portfolio clearly separates unrealized and realized performance", () => {
@@ -56,6 +65,29 @@ test("portfolio sell toast uses authoritative realized P/L returned from the ser
   assert.doesNotMatch(
     portfolioSource,
     /result\.price[\s\S]*h\.avgCost|currentPrice[\s\S]*result\.proceeds/,
+  );
+});
+
+test("character trade desk uses holding basis for unrealized P/L", () => {
+  assert.match(
+    characterSource,
+    /const tradeDeskUnrealizedPnl = held \? price \* held\.shares - held\.totalCostBasis : 0/,
+  );
+  assert.match(characterSource, /formatRealizedPnl\(tradeDeskUnrealizedPnl\)/);
+  assert.doesNotMatch(characterSource, /\(price - held\.avgCost\) \* held\.shares/);
+});
+
+test("character sell toast uses authoritative realized P/L returned from the server", () => {
+  const handleSell = characterHandleSellSource();
+
+  assert.match(
+    handleSell,
+    /const result = await sellShares\(\{ data: \{ slug, shares: parsedQty, requestId \} \}\)/,
+  );
+  assert.match(handleSell, /formatRealizedPnl\(result\.realizedPnl\)/);
+  assert.doesNotMatch(
+    handleSell,
+    /avgCost|currentPrice|tradeDeskUnrealizedPnl|price\s*[-+*/]\s*held|held\.shares\s*[-+*/]\s*price/,
   );
 });
 
