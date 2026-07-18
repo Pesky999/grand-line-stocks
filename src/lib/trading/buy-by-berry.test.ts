@@ -104,6 +104,37 @@ test("returns the largest affordable hundredth-share quantity for a normal budge
   assertLargestAffordableShareQuantity(quote);
 });
 
+test("preserves exact two-decimal wallet balances when quoting text budgets", () => {
+  const quote = assertQuoteSuccess(
+    quoteBuyByBerryText({
+      amountText: "2.30",
+      walletBalance: 2.3,
+      price: 100,
+    }),
+  );
+
+  assert.equal(quote.requestedBudgetCents, 230);
+  assert.equal(quote.requestedBudget, 2.3);
+  assert.equal(quote.shares, 0.02);
+  assert.equal(quote.estimatedTotalCents, 200);
+  assert.equal(quote.unusedBudgetCents, 30);
+});
+
+test("preserves exact numeric budget cents when explicit cents are absent", () => {
+  const quote = assertQuoteSuccess(
+    quoteBuyByBerryBudget({
+      requestedBudget: 2.3,
+      walletBalance: 2.3,
+      price: 100,
+    }),
+  );
+
+  assert.equal(quote.requestedBudgetCents, 230);
+  assert.equal(quote.requestedBudget, 2.3);
+  assert.equal(quote.shares, 0.02);
+  assert.equal(quote.unusedBudgetCents, 30);
+});
+
 test("returned estimated total never exceeds the requested budget", () => {
   const quotes = [
     quoteBuyByBerryBudget({ requestedBudget: 30.01, walletBalance: 30.01, price: 100.05 }),
@@ -158,10 +189,17 @@ test("preserves the ten-thousand-share transaction cap", () => {
 
 test("wallet percentage budget floors to cents and never exceeds the selected share", () => {
   assert.equal(calculateWalletPercentageBerryBudget(100.03, 25), 25);
+  assert.equal(calculateWalletPercentageBerryBudget(1.16, 25), 0.29);
+  assert.equal(calculateWalletPercentageBerryBudget(2.28, 25), 0.57);
 
   const budget = calculateWalletPercentageBerryBudget(100.01, 25);
   assert.equal(budget, 25);
   assert.ok(budget <= 100.01 * 0.25);
+});
+
+test("wallet percentage budget floors genuine sub-cent balances", () => {
+  assert.equal(calculateWalletPercentageBerryBudget(1.159, 100), 1.15);
+  assert.equal(calculateWalletPercentageBerryBudget(2.309, 100), 2.3);
 });
 
 test("invalid balances and percentages produce a zero percentage budget", () => {
@@ -181,6 +219,25 @@ test("floating-point edge cases remain deterministic", () => {
   );
   assert.equal(quote.estimatedTotalCents, 235);
   assert.equal(quote.unusedBudgetCents, 0);
+});
+
+test("rejects invalid explicit requested budget cents", () => {
+  for (const requestedBudgetCents of [
+    -1,
+    1.5,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assertQuoteFailure(
+      quoteBuyByBerryBudget({
+        requestedBudget: 10,
+        requestedBudgetCents,
+        walletBalance: 100,
+        price: 10,
+      }),
+      "invalid_amount",
+    );
+  }
 });
 
 test("quote inputs are not mutated", () => {

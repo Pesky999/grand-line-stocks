@@ -8,6 +8,12 @@ import {
 
 const CENTS_PER_BERRY = 100;
 const BERRY_AMOUNT_PATTERN = /^\d+(?:\.\d{1,2})?$/;
+const DECIMAL_NUMBER_PATTERN = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/;
+
+type DecimalRational = {
+  numerator: bigint;
+  scale: bigint;
+};
 
 export const BUY_BY_BERRY_PRESET_AMOUNTS = [100, 500, 1000] as const;
 export const BUY_BY_BERRY_PERCENT_PRESET = 25;
@@ -89,7 +95,13 @@ export function calculateWalletPercentageBerryBudget(
   percentage: number,
 ): number {
   const walletCents = floorBerryAmountToCents(walletBalance);
-  if (walletCents <= 0 || !Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+  if (
+    walletCents === null ||
+    walletCents <= 0 ||
+    !Number.isFinite(percentage) ||
+    percentage <= 0 ||
+    percentage > 100
+  ) {
     return 0;
   }
 
@@ -132,8 +144,22 @@ export function quoteBuyByBerryBudget(input: {
   }
 
   const walletCents = floorBerryAmountToCents(input.walletBalance);
-  const requestedBudgetCents =
-    input.requestedBudgetCents ?? floorBerryAmountToCents(input.requestedBudget);
+  if (walletCents === null) {
+    return { ok: false, reason: "invalid_wallet_balance", quotePrice: input.price };
+  }
+
+  let requestedBudgetCents: number | null;
+  if (input.requestedBudgetCents === undefined) {
+    requestedBudgetCents = floorBerryAmountToCents(input.requestedBudget);
+  } else if (isValidCentCount(input.requestedBudgetCents)) {
+    requestedBudgetCents = input.requestedBudgetCents;
+  } else {
+    return { ok: false, reason: "invalid_amount", quotePrice: input.price };
+  }
+  if (requestedBudgetCents === null) {
+    return { ok: false, reason: "invalid_amount", quotePrice: input.price };
+  }
+
   const requestedBudget = centsToBerries(requestedBudgetCents);
 
   if (requestedBudgetCents < MIN_TRADE_TOTAL * CENTS_PER_BERRY) {
@@ -168,6 +194,15 @@ export function quoteBuyByBerryBudget(input: {
 
   const estimatedTotal = calculateRoundedTradeTotal(input.price, shares);
   const estimatedTotalCents = roundBerryAmountToCents(estimatedTotal);
+  if (estimatedTotalCents === null) {
+    return {
+      ok: false,
+      reason: "no_affordable_quantity",
+      requestedBudget,
+      requestedBudgetCents,
+      quotePrice: input.price,
+    };
+  }
   if (estimatedTotalCents > requestedBudgetCents) {
     return {
       ok: false,
@@ -192,16 +227,53 @@ export function quoteBuyByBerryBudget(input: {
   };
 }
 
-function floorBerryAmountToCents(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  const cents = Math.floor(value * CENTS_PER_BERRY + Number.EPSILON);
-  return Number.isSafeInteger(cents) ? cents : 0;
+function parseNonnegativeDecimal(value: number): DecimalRational | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+
+  const match = value.toString().toLowerCase().match(DECIMAL_NUMBER_PATTERN);
+  if (!match) return null;
+
+  const integerPart = match[1];
+  const fractionalPart = match[2] ?? "";
+  const exponent = Number(match[3] ?? 0);
+  let digits = `${integerPart}${fractionalPart}`.replace(/^0+(?=\d)/, "");
+  if (digits === "") digits = "0";
+
+  let scaleDigits = fractionalPart.length - exponent;
+  if (scaleDigits < 0) {
+    digits += "0".repeat(-scaleDigits);
+    scaleDigits = 0;
+  }
+
+  return {
+    numerator: BigInt(digits),
+    scale: 10n ** BigInt(scaleDigits),
+  };
 }
 
-function roundBerryAmountToCents(value: number): number {
-  if (!Number.isFinite(value) || value < 0) return 0;
-  const cents = Math.round((value + Number.EPSILON) * CENTS_PER_BERRY);
-  return Number.isSafeInteger(cents) ? cents : 0;
+function floorBerryAmountToCents(value: number): number | null {
+  const decimal = parseNonnegativeDecimal(value);
+  if (!decimal) return null;
+
+  const cents = (decimal.numerator * BigInt(CENTS_PER_BERRY)) / decimal.scale;
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(cents);
+}
+
+function roundBerryAmountToCents(value: number): number | null {
+  const decimal = parseNonnegativeDecimal(value);
+  if (!decimal) return null;
+
+  const scaled = decimal.numerator * BigInt(CENTS_PER_BERRY);
+  const quotient = scaled / decimal.scale;
+  const remainder = scaled % decimal.scale;
+  const cents = quotient + (remainder * 2n >= decimal.scale ? 1n : 0n);
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(cents);
+}
+
+function isValidCentCount(value: number) {
+  return Number.isFinite(value) && Number.isSafeInteger(value) && value >= 0;
 }
 
 function centsToBerries(cents: number): number {
