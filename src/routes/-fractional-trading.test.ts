@@ -23,18 +23,19 @@ test("character trade desk uses text quantity state and decimal input controls",
     characterSource,
     /type="number"[\s\S]*min="0\.01"[\s\S]*max="10000"[\s\S]*step="0\.01"[\s\S]*inputMode="decimal"[\s\S]*value=\{qtyText\}/,
   );
-  assert.match(characterSource, /onChange=\{\(e\) => setQtyText\(e\.target\.value\)\}/);
+  assert.match(characterSource, /onChange=\{\(e\) => setManualQuantityText\(e\.target\.value\)\}/);
   assert.match(characterSource, /parseShareQuantity\(qtyText\)/);
   assert.match(characterSource, /calculateRoundedTradeTotal\(price, parsedQty\)/);
   assert.match(characterSource, /Trade value must be at least ฿1\.00/);
 });
 
-test("character trade desk exposes Max Buy and Max Sell without auto-submitting", () => {
-  assert.match(characterSource, /calculateMaxAffordableShares\(me\?\.berries \?\? 0, price\)/);
+test("character trade desk replaces Max Buy with Buy by Berries and preserves Max Sell", () => {
+  assert.match(characterSource, /Buy by Berries/);
+  assert.match(characterSource, /quoteBuyByBerryBudget/);
+  assert.match(characterSource, /quoteBuyByBerryText/);
   assert.match(characterSource, /calculateMaxSellQuantity\(held\?\.shares \?\? 0\)/);
-  assert.match(characterSource, />\s*Max Buy\s*<\/button>/);
+  assert.doesNotMatch(characterSource, />\s*Max Buy\s*<\/button>/);
   assert.match(characterSource, />\s*Max Sell\s*<\/button>/);
-  assert.match(characterSource, /setQtyText\(normalizeShareQuantityText\(maxBuyQuantity\)\)/);
   assert.match(characterSource, /setQtyText\(normalizeShareQuantityText\(maxSellQuantity\)\)/);
 });
 
@@ -60,7 +61,7 @@ test("character trade desk manages request IDs per exact payload", () => {
 test("character trade desk disables invalid, unaffordable, busy, and unavailable actions", () => {
   assert.match(
     characterSource,
-    /const buyDisabled =[\s\S]*tradeTotal < MIN_TRADE_TOTAL[\s\S]*tradeTotal > \(me\?\.berries \?\? 0\)/,
+    /const buyDisabled =[\s\S]*tradeTotal < MIN_TRADE_TOTAL[\s\S]*tradeTotal > walletBalance/,
   );
   assert.match(characterSource, /const sellDisabled =[\s\S]*!held[\s\S]*parsedQty > held\.shares/);
   assert.match(characterSource, /disabled=\{buyDisabled\}/);

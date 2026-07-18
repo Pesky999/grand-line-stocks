@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import {
   LineChart,
   Line,
@@ -17,8 +17,17 @@ import { getCharacterIntel } from "@/lib/api/intelligence.functions";
 import { listCharacterTopHolders } from "@/lib/api/legendary.functions";
 import { buyShares, sellShares } from "@/lib/api/wallet.functions";
 import {
+  BUY_BY_BERRY_PERCENT_PRESET,
+  BUY_BY_BERRY_PRESET_AMOUNTS,
+  calculateWalletPercentageBerryBudget,
+  quoteBuyByBerryBudget,
+  quoteBuyByBerryText,
+  type BuyByBerryFailureReason,
+  type BuyByBerryQuoteResult,
+  type BuyByBerryQuoteSuccess,
+} from "@/lib/trading/buy-by-berry";
+import {
   MIN_TRADE_TOTAL,
-  calculateMaxAffordableShares,
   calculateMaxSellQuantity,
   calculateRoundedTradeTotal,
   formatShares,
@@ -91,6 +100,17 @@ const REASON_LABEL: Record<string, string> = {
   normal_volatility: "Normal Volatility",
 };
 
+const BUY_BY_BERRY_FAILURE_LABEL: Record<BuyByBerryFailureReason, string> = {
+  empty_amount: "Enter a Berry amount.",
+  invalid_amount: "Enter a valid Berry amount.",
+  too_many_decimals: "Use no more than two Berry decimal places.",
+  invalid_price: "Current quote is unavailable.",
+  invalid_wallet_balance: "Wallet balance is unavailable.",
+  below_minimum: "Berry amount must be at least \u0e3f1.00.",
+  exceeds_balance: "Berry amount exceeds your balance.",
+  no_affordable_quantity: "Amount cannot buy at least 0.01 shares at this quote.",
+};
+
 type MovementExplanation = {
   id: string;
   pct_change: number | string;
@@ -129,6 +149,15 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Trade failed.";
 }
 
+function formatBerryAmount(value: number) {
+  return `\u0e3f${formatBerries(value)}`;
+}
+
+function buyByBerryDisabledReason(quote: BuyByBerryQuoteResult, busy: boolean) {
+  if (busy) return "A trade is already in progress.";
+  return quote.ok ? null : BUY_BY_BERRY_FAILURE_LABEL[quote.reason];
+}
+
 function CharacterPage() {
   const { slug } = Route.useParams();
   const { data } = useSuspenseQuery(qo(slug));
@@ -144,6 +173,8 @@ function CharacterPage() {
   const invalidateMe = useInvalidateMe();
   const router = useRouter();
   const [qtyText, setQtyText] = useState("1");
+  const [berryAmountText, setBerryAmountText] = useState("");
+  const [appliedBerryQuote, setAppliedBerryQuote] = useState<BuyByBerryQuoteSuccess | null>(null);
   const [busy, setBusy] = useState(false);
 
   const price = Number(c.current_price);
@@ -152,13 +183,32 @@ function CharacterPage() {
   const pct = (diff / prev) * 100;
   const up = diff >= 0;
   const held = me?.holdings.find((h) => h.slug === slug);
+  const walletBalance = me?.berries ?? 0;
   const parsedQty = parseShareQuantity(qtyText);
   const tradeTotal = parsedQty == null ? 0 : calculateRoundedTradeTotal(price, parsedQty);
-  const maxBuyQuantity = calculateMaxAffordableShares(me?.berries ?? 0, price);
   const maxSellQuantity = calculateMaxSellQuantity(held?.shares ?? 0);
+  const customBerryQuote = quoteBuyByBerryText({
+    amountText: berryAmountText,
+    walletBalance,
+    price,
+  });
+  const quarterWalletBudget = calculateWalletPercentageBerryBudget(
+    walletBalance,
+    BUY_BY_BERRY_PERCENT_PRESET,
+  );
+  const quarterWalletQuote = quoteBuyByBerryBudget({
+    requestedBudget: quarterWalletBudget,
+    walletBalance,
+    price,
+  });
+  const maxWalletQuote = quoteBuyByBerryBudget({
+    requestedBudget: walletBalance,
+    walletBalance,
+    price,
+  });
   const tradeDeskUnrealizedPnl = held ? price * held.shares - held.totalCostBasis : 0;
   const buyDisabled =
-    busy || parsedQty == null || tradeTotal < MIN_TRADE_TOTAL || tradeTotal > (me?.berries ?? 0);
+    busy || parsedQty == null || tradeTotal < MIN_TRADE_TOTAL || tradeTotal > walletBalance;
   const sellDisabled =
     busy || parsedQty == null || tradeTotal < MIN_TRADE_TOTAL || !held || parsedQty > held.shares;
   const tradeHint =
@@ -166,11 +216,23 @@ function CharacterPage() {
       ? "Enter a share quantity from 0.01 to 10,000 with up to two decimals."
       : tradeTotal < MIN_TRADE_TOTAL
         ? "Trade value must be at least ฿1.00."
-        : tradeTotal > (me?.berries ?? 0)
+        : tradeTotal > walletBalance
           ? "Not enough Berries for this buy."
           : held && parsedQty > held.shares
             ? "You cannot sell more shares than you hold."
             : null;
+  const customBerryDisabledReason = buyByBerryDisabledReason(customBerryQuote, busy);
+
+  useEffect(() => {
+    setAppliedBerryQuote(null);
+  }, [slug]);
+
+  useEffect(() => {
+    if (!appliedBerryQuote) return;
+    if (Math.abs(appliedBerryQuote.quotePrice - price) >= 0.01) {
+      setAppliedBerryQuote(null);
+    }
+  }, [appliedBerryQuote, price]);
 
   const chartData = history.map((h) => ({
     t: new Date(h.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
@@ -191,10 +253,43 @@ function CharacterPage() {
     return { intent, requestId };
   }
 
+  function clearAppliedBuyByBerryQuote() {
+    setAppliedBerryQuote(null);
+  }
+
+  function setManualQuantityText(value: string) {
+    clearAppliedBuyByBerryQuote();
+    setQtyText(value);
+  }
+
   function adjustQuantity(delta: number) {
     const base = parsedQty ?? 1;
     const next = Math.min(10000, Math.max(0.01, base + delta));
+    clearAppliedBuyByBerryQuote();
     setQtyText(normalizeShareQuantityText(next));
+  }
+
+  function applyBuyByBerryQuote(quote: BuyByBerryQuoteResult) {
+    if (!quote.ok || busy) return;
+    setQtyText(normalizeShareQuantityText(quote.shares));
+    setAppliedBerryQuote(quote);
+  }
+
+  function applyBuyByBerryBudget(requestedBudget: number) {
+    applyBuyByBerryQuote(
+      quoteBuyByBerryBudget({
+        requestedBudget,
+        walletBalance,
+        price,
+      }),
+    );
+  }
+
+  function handleCustomBerryAmountKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (customBerryDisabledReason) return;
+    applyBuyByBerryQuote(customBerryQuote);
   }
 
   async function handleBuy() {
@@ -202,12 +297,13 @@ function CharacterPage() {
     const { intent, requestId } = tradeRequest("buy", parsedQty);
     setBusy(true);
     try {
-      await buyShares({ data: { slug, shares: parsedQty, requestId } });
+      const result = await buyShares({ data: { slug, shares: parsedQty, requestId } });
       await invalidateMe();
       await router.invalidate();
       clearTradeRequestId(intent);
+      clearAppliedBuyByBerryQuote();
       toast.success(
-        `Bought ${formatShares(parsedQty)} ${slug.toUpperCase()} @ ฿${price.toFixed(2)}`,
+        `Bought ${formatShares(parsedQty)} ${slug.toUpperCase()} for ${formatBerryAmount(result.cost)} @ ${formatBerryAmount(result.price)}`,
       );
     } catch (e: unknown) {
       clearTradeRequestIdForPayloadConflict(e, intent);
@@ -432,6 +528,105 @@ function CharacterPage() {
                       </span>
                     </div>
                   )}
+                  <div className="border border-border/70 bg-secondary/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-bull">
+                        Buy by Berries
+                      </span>
+                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        Current quote
+                      </span>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        pattern="\\d+(\\.\\d{1,2})?"
+                        value={berryAmountText}
+                        onChange={(e) => setBerryAmountText(e.target.value)}
+                        onKeyDown={handleCustomBerryAmountKeyDown}
+                        aria-label="Berry amount"
+                        aria-invalid={Boolean(customBerryDisabledReason && berryAmountText.trim())}
+                        placeholder="100.00"
+                        className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
+                      />
+                      <button
+                        onClick={() => applyBuyByBerryQuote(customBerryQuote)}
+                        disabled={Boolean(customBerryDisabledReason)}
+                        className="border border-border px-3 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                    {customBerryDisabledReason && (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {customBerryDisabledReason}
+                      </div>
+                    )}
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {BUY_BY_BERRY_PRESET_AMOUNTS.map((amount) => {
+                        const quote = quoteBuyByBerryBudget({
+                          requestedBudget: amount,
+                          walletBalance,
+                          price,
+                        });
+                        return (
+                          <button
+                            key={amount}
+                            onClick={() => applyBuyByBerryBudget(amount)}
+                            disabled={busy || !quote.ok}
+                            title={quote.ok ? undefined : BUY_BY_BERRY_FAILURE_LABEL[quote.reason]}
+                            className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                          >
+                            {formatBerryAmount(amount)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => applyBuyByBerryQuote(quarterWalletQuote)}
+                        disabled={busy || !quarterWalletQuote.ok}
+                        title={
+                          quarterWalletQuote.ok
+                            ? undefined
+                            : BUY_BY_BERRY_FAILURE_LABEL[quarterWalletQuote.reason]
+                        }
+                        className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                      >
+                        25%
+                      </button>
+                      <button
+                        onClick={() => applyBuyByBerryQuote(maxWalletQuote)}
+                        disabled={busy || !maxWalletQuote.ok}
+                        title={
+                          maxWalletQuote.ok
+                            ? undefined
+                            : BUY_BY_BERRY_FAILURE_LABEL[maxWalletQuote.reason]
+                        }
+                        className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                      >
+                        MAX
+                      </button>
+                    </div>
+                    {appliedBerryQuote && (
+                      <div className="mt-3 border border-bull/30 bg-bull/5 p-2 text-[11px] text-muted-foreground">
+                        <div className="tabular text-foreground">
+                          {formatBerryAmount(appliedBerryQuote.requestedBudget)} target {" -> "}
+                          {formatShares(appliedBerryQuote.shares)} shares
+                        </div>
+                        <div className="mt-1 tabular">
+                          Estimated spend {formatBerryAmount(appliedBerryQuote.estimatedTotal)}
+                          {" · "}
+                          {formatBerryAmount(appliedBerryQuote.unusedBudget)} unused
+                        </div>
+                        <div className="mt-1">
+                          Sets share quantity from the current quote. Final price and cost are
+                          confirmed by the server.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 pt-2">
                     <button
                       onClick={() => adjustQuantity(-1)}
@@ -446,7 +641,7 @@ function CharacterPage() {
                       step="0.01"
                       inputMode="decimal"
                       value={qtyText}
-                      onChange={(e) => setQtyText(e.target.value)}
+                      onChange={(e) => setManualQuantityText(e.target.value)}
                       className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
                     />
                     <button
@@ -456,22 +651,16 @@ function CharacterPage() {
                       +
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setQtyText(normalizeShareQuantityText(maxBuyQuantity))}
-                      disabled={maxBuyQuantity <= 0 || busy}
-                      className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
-                    >
-                      Max Buy
-                    </button>
-                    <button
-                      onClick={() => setQtyText(normalizeShareQuantityText(maxSellQuantity))}
-                      disabled={maxSellQuantity <= 0 || busy}
-                      className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
-                    >
-                      Max Sell
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      clearAppliedBuyByBerryQuote();
+                      setQtyText(normalizeShareQuantityText(maxSellQuantity));
+                    }}
+                    disabled={maxSellQuantity <= 0 || busy}
+                    className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
+                  >
+                    Max Sell
+                  </button>
                   <div className="flex justify-between text-xs text-muted-foreground tabular">
                     <span>Est. value</span>
                     <span>฿{formatBerries(tradeTotal)}</span>
