@@ -1695,6 +1695,7 @@ export type Database = {
           created_at: string
           id: string
           price: number
+          request_id: string | null
           shares: number
           side: string
           total: number
@@ -1706,6 +1707,7 @@ export type Database = {
           created_at?: string
           id?: string
           price: number
+          request_id?: string | null
           shares: number
           side: string
           total: number
@@ -1717,6 +1719,7 @@ export type Database = {
           created_at?: string
           id?: string
           price?: number
+          request_id?: string | null
           shares?: number
           side?: string
           total?: number
@@ -2181,6 +2184,7 @@ export type Database = {
       execute_trade: {
         Args: {
           _shares: number
+          _request_id: string
           _side: string
           _slug: string
           _user_id: string
@@ -2191,6 +2195,7 @@ export type Database = {
           created_at: string
           id: string
           price: number
+          request_id: string | null
           shares: number
           side: string
           total: number
@@ -2204,13 +2209,14 @@ export type Database = {
         }
       }
       execute_trade_authenticated: {
-        Args: { _shares: number; _side: string; _slug: string }
+        Args: { _request_id: string; _shares: number; _side: string; _slug: string }
         Returns: {
           balance_after: number
           character_id: string
           created_at: string
           id: string
           price: number
+          request_id: string | null
           shares: number
           side: string
           total: number

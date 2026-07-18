@@ -10,6 +10,7 @@ import {
   getTradeHistoryCursorFilter,
   type TradeHistoryItem,
 } from "@/lib/trade-history/pagination";
+import { isValidShareQuantity } from "@/lib/trading/fractional-shares";
 
 export const TRADE_HISTORY_QUERY_KEY = ["trade-history"] as const;
 
@@ -51,6 +52,19 @@ const tradeHistoryInputSchema = z
       .max(TRADE_HISTORY_MAX_PAGE_SIZE)
       .default(TRADE_HISTORY_DEFAULT_PAGE_SIZE),
     cursor: tradeHistoryCursorSchema.nullable().optional(),
+  })
+  .strict();
+
+const tradeInputSchema = z
+  .object({
+    slug: z.string().min(1),
+    shares: z
+      .number()
+      .finite()
+      .min(0.01)
+      .max(10_000)
+      .refine(isValidShareQuantity, "Shares must use at most two decimal places"),
+    requestId: z.string().uuid(),
   })
   .strict();
 
@@ -146,11 +160,13 @@ async function executeTrade(
   slug: string,
   side: "buy" | "sell",
   shares: number,
+  requestId: string,
 ): Promise<AuthenticatedTradeResult> {
   const { data, error } = await db.rpc("execute_trade_authenticated", {
     _slug: slug,
     _side: side,
     _shares: shares,
+    _request_id: requestId,
   });
   if (error) throw new Error(error.message);
   return data as AuthenticatedTradeResult;
@@ -158,11 +174,9 @@ async function executeTrade(
 
 export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d),
-  )
+  .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares);
+    const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares, data.requestId);
     return {
       ok: true,
       price: Number(tx.price),
@@ -173,11 +187,9 @@ export const buyShares = createServerFn({ method: "POST" })
 
 export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ slug: z.string(), shares: z.number().int().positive().max(10000) }).parse(d),
-  )
+  .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares);
+    const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares, data.requestId);
     return {
       ok: true,
       price: Number(tx.price),
