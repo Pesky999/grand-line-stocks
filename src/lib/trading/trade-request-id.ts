@@ -156,8 +156,21 @@ function pruneStoredTradeRequests(storage: TradeRequestStorage, now: number) {
         removeStorageItem(storage, key);
       }
     }
+    return true;
   } catch {
     // Treat storage inspection failures as unavailable storage.
+    return false;
+  }
+}
+
+function readStoredTradeRequest(storage: TradeRequestStorage, key: string) {
+  try {
+    return {
+      ok: true,
+      record: parseStoredTradeRequest(storage.getItem(key)),
+    } as const;
+  } catch {
+    return { ok: false } as const;
   }
 }
 
@@ -190,14 +203,14 @@ export function getOrCreateTradeRequestId(
   if (!storage) return generateValidRequestId(options);
 
   const key = storageKeyFor(normalized);
-
-  try {
-    pruneStoredTradeRequests(storage, now);
-  } catch {
+  if (!pruneStoredTradeRequests(storage, now)) {
     return generateValidRequestId(options);
   }
 
-  const existing = parseStoredTradeRequest(storage.getItem(key));
+  const existingRead = readStoredTradeRequest(storage, key);
+  if (!existingRead.ok) return generateValidRequestId(options);
+
+  const existing = existingRead.record;
   if (existing && isStoredRequestForIntent(existing, normalized, now)) {
     return existing.requestId;
   }

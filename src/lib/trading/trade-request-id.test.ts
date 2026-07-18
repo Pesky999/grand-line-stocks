@@ -40,6 +40,37 @@ class MemoryStorage implements Storage {
   }
 }
 
+type ThrowingStorageOperation = "getItem" | "length" | "key" | "removeItem" | "setItem";
+
+class ThrowingStorage extends MemoryStorage {
+  readonly throwOn = new Set<ThrowingStorageOperation>();
+
+  get length() {
+    if (this.throwOn.has("length")) throw new Error("length unavailable");
+    return super.length;
+  }
+
+  getItem(key: string) {
+    if (this.throwOn.has("getItem")) throw new Error("getItem unavailable");
+    return super.getItem(key);
+  }
+
+  key(index: number) {
+    if (this.throwOn.has("key")) throw new Error("key unavailable");
+    return super.key(index);
+  }
+
+  removeItem(key: string) {
+    if (this.throwOn.has("removeItem")) throw new Error("removeItem unavailable");
+    super.removeItem(key);
+  }
+
+  setItem(key: string, value: string) {
+    if (this.throwOn.has("setItem")) throw new Error("setItem unavailable");
+    super.setItem(key, value);
+  }
+}
+
 const baseIntent: TradeRequestIntent = {
   userId: "user-a",
   slug: "luffy",
@@ -55,10 +86,25 @@ const REQUEST_SIDE = "00000000-0000-4000-8000-000000000005";
 const REQUEST_CHARACTER = "00000000-0000-4000-8000-000000000006";
 const REQUEST_USER = "00000000-0000-4000-8000-000000000007";
 const REQUEST_FALLBACK = "00000000-0000-4000-8000-000000000008";
+const REQUEST_STORAGE_THROW = "00000000-0000-4000-8000-000000000009";
 
 function ids(...values: string[]) {
   let index = 0;
   return () => values[index++] ?? `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+
+function countedIds(...values: string[]) {
+  let count = 0;
+
+  return {
+    generateRequestId() {
+      count += 1;
+      return values[count - 1] ?? `00000000-0000-4000-8000-${String(count).padStart(12, "0")}`;
+    },
+    get count() {
+      return count;
+    },
+  };
 }
 
 test("first payload creates a request ID and exact payload reuses it", () => {
@@ -279,6 +325,110 @@ test("generated request IDs must be valid UUIDs", () => {
       }),
     /valid UUID/,
   );
+});
+
+test("getItem failures fall back to one generated UUID without crashing", () => {
+  const storage = new ThrowingStorage();
+  const generator = countedIds(REQUEST_STORAGE_THROW);
+  storage.throwOn.add("getItem");
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 1_000,
+      generateRequestId: generator.generateRequestId,
+    }),
+    REQUEST_STORAGE_THROW,
+  );
+  assert.equal(generator.count, 1);
+});
+
+test("length getter failures fall back to one generated UUID without crashing", () => {
+  const storage = new ThrowingStorage();
+  const generator = countedIds(REQUEST_STORAGE_THROW);
+  storage.throwOn.add("length");
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 1_000,
+      generateRequestId: generator.generateRequestId,
+    }),
+    REQUEST_STORAGE_THROW,
+  );
+  assert.equal(generator.count, 1);
+});
+
+test("key failures during pruning fall back to one generated UUID without crashing", () => {
+  const storage = new ThrowingStorage();
+  const key = getTradeRequestStorageKey(baseIntent);
+  assert.ok(key);
+  storage.setItem(key, "{not-json");
+  storage.throwOn.add("key");
+  const generator = countedIds(REQUEST_STORAGE_THROW);
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 1_000,
+      generateRequestId: generator.generateRequestId,
+    }),
+    REQUEST_STORAGE_THROW,
+  );
+  assert.equal(generator.count, 1);
+});
+
+test("setItem failures return the generated UUID without crashing", () => {
+  const storage = new ThrowingStorage();
+  const generator = countedIds(REQUEST_STORAGE_THROW);
+  storage.throwOn.add("setItem");
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 1_000,
+      generateRequestId: generator.generateRequestId,
+    }),
+    REQUEST_STORAGE_THROW,
+  );
+  assert.equal(generator.count, 1);
+});
+
+test("removeItem failures keep cleanup best-effort without crashing", () => {
+  const storage = new ThrowingStorage();
+  const key = getTradeRequestStorageKey(baseIntent);
+  assert.ok(key);
+  storage.setItem(key, "{not-json");
+  storage.throwOn.add("removeItem");
+  const generator = countedIds(REQUEST_STORAGE_THROW);
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 1_000,
+      generateRequestId: generator.generateRequestId,
+    }),
+    REQUEST_STORAGE_THROW,
+  );
+  assert.equal(generator.count, 1);
+  assert.doesNotThrow(() => clearTradeRequestId(baseIntent, { storage }));
+});
+
+test("getItem failures still reject an invalid generated UUID exactly once", () => {
+  const storage = new ThrowingStorage();
+  const generator = countedIds("not-a-uuid");
+  storage.throwOn.add("getItem");
+
+  assert.throws(
+    () =>
+      getOrCreateTradeRequestId(baseIntent, {
+        storage,
+        now: 1_000,
+        generateRequestId: generator.generateRequestId,
+      }),
+    /valid UUID/,
+  );
+  assert.equal(generator.count, 1);
 });
 
 test("unavailable session storage degrades safely without crashing", () => {
