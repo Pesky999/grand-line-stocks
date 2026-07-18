@@ -27,6 +27,7 @@ import {
   clearTradeRequestIdForPayloadConflict,
   getOrCreateTradeRequestId,
 } from "@/lib/trading/trade-request-id";
+import { formatRealizedPnl } from "@/lib/trading/weighted-average-accounting";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/portfolio")({
@@ -79,9 +80,13 @@ function Portfolio() {
   const holdings = data.holdings;
   const walletLedgerEntries = (walletLedgerQ.data ?? []) as WalletLedgerEntry[];
   const marketValue = holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
-  const costBasis = holdings.reduce((s, h) => s + h.shares * h.avgCost, 0);
-  const pnl = marketValue - costBasis;
+  const costBasis = holdings.reduce((s, h) => s + h.totalCostBasis, 0);
+  const unrealizedPnl = marketValue - costBasis;
   const netWorth = data.berries + marketValue;
+  const realizedPnl = data.realizedPnl;
+  const closedTrades = data.wins + data.losses;
+  const breakEvenSales = Math.max(0, data.totalSells - closedTrades);
+  const winRate = closedTrades > 0 ? (data.wins / closedTrades) * 100 : 0;
 
   async function handleSellAll(slug: string, shares: number) {
     if (!user?.id) {
@@ -105,11 +110,13 @@ function Portfolio() {
     setBusySellRequests((current) => ({ ...current, [requestKey]: true }));
 
     try {
-      await sellShares({ data: { slug, shares: sellSharesQuantity, requestId } });
+      const result = await sellShares({ data: { slug, shares: sellSharesQuantity, requestId } });
       await invalidate();
       await queryClient.invalidateQueries({ queryKey: TRADE_HISTORY_QUERY_KEY });
       clearTradeRequestId(intent);
-      toast.success(`Sold ${formatShares(sellSharesQuantity)} ${slug.toUpperCase()}`);
+      toast.success(
+        `Sold ${formatShares(sellSharesQuantity)} ${slug.toUpperCase()} - Realized ${formatRealizedPnl(result.realizedPnl)}`,
+      );
     } catch (e: unknown) {
       clearTradeRequestIdForPayloadConflict(e, intent);
       toast.error(e instanceof Error ? e.message : "Could not sell shares.");
@@ -134,13 +141,37 @@ function Portfolio() {
         <Stat label="Equity" value={`฿${formatBerries(marketValue)}`} />
         <Stat label="Net Worth" value={`฿${formatBerries(netWorth)}`} tone="accent" />
         <Stat
-          label="P/L"
-          value={`${pnl >= 0 ? "+" : ""}฿${formatBerries(pnl)}`}
-          tone={pnl >= 0 ? "bull" : "bear"}
+          label="Unrealized P/L"
+          value={`${unrealizedPnl >= 0 ? "+" : ""}฿${formatBerries(unrealizedPnl)}`}
+          tone={unrealizedPnl >= 0 ? "bull" : "bear"}
         />
       </div>
 
       <div className="p-4">
+        <div className="terminal-panel mb-4 overflow-hidden">
+          <div className="terminal-header">
+            <span>Realized Performance</span>
+          </div>
+          <div className="grid gap-px bg-border md:grid-cols-4">
+            <Stat
+              label="Realized P/L"
+              value={formatRealizedPnl(realizedPnl)}
+              tone={realizedPnl > 0 ? "bull" : realizedPnl < 0 ? "bear" : undefined}
+            />
+            <Stat label="Wins" value={data.wins.toLocaleString()} tone="bull" />
+            <Stat label="Losses" value={data.losses.toLocaleString()} tone="bear" />
+            <Stat
+              label="Win Rate"
+              value={`${winRate.toFixed(1)}%`}
+              tone={winRate >= 50 && closedTrades > 0 ? "bull" : undefined}
+            />
+          </div>
+          <div className="border-t border-border/40 px-4 py-3 text-xs text-muted-foreground">
+            Break-even sales are excluded from win rate
+            {breakEvenSales > 0 ? ` (${breakEvenSales.toLocaleString()} break-even)` : ""}.
+          </div>
+        </div>
+
         <div className="terminal-panel overflow-hidden">
           <div className="terminal-header">
             <span>Holdings</span>
@@ -163,14 +194,14 @@ function Portfolio() {
                   <th className="px-3 py-2 text-right">AVG</th>
                   <th className="px-3 py-2 text-right">LAST</th>
                   <th className="px-3 py-2 text-right">MKT VAL</th>
-                  <th className="px-3 py-2 text-right">P/L</th>
+                  <th className="px-3 py-2 text-right">UNREALIZED P/L</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {holdings.map((h) => {
                   const mv = h.shares * h.currentPrice;
-                  const pl = (h.currentPrice - h.avgCost) * h.shares;
+                  const pl = mv - h.totalCostBasis;
                   const sellQuantity = calculateMaxSellQuantity(h.shares);
                   const sellKey = `${user?.id ?? "anonymous"}:sell:${h.slug}:${normalizeShareQuantityText(sellQuantity)}`;
                   const sellLabel = h.shares > 10000 ? "Sell max" : "Sell all";
@@ -297,11 +328,16 @@ function Portfolio() {
 }
 
 function TradeHistoryRow({ entry }: { entry: TradeHistoryItem }) {
+  const isSell = entry.side === "sell";
+  const realizedPnl = entry.realized_pnl ?? 0;
+  const realizedTone =
+    realizedPnl > 0 ? "text-bull" : realizedPnl < 0 ? "text-bear" : "text-muted-foreground";
+
   return (
-    <div className="grid gap-2 px-3 py-3 text-xs md:grid-cols-[8rem_4rem_1fr_auto_auto_auto_auto] md:items-center">
+    <div className="grid gap-2 px-3 py-3 text-xs md:grid-cols-[8rem_4rem_1fr_auto_auto_auto_auto_auto] md:items-center">
       <div className="text-muted-foreground">{formatTradeDate(entry.created_at)}</div>
-      <div className={`font-bold uppercase ${entry.side === "buy" ? "text-bull" : "text-bear"}`}>
-        {entry.side === "buy" ? "Buy" : "Sell"}
+      <div className={`font-bold uppercase ${isSell ? "text-bear" : "text-bull"}`}>
+        {isSell ? "Sell" : "Buy"}
       </div>
       <div>
         <Link
@@ -319,9 +355,33 @@ function TradeHistoryRow({ entry }: { entry: TradeHistoryItem }) {
         {formatBerries(entry.price)}
       </div>
       <div className="tabular md:text-right">
-        {entry.side === "buy" ? "-" : "+"}
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          {isSell ? "Proceeds" : "Cost"}{" "}
+        </span>
+        {isSell ? "+" : "-"}
         {"\u0e3f"}
         {formatBerries(entry.total)}
+      </div>
+      <div className="tabular text-muted-foreground md:text-right">
+        {isSell ? (
+          <>
+            <span className="text-[10px] uppercase tracking-widest">Basis </span>
+            {"\u0e3f"}
+            {formatBerries(entry.cost_basis ?? 0)}
+          </>
+        ) : (
+          <span className="text-[10px] uppercase tracking-widest">Basis -</span>
+        )}
+      </div>
+      <div className={`tabular md:text-right ${isSell ? realizedTone : "text-muted-foreground"}`}>
+        {isSell ? (
+          <>
+            <span className="text-[10px] uppercase tracking-widest">Realized </span>
+            {formatRealizedPnl(realizedPnl)}
+          </>
+        ) : (
+          <span className="text-[10px] uppercase tracking-widest">Realized -</span>
+        )}
       </div>
       <div className="tabular text-muted-foreground md:text-right">
         Balance {"\u0e3f"}

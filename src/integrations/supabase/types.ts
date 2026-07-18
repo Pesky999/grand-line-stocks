@@ -1692,9 +1692,17 @@ export type Database = {
         Row: {
           balance_after: number
           character_id: string
+          cost_basis: number | null
           created_at: string
+          holding_avg_cost_after: number
+          holding_avg_cost_before: number
+          holding_cost_basis_after: number
+          holding_cost_basis_before: number
+          holding_shares_after: number
+          holding_shares_before: number
           id: string
           price: number
+          realized_pnl: number | null
           request_id: string | null
           shares: number
           side: string
@@ -1704,9 +1712,17 @@ export type Database = {
         Insert: {
           balance_after: number
           character_id: string
+          cost_basis?: number | null
           created_at?: string
+          holding_avg_cost_after: number
+          holding_avg_cost_before: number
+          holding_cost_basis_after: number
+          holding_cost_basis_before: number
+          holding_shares_after: number
+          holding_shares_before: number
           id?: string
           price: number
+          realized_pnl?: number | null
           request_id?: string | null
           shares: number
           side: string
@@ -1716,9 +1732,17 @@ export type Database = {
         Update: {
           balance_after?: number
           character_id?: string
+          cost_basis?: number | null
           created_at?: string
+          holding_avg_cost_after?: number
+          holding_avg_cost_before?: number
+          holding_cost_basis_after?: number
+          holding_cost_basis_before?: number
+          holding_shares_after?: number
+          holding_shares_before?: number
           id?: string
           price?: number
+          realized_pnl?: number | null
           request_id?: string | null
           shares?: number
           side?: string
@@ -1836,6 +1860,7 @@ export type Database = {
           created_at: string
           id: string
           shares: number
+          total_cost_basis: number
           updated_at: string
           user_id: string
         }
@@ -1845,6 +1870,7 @@ export type Database = {
           created_at?: string
           id?: string
           shares?: number
+          total_cost_basis?: number
           updated_at?: string
           user_id: string
         }
@@ -1854,6 +1880,7 @@ export type Database = {
           created_at?: string
           id?: string
           shares?: number
+          total_cost_basis?: number
           updated_at?: string
           user_id?: string
         }
@@ -2192,9 +2219,17 @@ export type Database = {
         Returns: {
           balance_after: number
           character_id: string
+          cost_basis: number | null
           created_at: string
+          holding_avg_cost_after: number
+          holding_avg_cost_before: number
+          holding_cost_basis_after: number
+          holding_cost_basis_before: number
+          holding_shares_after: number
+          holding_shares_before: number
           id: string
           price: number
+          realized_pnl: number | null
           request_id: string | null
           shares: number
           side: string
@@ -2213,9 +2248,17 @@ export type Database = {
         Returns: {
           balance_after: number
           character_id: string
+          cost_basis: number | null
           created_at: string
+          holding_avg_cost_after: number
+          holding_avg_cost_before: number
+          holding_cost_basis_after: number
+          holding_cost_basis_before: number
+          holding_shares_after: number
+          holding_shares_before: number
           id: string
           price: number
+          realized_pnl: number | null
           request_id: string | null
           shares: number
           side: string

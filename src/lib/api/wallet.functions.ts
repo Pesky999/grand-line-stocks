@@ -76,6 +76,14 @@ const tradeHistoryRowSchema = z
     price: z.coerce.number(),
     total: z.coerce.number(),
     balance_after: z.coerce.number(),
+    cost_basis: z.coerce.number().nullable(),
+    realized_pnl: z.coerce.number().nullable(),
+    holding_shares_before: z.coerce.number(),
+    holding_shares_after: z.coerce.number(),
+    holding_cost_basis_before: z.coerce.number(),
+    holding_cost_basis_after: z.coerce.number(),
+    holding_avg_cost_before: z.coerce.number(),
+    holding_avg_cost_after: z.coerce.number(),
     created_at: z.string(),
     characters: z
       .object({
@@ -92,6 +100,7 @@ type AuthClaimsWithEmail = { email?: unknown };
 type UserHoldingWithCharacter = {
   shares: number;
   avg_cost: number;
+  total_cost_basis: number;
   character_id: string;
   characters: {
     slug: string;
@@ -110,22 +119,30 @@ export const getMe = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     if (!context.userId) return null;
     const db = context.supabase;
-    const [{ data: profile }, { data: wallet }, { data: holdings }] = await Promise.all([
-      db
-        .from("profiles")
-        .select("id,username,display_name,created_at")
-        .eq("id", context.userId)
-        .maybeSingle(),
-      db
-        .from("user_wallets")
-        .select("berries,updated_at")
-        .eq("user_id", context.userId)
-        .maybeSingle(),
-      db
-        .from("user_holdings")
-        .select("shares,avg_cost,character_id,characters(slug,name,current_price)")
-        .eq("user_id", context.userId),
-    ]);
+    const [{ data: profile }, { data: wallet }, { data: holdings }, { data: stats }] =
+      await Promise.all([
+        db
+          .from("profiles")
+          .select("id,username,display_name,created_at")
+          .eq("id", context.userId)
+          .maybeSingle(),
+        db
+          .from("user_wallets")
+          .select("berries,updated_at")
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+        db
+          .from("user_holdings")
+          .select(
+            "shares,avg_cost,total_cost_basis,character_id,characters(slug,name,current_price)",
+          )
+          .eq("user_id", context.userId),
+        db
+          .from("user_stats")
+          .select("realized_pnl,wins,losses,total_sells")
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+      ]);
     const claimsEmail = (context.claims as AuthClaimsWithEmail).email;
     return {
       userId: context.userId,
@@ -137,8 +154,13 @@ export const getMe = createServerFn({ method: "GET" })
         name: h.characters.name,
         shares: Number(h.shares),
         avgCost: Number(h.avg_cost),
+        totalCostBasis: Number(h.total_cost_basis),
         currentPrice: Number(h.characters.current_price),
       })),
+      realizedPnl: Number(stats?.realized_pnl ?? 0),
+      wins: Number(stats?.wins ?? 0),
+      losses: Number(stats?.losses ?? 0),
+      totalSells: Number(stats?.total_sells ?? 0),
     };
   });
 
@@ -182,6 +204,9 @@ export const buyShares = createServerFn({ method: "POST" })
       price: Number(tx.price),
       cost: Number(tx.total),
       balance: Number(tx.balance_after),
+      holdingSharesAfter: Number(tx.holding_shares_after),
+      holdingCostBasisAfter: Number(tx.holding_cost_basis_after),
+      holdingAvgCostAfter: Number(tx.holding_avg_cost_after),
     };
   });
 
@@ -190,11 +215,20 @@ export const sellShares = createServerFn({ method: "POST" })
   .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
     const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares, data.requestId);
+    if (tx.cost_basis === null || tx.realized_pnl === null) {
+      throw new Error("Sell transaction accounting was not returned.");
+    }
+
     return {
       ok: true,
       price: Number(tx.price),
       proceeds: Number(tx.total),
       balance: Number(tx.balance_after),
+      costBasis: Number(tx.cost_basis),
+      realizedPnl: Number(tx.realized_pnl),
+      holdingSharesAfter: Number(tx.holding_shares_after),
+      holdingCostBasisAfter: Number(tx.holding_cost_basis_after),
+      holdingAvgCostAfter: Number(tx.holding_avg_cost_after),
     };
   });
 
@@ -205,7 +239,9 @@ export const listMyTransactions = createServerFn({ method: "GET" })
     const db = context.supabase;
     let query = db
       .from("transactions")
-      .select("id,side,shares,price,total,balance_after,created_at,characters(name,slug)")
+      .select(
+        "id,side,shares,price,total,balance_after,cost_basis,realized_pnl,holding_shares_before,holding_shares_after,holding_cost_basis_before,holding_cost_basis_after,holding_avg_cost_before,holding_avg_cost_after,created_at,characters(name,slug)",
+      )
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
@@ -226,6 +262,14 @@ export const listMyTransactions = createServerFn({ method: "GET" })
       price: row.price,
       total: row.total,
       balance_after: row.balance_after,
+      cost_basis: row.cost_basis,
+      realized_pnl: row.realized_pnl,
+      holding_shares_before: row.holding_shares_before,
+      holding_shares_after: row.holding_shares_after,
+      holding_cost_basis_before: row.holding_cost_basis_before,
+      holding_cost_basis_after: row.holding_cost_basis_after,
+      holding_avg_cost_before: row.holding_avg_cost_before,
+      holding_avg_cost_after: row.holding_avg_cost_after,
       created_at: row.created_at,
       characterName: row.characters.name,
       characterSlug: row.characters.slug,

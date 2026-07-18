@@ -13,6 +13,14 @@ export type TradeHistoryItem = {
   price: number;
   total: number;
   balance_after: number;
+  cost_basis: number | null;
+  realized_pnl: number | null;
+  holding_shares_before: number;
+  holding_shares_after: number;
+  holding_cost_basis_before: number;
+  holding_cost_basis_after: number;
+  holding_avg_cost_before: number;
+  holding_avg_cost_after: number;
   created_at: string;
   characterName: string;
   characterSlug: string;
