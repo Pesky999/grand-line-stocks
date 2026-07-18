@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  TRADE_REQUEST_ID_FUTURE_SKEW_MS,
   TRADE_REQUEST_ID_TTL_MS,
   clearTradeRequestId,
   clearTradeRequestIdForPayloadConflict,
@@ -46,9 +47,18 @@ const baseIntent: TradeRequestIntent = {
   shares: 1,
 };
 
+const REQUEST_1 = "00000000-0000-4000-8000-000000000001";
+const REQUEST_2 = "00000000-0000-4000-8000-000000000002";
+const REQUEST_BASE = "00000000-0000-4000-8000-000000000003";
+const REQUEST_QUANTITY = "00000000-0000-4000-8000-000000000004";
+const REQUEST_SIDE = "00000000-0000-4000-8000-000000000005";
+const REQUEST_CHARACTER = "00000000-0000-4000-8000-000000000006";
+const REQUEST_USER = "00000000-0000-4000-8000-000000000007";
+const REQUEST_FALLBACK = "00000000-0000-4000-8000-000000000008";
+
 function ids(...values: string[]) {
   let index = 0;
-  return () => values[index++] ?? `generated-${index}`;
+  return () => values[index++] ?? `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 }
 
 test("first payload creates a request ID and exact payload reuses it", () => {
@@ -56,16 +66,16 @@ test("first payload creates a request ID and exact payload reuses it", () => {
   const first = getOrCreateTradeRequestId(baseIntent, {
     storage,
     now: 1_000,
-    generateRequestId: ids("request-1", "request-2"),
+    generateRequestId: ids(REQUEST_1, REQUEST_2),
   });
   const second = getOrCreateTradeRequestId(baseIntent, {
     storage,
     now: 2_000,
-    generateRequestId: ids("request-2"),
+    generateRequestId: ids(REQUEST_2),
   });
 
-  assert.equal(first, "request-1");
-  assert.equal(second, "request-1");
+  assert.equal(first, REQUEST_1);
+  assert.equal(second, REQUEST_1);
 });
 
 test("equivalent 1 and 1.00 quantities map to the same pending request", () => {
@@ -73,46 +83,43 @@ test("equivalent 1 and 1.00 quantities map to the same pending request", () => {
   const first = getOrCreateTradeRequestId(baseIntent, {
     storage,
     now: 1_000,
-    generateRequestId: ids("request-1"),
+    generateRequestId: ids(REQUEST_1),
   });
   const second = getOrCreateTradeRequestId(
     { ...baseIntent, shares: 1.0 },
-    { storage, now: 2_000, generateRequestId: ids("request-2") },
+    { storage, now: 2_000, generateRequestId: ids(REQUEST_2) },
   );
 
-  assert.equal(first, "request-1");
-  assert.equal(second, "request-1");
+  assert.equal(first, REQUEST_1);
+  assert.equal(second, REQUEST_1);
 });
 
 test("different quantity, side, character, or user creates a new request ID", () => {
   const storage = new MemoryStorage();
   const generateRequestId = ids(
-    "request-base",
-    "request-quantity",
-    "request-side",
-    "request-character",
-    "request-user",
+    REQUEST_BASE,
+    REQUEST_QUANTITY,
+    REQUEST_SIDE,
+    REQUEST_CHARACTER,
+    REQUEST_USER,
   );
 
-  assert.equal(
-    getOrCreateTradeRequestId(baseIntent, { storage, generateRequestId }),
-    "request-base",
-  );
+  assert.equal(getOrCreateTradeRequestId(baseIntent, { storage, generateRequestId }), REQUEST_BASE);
   assert.equal(
     getOrCreateTradeRequestId({ ...baseIntent, shares: 1.25 }, { storage, generateRequestId }),
-    "request-quantity",
+    REQUEST_QUANTITY,
   );
   assert.equal(
     getOrCreateTradeRequestId({ ...baseIntent, side: "sell" }, { storage, generateRequestId }),
-    "request-side",
+    REQUEST_SIDE,
   );
   assert.equal(
     getOrCreateTradeRequestId({ ...baseIntent, slug: "zoro" }, { storage, generateRequestId }),
-    "request-character",
+    REQUEST_CHARACTER,
   );
   assert.equal(
     getOrCreateTradeRequestId({ ...baseIntent, userId: "user-b" }, { storage, generateRequestId }),
-    "request-user",
+    REQUEST_USER,
   );
 });
 
@@ -122,9 +129,9 @@ test("successful completion clears the pending request", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 1_000,
-      generateRequestId: ids("request-1"),
+      generateRequestId: ids(REQUEST_1),
     }),
-    "request-1",
+    REQUEST_1,
   );
 
   clearTradeRequestId(baseIntent, { storage });
@@ -133,9 +140,9 @@ test("successful completion clears the pending request", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 2_000,
-      generateRequestId: ids("request-2"),
+      generateRequestId: ids(REQUEST_2),
     }),
-    "request-2",
+    REQUEST_2,
   );
 });
 
@@ -145,9 +152,9 @@ test("payload conflict clears the unusable pending request", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 1_000,
-      generateRequestId: ids("request-1"),
+      generateRequestId: ids(REQUEST_1),
     }),
-    "request-1",
+    REQUEST_1,
   );
 
   assert.equal(
@@ -163,9 +170,9 @@ test("payload conflict clears the unusable pending request", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 2_000,
-      generateRequestId: ids("request-2"),
+      generateRequestId: ids(REQUEST_2),
     }),
-    "request-2",
+    REQUEST_2,
   );
 });
 
@@ -175,18 +182,18 @@ test("expired records are discarded", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 1_000,
-      generateRequestId: ids("request-1"),
+      generateRequestId: ids(REQUEST_1),
     }),
-    "request-1",
+    REQUEST_1,
   );
 
   assert.equal(
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 1_000 + TRADE_REQUEST_ID_TTL_MS + 1,
-      generateRequestId: ids("request-2"),
+      generateRequestId: ids(REQUEST_2),
     }),
-    "request-2",
+    REQUEST_2,
   );
 });
 
@@ -200,19 +207,86 @@ test("malformed storage is discarded", () => {
     getOrCreateTradeRequestId(baseIntent, {
       storage,
       now: 1_000,
-      generateRequestId: ids("request-1"),
+      generateRequestId: ids(REQUEST_1),
     }),
-    "request-1",
+    REQUEST_1,
   );
-  assert.match(storage.getItem(key) ?? "", /request-1/);
+  assert.match(storage.getItem(key) ?? "", new RegExp(REQUEST_1));
+});
+
+test("stored request IDs must be valid UUIDs", () => {
+  const storage = new MemoryStorage();
+  const key = getTradeRequestStorageKey(baseIntent);
+  assert.ok(key);
+  storage.setItem(
+    key,
+    JSON.stringify({
+      version: 1,
+      userId: "user-a",
+      slug: "luffy",
+      side: "buy",
+      quantity: "1",
+      requestId: "not-a-uuid",
+      createdAt: 1_000,
+    }),
+  );
+
+  assert.equal(
+    getOrCreateTradeRequestId(baseIntent, {
+      storage,
+      now: 2_000,
+      generateRequestId: ids(REQUEST_1),
+    }),
+    REQUEST_1,
+  );
+});
+
+test("stored request timestamps must be finite, nonnegative, and not unreasonably future", () => {
+  for (const createdAt of [Number.NaN, -1, 1_000 + TRADE_REQUEST_ID_FUTURE_SKEW_MS + 1]) {
+    const storage = new MemoryStorage();
+    const key = getTradeRequestStorageKey(baseIntent);
+    assert.ok(key);
+    storage.setItem(
+      key,
+      JSON.stringify({
+        version: 1,
+        userId: "user-a",
+        slug: "luffy",
+        side: "buy",
+        quantity: "1",
+        requestId: REQUEST_1,
+        createdAt,
+      }),
+    );
+
+    assert.equal(
+      getOrCreateTradeRequestId(baseIntent, {
+        storage,
+        now: 1_000,
+        generateRequestId: ids(REQUEST_2),
+      }),
+      REQUEST_2,
+    );
+  }
+});
+
+test("generated request IDs must be valid UUIDs", () => {
+  assert.throws(
+    () =>
+      getOrCreateTradeRequestId(baseIntent, {
+        storage: null,
+        generateRequestId: ids("not-a-uuid"),
+      }),
+    /valid UUID/,
+  );
 });
 
 test("unavailable session storage degrades safely without crashing", () => {
   assert.equal(
     getOrCreateTradeRequestId(baseIntent, {
       storage: null,
-      generateRequestId: ids("request-1"),
+      generateRequestId: ids(REQUEST_FALLBACK),
     }),
-    "request-1",
+    REQUEST_FALLBACK,
   );
 });

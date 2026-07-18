@@ -3,13 +3,63 @@ export const MAX_SHARE_QUANTITY = 10_000;
 export const MIN_TRADE_TOTAL = 1;
 const SHARE_SCALE = 100;
 const SHARE_EPSILON = 1e-9;
+const CENT_SCALE = 100n;
+const DECIMAL_PATTERN = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/;
 
-function roundCurrency(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
+type DecimalRational = {
+  numerator: bigint;
+  scale: bigint;
+};
 
 function roundShares(value: number) {
   return Math.round((value + Number.EPSILON) * SHARE_SCALE) / SHARE_SCALE;
+}
+
+function parsePositiveDecimal(value: number): DecimalRational | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+
+  const match = value.toString().toLowerCase().match(DECIMAL_PATTERN);
+  if (!match) return null;
+
+  const integerPart = match[1];
+  const fractionalPart = match[2] ?? "";
+  const exponent = Number(match[3] ?? 0);
+  let digits = `${integerPart}${fractionalPart}`.replace(/^0+(?=\d)/, "");
+  if (digits === "") digits = "0";
+
+  let scaleDigits = fractionalPart.length - exponent;
+  if (scaleDigits < 0) {
+    digits += "0".repeat(-scaleDigits);
+    scaleDigits = 0;
+  }
+
+  return {
+    numerator: BigInt(digits),
+    scale: 10n ** BigInt(scaleDigits),
+  };
+}
+
+function roundPositiveRationalToCents(numerator: bigint, denominator: bigint) {
+  const scaled = numerator * CENT_SCALE;
+  const quotient = scaled / denominator;
+  const remainder = scaled % denominator;
+
+  return quotient + (remainder * 2n >= denominator ? 1n : 0n);
+}
+
+function calculateRoundedTradeTotalCents(price: number, shares: number) {
+  const priceDecimal = parsePositiveDecimal(price);
+  const sharesDecimal = parsePositiveDecimal(shares);
+  if (!priceDecimal || !sharesDecimal) return 0n;
+
+  return roundPositiveRationalToCents(
+    priceDecimal.numerator * sharesDecimal.numerator,
+    priceDecimal.scale * sharesDecimal.scale,
+  );
+}
+
+function isRoundedTotalAffordable(totalCents: bigint, balance: DecimalRational) {
+  return totalCents * balance.scale <= balance.numerator * CENT_SCALE;
 }
 
 export function isValidShareQuantity(value: number) {
@@ -46,27 +96,36 @@ export function formatShares(value: number) {
 
 export function calculateRoundedTradeTotal(price: number, shares: number) {
   if (!Number.isFinite(price) || !Number.isFinite(shares)) return 0;
-  return roundCurrency(price * shares);
+  return Number(calculateRoundedTradeTotalCents(price, shares)) / Number(CENT_SCALE);
 }
 
 export function calculateMaxAffordableShares(balance: number, price: number) {
   if (!Number.isFinite(balance) || !Number.isFinite(price)) return 0;
   if (balance < MIN_TRADE_TOTAL || price <= 0) return 0;
 
-  let candidate = Math.min(
-    MAX_SHARE_QUANTITY,
-    Math.floor((balance / price + SHARE_EPSILON) * SHARE_SCALE) / SHARE_SCALE,
-  );
-  candidate = roundShares(candidate);
+  const balanceDecimal = parsePositiveDecimal(balance);
+  if (!balanceDecimal) return 0;
 
-  while (
-    candidate >= MIN_SHARE_QUANTITY &&
-    (calculateRoundedTradeTotal(price, candidate) > balance + SHARE_EPSILON ||
-      calculateRoundedTradeTotal(price, candidate) < MIN_TRADE_TOTAL)
-  ) {
-    candidate = roundShares(candidate - MIN_SHARE_QUANTITY);
+  let bestHundredths = 0;
+  let low = 1;
+  let high = MAX_SHARE_QUANTITY * SHARE_SCALE;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = mid / SHARE_SCALE;
+    const totalCents = calculateRoundedTradeTotalCents(price, candidate);
+
+    if (totalCents < CENT_SCALE) {
+      low = mid + 1;
+    } else if (isRoundedTotalAffordable(totalCents, balanceDecimal)) {
+      bestHundredths = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
   }
 
+  const candidate = bestHundredths / SHARE_SCALE;
   return isValidShareQuantity(candidate) ? candidate : 0;
 }
 

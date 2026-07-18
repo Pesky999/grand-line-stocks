@@ -7,6 +7,8 @@ import {
   calculateMaxSellQuantity,
   calculateRoundedTradeTotal,
   formatShares,
+  MAX_SHARE_QUANTITY,
+  MIN_TRADE_TOTAL,
   isValidShareQuantity,
   normalizeShareQuantityText,
   parseShareQuantity,
@@ -52,18 +54,51 @@ test("rounded trade totals expose exactly two Berry decimals", () => {
   assert.equal(calculateRoundedTradeTotal(1.005, 1), 1.01);
   assert.equal(calculateRoundedTradeTotal(1.006, 1), 1.01);
   assert.equal(calculateRoundedTradeTotal(0.1 + 0.2, 3.35), 1.01);
+  assert.equal(calculateRoundedTradeTotal(0.7, 3.35), 2.35);
+  assert.equal(calculateRoundedTradeTotal(100.05, 0.3), 30.02);
+  assert.equal(calculateRoundedTradeTotal(100.07, 1.5), 150.11);
+  assert.equal(calculateRoundedTradeTotal(100.49, 0.01), 1);
+  assert.equal(calculateRoundedTradeTotal(100.5, 0.01), 1.01);
+  assert.equal(calculateRoundedTradeTotal(1.23e2, 0.01), 1.23);
   assert.equal(calculateRoundedTradeTotal(0.99, 1), 0.99);
 });
 
+function assertMaxAffordableShares(balance: number, price: number, expected: number) {
+  const actual = calculateMaxAffordableShares(balance, price);
+  assert.equal(actual, expected);
+
+  if (actual >= MAX_SHARE_QUANTITY) return;
+
+  const actualHundredths = Math.round(actual * 100);
+  const nextCandidate = (actualHundredths + 1) / 100;
+  const nextTotal = calculateRoundedTradeTotal(price, nextCandidate);
+
+  assert.equal(
+    nextTotal > balance || nextTotal < MIN_TRADE_TOTAL,
+    true,
+    `expected ${nextCandidate} shares at ${price} to be unaffordable for ${balance}; total was ${nextTotal}`,
+  );
+}
+
 test("max buy chooses the largest affordable valid hundredth-share quantity", () => {
-  assert.equal(calculateMaxAffordableShares(100, 25), 4);
-  assert.equal(calculateMaxAffordableShares(99.99, 25), 3.99);
-  assert.equal(calculateMaxAffordableShares(0.99, 25), 0);
-  assert.equal(calculateMaxAffordableShares(50, 10_000), 0);
-  assert.equal(calculateMaxAffordableShares(1, 100), 0.01);
-  assert.equal(calculateMaxAffordableShares(2, 100), 0.02);
+  assertMaxAffordableShares(100, 25, 4);
+  assertMaxAffordableShares(99.99, 25, 3.99);
+  assertMaxAffordableShares(0.99, 25, 0);
+  assertMaxAffordableShares(50, 10_000, 0);
+  assertMaxAffordableShares(1, 100, 0.01);
+  assertMaxAffordableShares(2, 100, 0.02);
   assert.equal(calculateMaxAffordableShares(1_000_000, 1), 10000);
-  assert.equal(calculateMaxAffordableShares(0.3, 0.1 + 0.2), 0);
+  assertMaxAffordableShares(0.3, 0.1 + 0.2, 0);
+  assertMaxAffordableShares(1, 100.49, 0.01);
+  assertMaxAffordableShares(1, 100.5, 0);
+});
+
+test("max buy uses rounded trade totals instead of raw floating-point products", () => {
+  assert.equal(calculateRoundedTradeTotal(0.7, 3.35), 2.35);
+  assertMaxAffordableShares(2.34, 0.7, 3.34);
+  assertMaxAffordableShares(2.35, 0.7, 3.36);
+  assertMaxAffordableShares(30.01, 100.05, 0.29);
+  assertMaxAffordableShares(30.02, 100.05, 0.3);
 });
 
 test("max sell respects the per-transaction cap without capping total holdings", () => {

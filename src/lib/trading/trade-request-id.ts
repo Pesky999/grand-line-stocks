@@ -1,9 +1,11 @@
 import { normalizeShareQuantityText } from "./fractional-shares.ts";
 
 export const TRADE_REQUEST_ID_TTL_MS = 24 * 60 * 60 * 1000;
+export const TRADE_REQUEST_ID_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 const STORAGE_KEY_PREFIX = "grand-line-stocks:trade-request";
 const STORAGE_VERSION = 1;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type TradeSide = "buy" | "sell";
 
@@ -81,6 +83,23 @@ function generateRequestId(options: TradeRequestOptions) {
   return crypto.randomUUID();
 }
 
+function assertTradeRequestId(value: string) {
+  if (!UUID_PATTERN.test(value)) {
+    throw new Error("Trade request ID must be a valid UUID");
+  }
+
+  return value;
+}
+
+function generateValidRequestId(options: TradeRequestOptions) {
+  return assertTradeRequestId(generateRequestId(options));
+}
+
+function getCurrentTimestamp(options: TradeRequestOptions) {
+  const now = options.now ?? Date.now();
+  return Number.isFinite(now) && now >= 0 ? now : Date.now();
+}
+
 function parseStoredTradeRequest(value: string | null): StoredTradeRequest | null {
   if (!value) return null;
 
@@ -91,8 +110,9 @@ function parseStoredTradeRequest(value: string | null): StoredTradeRequest | nul
     if (typeof parsed.userId !== "string" || parsed.userId.trim() === "") return null;
     if (typeof parsed.slug !== "string" || parsed.slug.trim() === "") return null;
     if (typeof parsed.quantity !== "string" || parsed.quantity.trim() === "") return null;
-    if (typeof parsed.requestId !== "string" || parsed.requestId.trim() === "") return null;
+    if (typeof parsed.requestId !== "string" || !UUID_PATTERN.test(parsed.requestId)) return null;
     if (typeof parsed.createdAt !== "number" || !Number.isFinite(parsed.createdAt)) return null;
+    if (parsed.createdAt < 0) return null;
 
     return {
       version: STORAGE_VERSION,
@@ -112,6 +132,10 @@ function isExpired(record: StoredTradeRequest, now: number) {
   return now - record.createdAt > TRADE_REQUEST_ID_TTL_MS;
 }
 
+function isUnreasonablyFuture(record: StoredTradeRequest, now: number) {
+  return record.createdAt - now > TRADE_REQUEST_ID_FUTURE_SKEW_MS;
+}
+
 function removeStorageItem(storage: TradeRequestStorage, key: string) {
   try {
     storage.removeItem(key);
@@ -128,7 +152,9 @@ function pruneStoredTradeRequests(storage: TradeRequestStorage, now: number) {
       if (!key?.startsWith(STORAGE_KEY_PREFIX)) continue;
 
       const record = parseStoredTradeRequest(storage.getItem(key));
-      if (!record || isExpired(record, now)) removeStorageItem(storage, key);
+      if (!record || isExpired(record, now) || isUnreasonablyFuture(record, now)) {
+        removeStorageItem(storage, key);
+      }
     }
   } catch {
     // Treat storage inspection failures as unavailable storage.
@@ -142,6 +168,7 @@ function isStoredRequestForIntent(
 ) {
   return (
     !isExpired(record, now) &&
+    !isUnreasonablyFuture(record, now) &&
     record.userId === intent.userId &&
     record.slug === intent.slug &&
     record.side === intent.side &&
@@ -158,35 +185,41 @@ export function getOrCreateTradeRequestId(
     throw new Error("Invalid trade request intent");
   }
 
-  const now = options.now ?? Date.now();
+  const now = getCurrentTimestamp(options);
   const storage = getStorage(options);
-  if (!storage) return generateRequestId(options);
+  if (!storage) return generateValidRequestId(options);
 
   const key = storageKeyFor(normalized);
-  let requestId: string | null = null;
 
   try {
     pruneStoredTradeRequests(storage, now);
-
-    const existing = parseStoredTradeRequest(storage.getItem(key));
-    if (existing && isStoredRequestForIntent(existing, normalized, now)) {
-      return existing.requestId;
-    }
-
-    if (existing) removeStorageItem(storage, key);
-
-    requestId = generateRequestId(options);
-    const record: StoredTradeRequest = {
-      version: STORAGE_VERSION,
-      ...normalized,
-      requestId,
-      createdAt: now,
-    };
-    storage.setItem(key, JSON.stringify(record));
-    return requestId;
   } catch {
-    return requestId ?? generateRequestId(options);
+    return generateValidRequestId(options);
   }
+
+  const existing = parseStoredTradeRequest(storage.getItem(key));
+  if (existing && isStoredRequestForIntent(existing, normalized, now)) {
+    return existing.requestId;
+  }
+
+  if (existing) removeStorageItem(storage, key);
+
+  const requestId = generateValidRequestId(options);
+  const record: StoredTradeRequest = {
+    version: STORAGE_VERSION,
+    ...normalized,
+    requestId,
+    createdAt: now,
+  };
+
+  try {
+    storage.setItem(key, JSON.stringify(record));
+  } catch {
+    // Session storage can fail in restricted browser modes. The validated
+    // request ID can still be sent to the server for database idempotency.
+  }
+
+  return requestId;
 }
 
 export function clearTradeRequestId(intent: TradeRequestIntent, options: TradeRequestOptions = {}) {
