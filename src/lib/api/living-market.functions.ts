@@ -16,7 +16,10 @@ async function requireAdmin(userId: string, db: SupabaseClient<Database>) {
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
-async function updateCharacterCategoryWithAdminClient(characterId: string, category: (typeof CATEGORIES)[number]) {
+async function updateCharacterCategoryWithAdminClient(
+  characterId: string,
+  category: (typeof CATEGORIES)[number],
+) {
   try {
     const db = await admin();
     const { error } = await db.from("characters").update({ category }).eq("id", characterId);
@@ -50,7 +53,9 @@ export const getLatestReport = createServerFn({ method: "GET" }).handler(async (
 });
 
 export const listReports = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ limit: z.number().int().min(1).max(60).default(30) }).parse(d ?? {}))
+  .inputValidator((d) =>
+    z.object({ limit: z.number().int().min(1).max(60).default(30) }).parse(d ?? {}),
+  )
   .handler(async ({ data }) => {
     const db = await admin();
     const { data: rows, error } = await db
@@ -64,20 +69,78 @@ export const listReports = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
-export const listActiveRumors = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ limit: z.number().int().min(1).max(50).default(20) }).parse(d ?? {}))
+const activeSpeculationRowSchema = z.array(
+  z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    description: z.string().nullable(),
+    status: z.string(),
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+    market_rumor_impacts: z
+      .array(
+        z.object({
+          characters: z
+            .object({
+              slug: z.string(),
+              name: z.string(),
+            })
+            .nullable()
+            .optional(),
+        }),
+      )
+      .nullable()
+      .optional(),
+  }),
+);
+
+export type ActiveSpeculation = {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string | null;
+  characters: Array<{
+    slug: string;
+    name: string;
+  }>;
+};
+
+export const listActiveSpeculation = createServerFn({ method: "GET" })
+  .inputValidator((d) =>
+    z.object({ limit: z.number().int().min(1).max(50).default(20) }).parse(d ?? {}),
+  )
   .handler(async ({ data }) => {
     const db = getPublicSupabaseClient();
     const { data: rows, error } = await db
       .from("market_rumors")
       .select(
-        "id,title,description,status,created_at,expires_at,market_rumor_impacts(pct_change,price_before,price_after,characters(slug,name))",
+        "id,title,description,status,created_at,expires_at,market_rumor_impacts(characters(slug,name))",
       )
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(data.limit);
     if (error) throw error;
-    return rows ?? [];
+    return activeSpeculationRowSchema.parse(rows ?? []).map((row): ActiveSpeculation => {
+      const charactersBySlug = new Map<string, { slug: string; name: string }>();
+      for (const impact of row.market_rumor_impacts ?? []) {
+        const character = impact.characters;
+        if (character?.slug) charactersBySlug.set(character.slug, character);
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description ?? "",
+        status: row.status,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        characters: [...charactersBySlug.values()].sort(
+          (a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug),
+        ),
+      };
+    });
   });
 
 // ---------- Admin actions ----------
@@ -89,7 +152,9 @@ export const adminListAttributes = createServerFn({ method: "GET" })
     const db = context.supabase;
     const { data, error } = await db
       .from("characters")
-      .select("id,slug,name,category,momentum,character_attributes(narrative_potential,hype_rating,investor_confidence,volatility_rating)")
+      .select(
+        "id,slug,name,category,momentum,character_attributes(narrative_potential,hype_rating,investor_confidence,volatility_rating)",
+      )
       .order("name");
     if (error) throw error;
     return data ?? [];
@@ -111,13 +176,19 @@ export const adminUpdateAttributes = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await requireAdmin(context.userId, context.supabase);
     const db = context.supabase;
-    const { data: ch, error: e1 } = await db.from("characters").select("id").eq("slug", data.slug).maybeSingle();
+    const { data: ch, error: e1 } = await db
+      .from("characters")
+      .select("id")
+      .eq("slug", data.slug)
+      .maybeSingle();
     if (e1 || !ch) throw new Error("Character not found");
 
     const attrPatch: Record<string, number> = {};
-    if (data.narrative_potential !== undefined) attrPatch.narrative_potential = data.narrative_potential;
+    if (data.narrative_potential !== undefined)
+      attrPatch.narrative_potential = data.narrative_potential;
     if (data.hype_rating !== undefined) attrPatch.hype_rating = data.hype_rating;
-    if (data.investor_confidence !== undefined) attrPatch.investor_confidence = data.investor_confidence;
+    if (data.investor_confidence !== undefined)
+      attrPatch.investor_confidence = data.investor_confidence;
     if (data.volatility_rating !== undefined) attrPatch.volatility_rating = data.volatility_rating;
 
     if (Object.keys(attrPatch).length > 0) {
@@ -142,7 +213,11 @@ export const adminApplyCategory = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await requireAdmin(context.userId, context.supabase);
     const db = context.supabase;
-    const { data: ch, error } = await db.from("characters").select("id,category").eq("slug", data.slug).maybeSingle();
+    const { data: ch, error } = await db
+      .from("characters")
+      .select("id,category")
+      .eq("slug", data.slug)
+      .maybeSingle();
     if (error || !ch) throw new Error("Character not found");
     if (ch.category === data.category) return { ok: true, changed: false };
 

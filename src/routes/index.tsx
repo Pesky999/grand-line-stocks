@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { listCharacters, listNews } from "@/lib/api/market.functions";
 import { listRecentEvents } from "@/lib/api/events.functions";
-import { getLatestReport, listActiveRumors } from "@/lib/api/living-market.functions";
+import { getLatestReport, listActiveSpeculation } from "@/lib/api/living-market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { Ticker } from "@/components/Ticker";
 import { formatBounty } from "@/lib/wallet";
@@ -31,9 +31,9 @@ const eventsQO = queryOptions({
   queryFn: () => listRecentEvents({ data: { limit: 6 } }),
 });
 const reportQO = queryOptions({ queryKey: ["report", "latest"], queryFn: () => getLatestReport() });
-const rumorsQO = queryOptions({
-  queryKey: ["rumors", "active", 5],
-  queryFn: () => listActiveRumors({ data: { limit: 5 } }),
+const speculationQO = queryOptions({
+  queryKey: ["speculation", "active", 5],
+  queryFn: () => listActiveSpeculation({ data: { limit: 5 } }),
 });
 
 type MarketSearch = {
@@ -84,7 +84,7 @@ export const Route = createFileRoute("/")({
       context.queryClient.ensureQueryData(newsQO),
       context.queryClient.ensureQueryData(eventsQO),
       context.queryClient.ensureQueryData(reportQO),
-      context.queryClient.ensureQueryData(rumorsQO),
+      context.queryClient.ensureQueryData(speculationQO),
     ]),
   component: Market,
   errorComponent: ({ error }) => <div className="p-8 text-bear">Failed: {error.message}</div>,
@@ -133,7 +133,7 @@ function Market() {
   const { data: news } = useSuspenseQuery(newsQO);
   const { data: events } = useSuspenseQuery(eventsQO);
   const { data: report } = useSuspenseQuery(reportQO);
-  const { data: rumors } = useSuspenseQuery(rumorsQO);
+  const { data: speculation } = useSuspenseQuery(speculationQO);
   const { data: me, user, authLoading, isLoading: meLoading } = useMe();
 
   const {
@@ -547,14 +547,14 @@ function Market() {
           </div>
           <div className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
-              <span>Recent Events</span>
+              <span>Recent Catalysts</span>
               <Link to="/events" className="text-muted-foreground hover:text-primary">
                 all →
               </Link>
             </div>
             <ul className="divide-y divide-border text-xs">
               {events.length === 0 && (
-                <li className="px-3 py-2 text-muted-foreground">No events yet.</li>
+                <li className="px-3 py-2 text-muted-foreground">No catalysts yet.</li>
               )}
               {events.map((e) => {
                 const impacts = e.market_event_impacts ?? [];
@@ -588,33 +588,34 @@ function Market() {
           </div>
           <div className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
-              <span className="text-warn">◆ Rumors</span>
-              <Link to="/market-report" className="text-muted-foreground hover:text-primary">
+              <span className="text-warn">{"\u25c6"} Speculation</span>
+              <Link
+                to="/market-bulletin"
+                search={{ feed: "speculation" }}
+                hash="wire"
+                className="text-muted-foreground hover:text-primary"
+              >
                 all →
               </Link>
             </div>
             <ul className="divide-y divide-border text-xs">
-              {rumors.length === 0 && (
+              {speculation.length === 0 && (
                 <li className="px-3 py-2 text-muted-foreground">Quiet on the wire.</li>
               )}
-              {rumors.slice(0, 4).map((r) => {
-                const i = r.market_rumor_impacts?.[0];
-                const up = Number(i?.pct_change ?? 0) >= 0;
-                return (
-                  <li key={r.id} className="px-3 py-2">
-                    <div className="text-foreground truncate">{r.title}</div>
-                    {i?.characters && (
-                      <div className="mt-0.5 flex items-center gap-2 text-[10px] tabular">
-                        <span className="text-accent">{i.characters.slug.toUpperCase()}</span>
-                        <span className={up ? "text-bull" : "text-bear"}>
-                          {up ? "+" : ""}
-                          {Number(i.pct_change).toFixed(2)}%
-                        </span>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
+              {speculation.slice(0, 4).map((item) => (
+                <li key={item.id} className="px-3 py-2">
+                  <div className="truncate text-foreground">{item.title}</div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <span className="text-warn">Unconfirmed</span>
+                    <span>No price effect</span>
+                    {item.characters.slice(0, 2).map((character) => (
+                      <span key={character.slug} className="text-accent">
+                        {character.slug.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
           <div className="terminal-panel">
