@@ -2273,23 +2273,6 @@ export type Database = {
         }
       }
       expire_old_rumors: { Args: never; Returns: number }
-      generate_market_rumor: {
-        Args: never
-        Returns: {
-          created_at: string
-          description: string
-          expires_at: string | null
-          id: string
-          status: Database["public"]["Enums"]["rumor_status"]
-          title: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "market_rumors"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
       generate_movement_explanation: {
         Args: {
           _character_id: string

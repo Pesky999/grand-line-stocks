@@ -29,6 +29,29 @@ function sentimentScore(sentiment: string): number {
   return 0;
 }
 
+type PriceMovementRow = {
+  pct_change: number | string | null;
+};
+
+type SpeculationRelationRow = {
+  market_rumors: {
+    id: string;
+    title: string;
+    description: string | null;
+    status: string;
+    created_at: string;
+    expires_at: string | null;
+  } | null;
+};
+
+type SpeculationRumorRow = NonNullable<SpeculationRelationRow["market_rumors"]>;
+
+function isSpeculationRumorRow(
+  row: SpeculationRelationRow["market_rumors"],
+): row is SpeculationRumorRow {
+  return row !== null;
+}
+
 export const getCharacterIntel = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data }) => {
@@ -41,7 +64,7 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
     if (error) throw error;
     if (!ch) throw new Error("Character not found");
 
-    const [explanations, rumors, latestReport] = await Promise.all([
+    const [explanations, speculationRows, latestReport] = await Promise.all([
       db
         .from("price_movement_explanations")
         .select("id,pct_change,price_before,price_after,summary,reason_codes,source,created_at")
@@ -50,7 +73,7 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
         .limit(10),
       db
         .from("market_rumor_impacts")
-        .select("pct_change,market_rumors!inner(id,title,description,status,created_at,expires_at)")
+        .select("market_rumors!inner(id,title,description,status,created_at,expires_at)")
         .eq("character_id", ch.id)
         .eq("market_rumors.status", "active")
         .order("created_at", { ascending: false, foreignTable: "market_rumors" })
@@ -66,15 +89,32 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
     const momentum = Number(ch.momentum ?? 0);
     const currentPrice = Number(ch.current_price ?? 0);
     const previousPrice = Number(ch.previous_price ?? 0);
-    const priceMovePct = previousPrice > 0 ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0;
-    const recentMoves = (explanations.data ?? []).map((row: any) => Number(row.pct_change)).filter(Number.isFinite);
+    const priceMovePct =
+      previousPrice > 0 ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0;
+    const recentMoveRows = (explanations.data ?? []) as PriceMovementRow[];
+    const recentMoves = recentMoveRows.map((row) => Number(row.pct_change)).filter(Number.isFinite);
     const avgRecentMove = average(recentMoves);
     const avgRecentAbsMove = average(recentMoves.map(Math.abs));
-    const rumorMoves = (rumors.data ?? []).map((row: any) => Number(row.pct_change)).filter(Number.isFinite);
-    const totalRumorMove = rumorMoves.reduce((sum, value) => sum + value, 0);
-    const avgRumorAbsMove = average(rumorMoves.map(Math.abs));
     const reportSentiment = latestReport.data?.sentiment ?? "neutral";
     const reportAvgChange = Number(latestReport.data?.avg_change_pct ?? 0);
+    const speculation = [
+      ...new Map(
+        ((speculationRows.data ?? []) as SpeculationRelationRow[])
+          .map((row) => row.market_rumors)
+          .filter(isSpeculationRumorRow)
+          .map((row) => [
+            row.id,
+            {
+              id: row.id,
+              title: row.title,
+              description: row.description,
+              status: row.status,
+              created_at: row.created_at,
+              expires_at: row.expires_at,
+            },
+          ]),
+      ).values(),
+    ];
 
     const bullish: string[] = [];
     const bearish: string[] = [];
@@ -83,37 +123,44 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
     if (momentum < -0.5) bearish.push(`Negative momentum (${momentum.toFixed(2)})`);
     if (priceMovePct >= 2) bullish.push(`Observable price strength (+${priceMovePct.toFixed(2)}%)`);
     if (priceMovePct <= -2) bearish.push(`Observable price weakness (${priceMovePct.toFixed(2)}%)`);
-    if (rumorMoves.some((pct) => pct > 0)) bullish.push("Active bullish rumor in circulation");
-    if (rumorMoves.some((pct) => pct < 0)) bearish.push("Active bearish rumor in circulation");
-    if (avgRecentMove >= 2) bullish.push(`Recent public moves trending positive (+${avgRecentMove.toFixed(2)}%)`);
-    if (avgRecentMove <= -2) bearish.push(`Recent public moves trending negative (${avgRecentMove.toFixed(2)}%)`);
-    if (reportSentiment === "bullish" || reportSentiment === "extremely_bullish") bullish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
-    if (reportSentiment === "bearish" || reportSentiment === "extremely_bearish") bearish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
+    if (avgRecentMove >= 2)
+      bullish.push(`Recent public moves trending positive (+${avgRecentMove.toFixed(2)}%)`);
+    if (avgRecentMove <= -2)
+      bearish.push(`Recent public moves trending negative (${avgRecentMove.toFixed(2)}%)`);
+    if (reportSentiment === "bullish" || reportSentiment === "extremely_bullish")
+      bullish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
+    if (reportSentiment === "bearish" || reportSentiment === "extremely_bearish")
+      bearish.push(`Market report sentiment ${String(reportSentiment).replace(/_/g, " ")}`);
 
-    // Deterministic public scores combine visible trend, event, rumor, and report data.
+    // Deterministic public scores combine visible trend, verified movement, report, and category data.
     const confidence = clampScore(
-      50
-        + clamp(momentum * 8, -20, 20)
-        + clamp(priceMovePct * 2, -15, 15)
-        + clamp(totalRumorMove * 2, -10, 10)
-        + clamp(avgRecentMove, -10, 10)
-        + clamp(reportAvgChange, -10, 10)
-        + sentimentScore(String(reportSentiment)),
+      50 +
+        clamp(momentum * 8, -20, 20) +
+        clamp(priceMovePct * 2, -15, 15) +
+        clamp(avgRecentMove, -10, 10) +
+        clamp(reportAvgChange, -10, 10) +
+        sentimentScore(String(reportSentiment)),
     );
-    const categoryBaseRisk = ch.category === "meme" ? 70 : ch.category === "speculative" ? 55 : ch.category === "growth" ? 35 : 22;
+    const categoryBaseRisk =
+      ch.category === "meme"
+        ? 70
+        : ch.category === "speculative"
+          ? 55
+          : ch.category === "growth"
+            ? 35
+            : 22;
     const risk = clampScore(
-      categoryBaseRisk
-        + clamp(Math.abs(momentum) * 6, 0, 20)
-        + clamp(Math.abs(priceMovePct) * 2, 0, 18)
-        + clamp(avgRecentAbsMove, 0, 20)
-        + clamp(avgRumorAbsMove * 2, 0, 12)
-        + clamp(Math.abs(reportAvgChange), 0, 10),
+      categoryBaseRisk +
+        clamp(Math.abs(momentum) * 6, 0, 20) +
+        clamp(Math.abs(priceMovePct) * 2, 0, 18) +
+        clamp(avgRecentAbsMove, 0, 20) +
+        clamp(Math.abs(reportAvgChange), 0, 10),
     );
 
     return {
       character: ch,
       explanations: explanations.data ?? [],
-      rumors: rumors.data ?? [],
+      speculation,
       sentiment: reportSentiment,
       avg_change_pct: reportAvgChange,
       intel: {
@@ -126,7 +173,9 @@ export const getCharacterIntel = createServerFn({ method: "GET" })
   });
 
 export const listRecentExplanations = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ limit: z.number().int().min(1).max(50).default(15) }).parse(d ?? {}))
+  .inputValidator((d) =>
+    z.object({ limit: z.number().int().min(1).max(50).default(15) }).parse(d ?? {}),
+  )
   .handler(async ({ data }) => {
     const db = await admin();
     const { data: rows, error } = await db

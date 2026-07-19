@@ -120,11 +120,13 @@ type MovementExplanation = {
   created_at: string;
 };
 
-type RumorImpact = {
-  pct_change: number | string;
-  market_rumors: {
-    title: string;
-  };
+type SpeculationItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  created_at: string;
+  expires_at?: string | null;
 };
 
 type CharacterEventImpact = {
@@ -751,19 +753,29 @@ function CharacterPage() {
                   </ul>
                 )}
               </div>
-              {intel.rumors.length > 0 && (
+              {intel.speculation.length > 0 && (
                 <div>
                   <div className="mb-1 text-[10px] uppercase tracking-widest text-warn">
-                    ◆ Active Rumors
+                    {"\u25c6"} Market Speculation
                   </div>
-                  <ul className="space-y-1">
-                    {(intel.rumors as RumorImpact[]).map((r, i) => (
-                      <li key={i} className="text-foreground">
-                        <span className={Number(r.pct_change) >= 0 ? "text-bull" : "text-bear"}>
-                          {Number(r.pct_change) >= 0 ? "+" : ""}
-                          {Number(r.pct_change).toFixed(2)}%
-                        </span>{" "}
-                        {r.market_rumors.title}
+                  <p className="mb-2 text-[10px] leading-snug text-muted-foreground">
+                    Unconfirmed community discussion. Speculation does not affect stock prices.
+                  </p>
+                  <ul className="space-y-2">
+                    {(intel.speculation as SpeculationItem[]).map((item) => (
+                      <li key={item.id} className="border border-border/70 p-2 text-foreground">
+                        <div className="font-bold">{item.title}</div>
+                        {item.description && (
+                          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                            {item.description}
+                          </p>
+                        )}
+                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                          <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                          {item.expires_at && (
+                            <span>Expires {new Date(item.expires_at).toLocaleDateString()}</span>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
