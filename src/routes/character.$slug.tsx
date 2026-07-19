@@ -292,6 +292,226 @@ function CharacterPage() {
     applyBuyByBerryQuote(customBerryQuote);
   }
 
+  const tradeDeskPanel = (
+    <section className="terminal-panel">
+      <div className="terminal-header">Trade Desk</div>
+      <div className="p-4 text-sm">
+        {!user ? (
+          <div className="mx-auto max-w-sm space-y-3 text-center">
+            <p className="text-xs text-muted-foreground">Sign in to trade {slug.toUpperCase()}.</p>
+            <Link
+              to="/auth"
+              className="block bg-primary px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground"
+            >
+              Sign in to trade
+            </Link>
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <div className="space-y-3">
+              <div className="flex justify-between text-xs text-muted-foreground tabular">
+                <span>Balance</span>
+                <span className="text-accent">
+                  {"\u0e3f"}
+                  {formatBerries(me?.berries ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground tabular">
+                <span>Position</span>
+                <span className="text-foreground">
+                  {held
+                    ? `${formatShares(held.shares)} @ avg \u0e3f${held.avgCost.toFixed(2)}`
+                    : "\u2014"}
+                </span>
+              </div>
+              {held && (
+                <div className="flex justify-between text-xs tabular">
+                  <span className="text-muted-foreground">Unrealized P/L</span>
+                  <span
+                    className={
+                      tradeDeskUnrealizedPnl > 0
+                        ? "text-bull"
+                        : tradeDeskUnrealizedPnl < 0
+                          ? "text-bear"
+                          : "text-muted-foreground"
+                    }
+                  >
+                    {formatRealizedPnl(tradeDeskUnrealizedPnl)}
+                  </span>
+                </div>
+              )}
+              <div className="border border-border/70 bg-secondary/20 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-bull">
+                    Buy by Berries
+                  </span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Current quote
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    pattern="\\d+(\\.\\d{1,2})?"
+                    value={berryAmountText}
+                    onChange={(e) => setBerryAmountText(e.target.value)}
+                    onKeyDown={handleCustomBerryAmountKeyDown}
+                    aria-label="Berry amount"
+                    aria-invalid={Boolean(customBerryDisabledReason && berryAmountText.trim())}
+                    placeholder="100.00"
+                    className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
+                  />
+                  <button
+                    onClick={() => applyBuyByBerryQuote(customBerryQuote)}
+                    disabled={Boolean(customBerryDisabledReason)}
+                    className="border border-border px-3 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                  >
+                    Apply
+                  </button>
+                </div>
+                {customBerryDisabledReason && (
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {customBerryDisabledReason}
+                  </div>
+                )}
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {BUY_BY_BERRY_PRESET_AMOUNTS.map((amount) => {
+                    const quote = quoteBuyByBerryBudget({
+                      requestedBudget: amount,
+                      walletBalance,
+                      price,
+                    });
+                    return (
+                      <button
+                        key={amount}
+                        onClick={() => applyBuyByBerryBudget(amount)}
+                        disabled={busy || !quote.ok}
+                        title={quote.ok ? undefined : BUY_BY_BERRY_FAILURE_LABEL[quote.reason]}
+                        className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                      >
+                        {formatBerryAmount(amount)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => applyBuyByBerryQuote(quarterWalletQuote)}
+                    disabled={busy || !quarterWalletQuote.ok}
+                    title={
+                      quarterWalletQuote.ok
+                        ? undefined
+                        : BUY_BY_BERRY_FAILURE_LABEL[quarterWalletQuote.reason]
+                    }
+                    className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                  >
+                    25%
+                  </button>
+                  <button
+                    onClick={() => applyBuyByBerryQuote(maxWalletQuote)}
+                    disabled={busy || !maxWalletQuote.ok}
+                    title={
+                      maxWalletQuote.ok
+                        ? undefined
+                        : BUY_BY_BERRY_FAILURE_LABEL[maxWalletQuote.reason]
+                    }
+                    className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
+                  >
+                    MAX
+                  </button>
+                </div>
+                {appliedBerryQuote && (
+                  <div className="mt-3 border border-bull/30 bg-bull/5 p-2 text-[11px] text-muted-foreground">
+                    <div className="tabular text-foreground">
+                      {formatBerryAmount(appliedBerryQuote.requestedBudget)} target {" -> "}
+                      {formatShares(appliedBerryQuote.shares)} shares
+                    </div>
+                    <div className="mt-1 tabular">
+                      Estimated spend {formatBerryAmount(appliedBerryQuote.estimatedTotal)}
+                      {" \u00b7 "}
+                      {formatBerryAmount(appliedBerryQuote.unusedBudget)} unused
+                    </div>
+                    <div className="mt-1">
+                      Sets share quantity from the current quote. Final price and cost are confirmed
+                      by the server.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => adjustQuantity(-1)}
+                  className="size-7 border border-border text-muted-foreground hover:text-primary"
+                >
+                  {"\u2212"}
+                </button>
+                <input
+                  type="number"
+                  min="0.01"
+                  max="10000"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={qtyText}
+                  onChange={(e) => setManualQuantityText(e.target.value)}
+                  className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
+                />
+                <button
+                  onClick={() => adjustQuantity(1)}
+                  className="size-7 border border-border text-muted-foreground hover:text-primary"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  clearAppliedBuyByBerryQuote();
+                  setQtyText(normalizeShareQuantityText(maxSellQuantity));
+                }}
+                disabled={maxSellQuantity <= 0 || busy}
+                className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
+              >
+                Max Sell
+              </button>
+              <div className="flex justify-between text-xs text-muted-foreground tabular">
+                <span>Est. value</span>
+                <span>
+                  {"\u0e3f"}
+                  {formatBerries(tradeTotal)}
+                </span>
+              </div>
+              {tradeHint && <div className="text-[11px] text-muted-foreground">{tradeHint}</div>}
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  onClick={handleBuy}
+                  disabled={buyDisabled}
+                  className="bg-bull px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                >
+                  {"\u25b2"} Buy
+                </button>
+                <button
+                  onClick={handleSell}
+                  disabled={sellDisabled}
+                  className="bg-bear px-3 py-2 text-xs font-bold uppercase tracking-widest text-destructive-foreground hover:opacity-90 disabled:opacity-40"
+                >
+                  {"\u25bc"} Sell
+                </button>
+              </div>
+              <button
+                onClick={() => router.invalidate()}
+                className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                Refresh quote
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
   async function handleBuy() {
     if (parsedQty == null || buyDisabled) return;
     const { intent, requestId } = tradeRequest("buy", parsedQty);
@@ -312,6 +532,7 @@ function CharacterPage() {
       setBusy(false);
     }
   }
+
   async function handleSell() {
     if (parsedQty == null || sellDisabled) return;
     const { intent, requestId } = tradeRequest("sell", parsedQty);
@@ -437,6 +658,8 @@ function CharacterPage() {
             </div>
           </section>
 
+          {tradeDeskPanel}
+
           <section className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
               <span>Why Is This Stock Moving?</span>
@@ -483,218 +706,6 @@ function CharacterPage() {
         </div>
 
         <aside className="space-y-4">
-          <div className="terminal-panel">
-            <div className="terminal-header">Trade Desk</div>
-            <div className="space-y-3 p-4 text-sm">
-              {!user ? (
-                <div className="space-y-3 text-center">
-                  <p className="text-xs text-muted-foreground">
-                    Sign in to trade {slug.toUpperCase()}.
-                  </p>
-                  <Link
-                    to="/auth"
-                    className="block bg-primary px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground"
-                  >
-                    Sign in to trade
-                  </Link>
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between text-xs text-muted-foreground tabular">
-                    <span>Balance</span>
-                    <span className="text-accent">฿{formatBerries(me?.berries ?? 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-muted-foreground tabular">
-                    <span>Position</span>
-                    <span className="text-foreground">
-                      {held
-                        ? `${formatShares(held.shares)} @ avg ฿${held.avgCost.toFixed(2)}`
-                        : "—"}
-                    </span>
-                  </div>
-                  {held && (
-                    <div className="flex justify-between text-xs tabular">
-                      <span className="text-muted-foreground">Unrealized P/L</span>
-                      <span
-                        className={
-                          tradeDeskUnrealizedPnl > 0
-                            ? "text-bull"
-                            : tradeDeskUnrealizedPnl < 0
-                              ? "text-bear"
-                              : "text-muted-foreground"
-                        }
-                      >
-                        {formatRealizedPnl(tradeDeskUnrealizedPnl)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="border border-border/70 bg-secondary/20 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-bull">
-                        Buy by Berries
-                      </span>
-                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                        Current quote
-                      </span>
-                    </div>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        pattern="\\d+(\\.\\d{1,2})?"
-                        value={berryAmountText}
-                        onChange={(e) => setBerryAmountText(e.target.value)}
-                        onKeyDown={handleCustomBerryAmountKeyDown}
-                        aria-label="Berry amount"
-                        aria-invalid={Boolean(customBerryDisabledReason && berryAmountText.trim())}
-                        placeholder="100.00"
-                        className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
-                      />
-                      <button
-                        onClick={() => applyBuyByBerryQuote(customBerryQuote)}
-                        disabled={Boolean(customBerryDisabledReason)}
-                        className="border border-border px-3 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
-                      >
-                        Apply
-                      </button>
-                    </div>
-                    {customBerryDisabledReason && (
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {customBerryDisabledReason}
-                      </div>
-                    )}
-                    <div className="mt-2 grid grid-cols-3 gap-2">
-                      {BUY_BY_BERRY_PRESET_AMOUNTS.map((amount) => {
-                        const quote = quoteBuyByBerryBudget({
-                          requestedBudget: amount,
-                          walletBalance,
-                          price,
-                        });
-                        return (
-                          <button
-                            key={amount}
-                            onClick={() => applyBuyByBerryBudget(amount)}
-                            disabled={busy || !quote.ok}
-                            title={quote.ok ? undefined : BUY_BY_BERRY_FAILURE_LABEL[quote.reason]}
-                            className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
-                          >
-                            {formatBerryAmount(amount)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => applyBuyByBerryQuote(quarterWalletQuote)}
-                        disabled={busy || !quarterWalletQuote.ok}
-                        title={
-                          quarterWalletQuote.ok
-                            ? undefined
-                            : BUY_BY_BERRY_FAILURE_LABEL[quarterWalletQuote.reason]
-                        }
-                        className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
-                      >
-                        25%
-                      </button>
-                      <button
-                        onClick={() => applyBuyByBerryQuote(maxWalletQuote)}
-                        disabled={busy || !maxWalletQuote.ok}
-                        title={
-                          maxWalletQuote.ok
-                            ? undefined
-                            : BUY_BY_BERRY_FAILURE_LABEL[maxWalletQuote.reason]
-                        }
-                        className="border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bull hover:bg-bull hover:text-primary-foreground disabled:opacity-40"
-                      >
-                        MAX
-                      </button>
-                    </div>
-                    {appliedBerryQuote && (
-                      <div className="mt-3 border border-bull/30 bg-bull/5 p-2 text-[11px] text-muted-foreground">
-                        <div className="tabular text-foreground">
-                          {formatBerryAmount(appliedBerryQuote.requestedBudget)} target {" -> "}
-                          {formatShares(appliedBerryQuote.shares)} shares
-                        </div>
-                        <div className="mt-1 tabular">
-                          Estimated spend {formatBerryAmount(appliedBerryQuote.estimatedTotal)}
-                          {" · "}
-                          {formatBerryAmount(appliedBerryQuote.unusedBudget)} unused
-                        </div>
-                        <div className="mt-1">
-                          Sets share quantity from the current quote. Final price and cost are
-                          confirmed by the server.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 pt-2">
-                    <button
-                      onClick={() => adjustQuantity(-1)}
-                      className="size-7 border border-border text-muted-foreground hover:text-primary"
-                    >
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      min="0.01"
-                      max="10000"
-                      step="0.01"
-                      inputMode="decimal"
-                      value={qtyText}
-                      onChange={(e) => setManualQuantityText(e.target.value)}
-                      className="w-full border border-border bg-input px-2 py-1.5 text-center tabular focus:border-primary outline-none"
-                    />
-                    <button
-                      onClick={() => adjustQuantity(1)}
-                      className="size-7 border border-border text-muted-foreground hover:text-primary"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => {
-                      clearAppliedBuyByBerryQuote();
-                      setQtyText(normalizeShareQuantityText(maxSellQuantity));
-                    }}
-                    disabled={maxSellQuantity <= 0 || busy}
-                    className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
-                  >
-                    Max Sell
-                  </button>
-                  <div className="flex justify-between text-xs text-muted-foreground tabular">
-                    <span>Est. value</span>
-                    <span>฿{formatBerries(tradeTotal)}</span>
-                  </div>
-                  {tradeHint && (
-                    <div className="text-[11px] text-muted-foreground">{tradeHint}</div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      onClick={handleBuy}
-                      disabled={buyDisabled}
-                      className="bg-bull px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                    >
-                      ▲ Buy
-                    </button>
-                    <button
-                      onClick={handleSell}
-                      disabled={sellDisabled}
-                      className="bg-bear px-3 py-2 text-xs font-bold uppercase tracking-widest text-destructive-foreground hover:opacity-90 disabled:opacity-40"
-                    >
-                      ▼ Sell
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => router.invalidate()}
-                    className="w-full border border-border px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-                  >
-                    Refresh quote
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
           <div className="terminal-panel">
             <div className="terminal-header">Key Stats</div>
             <dl className="divide-y divide-border text-xs tabular">

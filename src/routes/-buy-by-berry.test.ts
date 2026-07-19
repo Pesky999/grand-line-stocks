@@ -35,7 +35,7 @@ test("custom Berry amount state and input apply to qtyText without submitting", 
   const buyByBerrySection = sourceBetween(
     characterSource,
     "Buy by Berries",
-    '<div className="flex items-center gap-2 pt-2">',
+    '<div className="flex items-center gap-2">',
   );
 
   assert.match(characterSource, /const \[berryAmountText, setBerryAmountText\] = useState\(""\)/);
@@ -55,7 +55,7 @@ test("fixed, percentage, and max presets exist and do not directly buy shares", 
   const buyByBerrySection = sourceBetween(
     characterSource,
     "Buy by Berries",
-    '<div className="flex items-center gap-2 pt-2">',
+    '<div className="flex items-center gap-2">',
   );
 
   assert.match(buyByBerrySource, /BUY_BY_BERRY_PRESET_AMOUNTS = \[100, 500, 1000\]/);
@@ -104,7 +104,7 @@ test("quote summary shows target shares estimated spend unused amount and author
   assert.match(characterSource, /appliedBerryQuote\.unusedBudget\)\} unused/);
   assert.match(
     characterSource,
-    /Sets share quantity from the current quote\. Final price and cost are\s+confirmed by the server\./,
+    /Sets share quantity from the current quote\. Final price and cost are\s+confirmed\s+by the server\./,
   );
 });
 
