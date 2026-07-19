@@ -81,12 +81,21 @@ test("display name format accepts ordinary Unicode letters, combining marks, and
     ok: true,
     value: "O\u2019Hara Scholar",
   });
+  assert.deepEqual(validateDisplayNameFormat("Nami (Navigator)"), {
+    ok: true,
+    value: "Nami (Navigator)",
+  });
+  assert.deepEqual(validateDisplayNameFormat("Franky - Shipwright"), {
+    ok: true,
+    value: "Franky - Shipwright",
+  });
 });
 
 test("display name format removes unsafe invisible characters and rejects extreme repeats and unsupported symbols", () => {
   assert.deepEqual(validateDisplayNameFormat("  Nami\u200b  "), { ok: true, value: "Nami" });
   assert.equal(validateDisplayNameFormat("aaaaaaaaaa").ok, false);
   assert.equal(validateDisplayNameFormat("Nami 🚀").ok, false);
+  assert.equal(validateDisplayNameFormat("Nami [Navigator]").ok, false);
 });
 
 test("reserved usernames are blocked by exact normalized identity", () => {
@@ -124,6 +133,62 @@ test("compact substring rules catch limited homoglyph substitutions", () => {
 test("allow rules apply only to complete normalized identities", () => {
   assert.equal(evaluatePublicIdentity("classic", "display_name", rules).allowed, true);
   assert.equal(evaluatePublicIdentity("classic spoiler", "display_name", rules).allowed, false);
+});
+
+test("protected core rules can be evaluated before supplemental allowlist creation", () => {
+  const protectedRules: PublicIdentityTermRule[] = [
+    {
+      term: "dock",
+      normalizedTerm: "dock",
+      kind: "reserved",
+      category: "reserved",
+      matchMode: "exact",
+      severity: 2,
+      isCore: true,
+      active: true,
+    },
+    {
+      term: "reef",
+      normalizedTerm: "reef",
+      kind: "blocked",
+      category: "synthetic",
+      matchMode: "word",
+      severity: 2,
+      isCore: true,
+      active: true,
+    },
+    {
+      term: "ember",
+      normalizedTerm: "ember",
+      kind: "blocked",
+      category: "synthetic",
+      matchMode: "substring",
+      severity: 2,
+      isCore: true,
+      active: true,
+    },
+    {
+      term: "cipher",
+      normalizedTerm: "cipher",
+      kind: "blocked",
+      category: "synthetic",
+      matchMode: "compact_substring",
+      severity: 3,
+      isCore: true,
+      active: true,
+    },
+  ];
+
+  for (const value of ["dock", "quiet reef captain", "emberly", "c1-ph-er"]) {
+    const result = evaluatePublicIdentity(value, "display_name", protectedRules);
+    assert.equal(result.allowed, false, `${value} should conflict with a protected rule`);
+    if (!result.allowed) assert.ok(result.matchedRule);
+  }
+
+  assert.equal(
+    evaluatePublicIdentity("harbor friend", "display_name", protectedRules).allowed,
+    true,
+  );
 });
 
 test("public identity rejects contact information with a generic reason", () => {

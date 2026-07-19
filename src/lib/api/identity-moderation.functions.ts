@@ -4,8 +4,11 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
+  evaluatePublicIdentity,
   normalizeIdentityForms,
   type PublicIdentityMatchMode,
+  type PublicIdentityTermRule,
+  type PublicIdentityTermKind,
 } from "@/lib/moderation/public-identity";
 
 type IdentityModerationTermRow = Database["public"]["Tables"]["identity_moderation_terms"]["Row"];
@@ -104,6 +107,20 @@ function normalizeTermForMatchMode(term: string, matchMode: PublicIdentityMatchM
     case "exact":
       return forms.trimmed;
   }
+}
+
+function mapIdentityModerationRule(row: IdentityModerationTermRow): PublicIdentityTermRule {
+  return {
+    id: row.id,
+    term: row.term,
+    normalizedTerm: row.normalized_term,
+    kind: row.kind as PublicIdentityTermKind,
+    category: row.category,
+    matchMode: row.match_mode as PublicIdentityMatchMode,
+    severity: row.severity,
+    isCore: row.is_core,
+    active: row.active,
+  };
 }
 
 export const checkPublicUsernameAvailability = createServerFn({ method: "POST" })
@@ -371,17 +388,21 @@ export const addIdentityModerationRule = createServerFn({ method: "POST" })
     if (!normalized) throw new Error("Moderation rule term must contain letters or numbers.");
     const db = await admin();
     if (data.kind === "allow") {
-      const { data: protectedRule, error: protectedRuleError } = await db
+      const { data: protectedRules, error: protectedRuleError } = await db
         .from("identity_moderation_terms")
-        .select("id")
+        .select("id,term,normalized_term,kind,category,match_mode,severity,is_core,active")
         .eq("active", true)
         .eq("is_core", true)
         .in("kind", ["blocked", "reserved"])
-        .eq("normalized_term", normalized)
-        .limit(1);
+        .returns<IdentityModerationTermRow[]>();
 
       if (protectedRuleError) throw new Error("Could not validate moderation rule.");
-      if ((protectedRule ?? []).length > 0) {
+      const protectedConflict = evaluatePublicIdentity(
+        data.term,
+        "display_name",
+        (protectedRules ?? []).map(mapIdentityModerationRule),
+      );
+      if (!protectedConflict.allowed && protectedConflict.matchedRule) {
         throw new Error("Allowlist entry conflicts with a protected core rule.");
       }
     }
@@ -476,6 +497,25 @@ export const rescanIdentityModerationProfiles = createServerFn({ method: "POST" 
             ? await evaluateUsernameOnServer(value)
             : await evaluateDisplayNameOnServer(value);
         if (result.allowed) continue;
+
+        let duplicateRequest = db
+          .from("identity_moderation_flags")
+          .select("id")
+          .eq("profile_id", profile.id)
+          .eq("field", field)
+          .eq("violation_code", result.code)
+          .in("status", ["open", "reviewed"])
+          .limit(1);
+
+        if (result.matchedRule?.id) {
+          duplicateRequest = duplicateRequest.eq("term_id", result.matchedRule.id);
+        } else {
+          duplicateRequest = duplicateRequest.is("term_id", null);
+        }
+
+        const { data: existingFlags, error: duplicateError } = await duplicateRequest;
+        if (duplicateError) throw new Error("Could not rescan identity moderation profiles.");
+        if ((existingFlags ?? []).length > 0) continue;
 
         const { error: insertError } = await db.from("identity_moderation_flags").insert({
           profile_id: profile.id,

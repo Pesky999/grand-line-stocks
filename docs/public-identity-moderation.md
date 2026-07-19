@@ -82,9 +82,11 @@ silently rewritten.
 Google/OAuth signup still works. If provider metadata cannot safely become a public username, the
 database trigger assigns a safe fallback handle.
 
-The precheck is advisory rather than a reservation. If another account claims the same handle before
-the auth trigger runs, `handle_new_user()` deliberately assigns a collision-safe suffixed handle or a
-neutral fallback instead of leaving an Auth user without a valid profile.
+The precheck is advisory rather than a reservation. Email signup rejects an explicitly unavailable
+username before profile creation. If a username becomes unavailable during a concurrent signup race,
+`handle_new_user()` retries bounded candidate allocation so the Auth user is not left without a
+valid profile. OAuth-derived unsafe identities use a neutral fallback instead of failing the account
+creation.
 
 Display names remain editable from the profile page, but the server validates every update before
 writing through the trusted path. User-facing errors stay generic.
@@ -116,7 +118,8 @@ Admins can use `/identity-moderation-admin` to:
 - rescan profiles after policy changes.
 
 The admin console route uses the existing admin check pattern. The reset RPC also checks the admin
-role server-side, so route protection is not the only guard.
+role server-side, so route protection is not the only guard. Reset requests that would leave the
+selected fields unchanged are rejected as no-ops and do not resolve flags or create action history.
 
 ## Deployment Notes
 

@@ -148,11 +148,27 @@ test("identity moderation server functions keep public precheck generic and admi
     "export const setIdentityModerationRuleActive",
   );
   assert.match(addRule, /if \(data\.kind === "allow"\)/);
+  assert.match(addRule, /evaluatePublicIdentity/);
+  assert.match(addRule, /mapIdentityModerationRule/);
+  assert.match(
+    addRule,
+    /\.select\("id,term,normalized_term,kind,category,match_mode,severity,is_core,active"\)/,
+  );
   assert.match(addRule, /\.eq\("is_core", true\)/);
   assert.match(addRule, /\.in\("kind", \["blocked", "reserved"\]\)/);
-  assert.match(addRule, /\.eq\("normalized_term", normalized\)/);
+  assert.doesNotMatch(addRule, /\.eq\("normalized_term", normalized\)/);
   assert.match(addRule, /Allowlist entry conflicts with a protected core rule/);
   assert.match(apiSource, /normalizeTermForMatchMode/);
+
+  const rescan = sourceBetween(
+    apiSource,
+    "export const rescanIdentityModerationProfiles",
+    "return { scanned: profiles?.length ?? 0, flagged, activeRules: rules.length }",
+  );
+  assert.match(rescan, /\.in\("status", \["open", "reviewed"\]\)/);
+  assert.match(rescan, /\.eq\("term_id", result\.matchedRule\.id\)/);
+  assert.match(rescan, /\.is\("term_id", null\)/);
+  assert.match(rescan, /if \(\(existingFlags \?\? \[\]\)\.length > 0\) continue/);
 
   for (const adminFunction of [
     "getIdentityModerationOverview",

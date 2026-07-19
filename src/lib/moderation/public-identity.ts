@@ -66,8 +66,7 @@ export const DISPLAY_NAME_MAX_LENGTH = 40;
 // eslint-disable-next-line no-control-regex
 const zeroWidthAndControl = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\ufeff]/g;
 const usernamePattern = /^[a-z0-9](?:[a-z0-9_]{1,18}[a-z0-9])$/;
-const displayNameAllowedPattern =
-  /^[\p{L}\p{N}\p{M}][\p{L}\p{N}\p{M}\p{Zs} .,'\u2019_!?&()[\]-]*$/u;
+const displayNameAllowedPattern = /^[\p{L}\p{N}\p{M}][\p{L}\p{N}\p{M}\p{Zs} .,'\u2019_!?&()-]*$/u;
 const urlPattern = /\b(?:https?:\/\/|www\.)\S+/i;
 const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const phonePattern = /(?:\+?\d[\s().-]*){7,}/;

@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS public.identity_moderation_actions (
 CREATE INDEX IF NOT EXISTS idx_identity_moderation_terms_active
   ON public.identity_moderation_terms (active, kind, match_mode, category);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_moderation_terms_active_unique
+  ON public.identity_moderation_terms (normalized_term, kind, match_mode)
+  WHERE active;
+
 CREATE INDEX IF NOT EXISTS idx_identity_moderation_flags_status
   ON public.identity_moderation_flags (status, created_at DESC);
 
@@ -571,18 +575,53 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
+  v_provider text;
   v_metadata_username text;
   v_email_prefix text;
   v_raw_username text;
   v_raw_display_name text;
+  v_candidate_base text;
   v_candidate text;
+  v_clean_display_name text;
   v_display_name text;
   v_allowed boolean;
+  v_attempt integer := 0;
 BEGIN
+  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = NEW.id) THEN
+    INSERT INTO public.user_wallets (user_id)
+    VALUES (NEW.id)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    RETURN NEW;
+  END IF;
+
+  v_provider := lower(coalesce(NEW.raw_app_meta_data ->> 'provider', 'email'));
   v_metadata_username := nullif(btrim(coalesce(NEW.raw_user_meta_data ->> 'username', '')), '');
   v_email_prefix := split_part(coalesce(NEW.email, ''), '@', 1);
 
-  IF v_metadata_username IS NOT NULL THEN
+  IF v_provider = 'email' THEN
+    IF v_metadata_username IS NULL THEN
+      RAISE EXCEPTION 'IDENTITY_USERNAME_REQUIRED' USING ERRCODE = 'P0001';
+    END IF;
+
+    SELECT allowed INTO v_allowed
+    FROM public.evaluate_public_identity(v_metadata_username, 'username')
+    LIMIT 1;
+
+    IF NOT coalesce(v_allowed, false) THEN
+      RAISE EXCEPTION 'IDENTITY_USERNAME_REJECTED' USING ERRCODE = 'P0001';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE username = v_metadata_username
+        AND id IS DISTINCT FROM NEW.id
+    ) THEN
+      RAISE EXCEPTION 'IDENTITY_USERNAME_UNAVAILABLE' USING ERRCODE = 'P0001';
+    END IF;
+
+    v_candidate_base := v_metadata_username;
+  ELSIF v_metadata_username IS NOT NULL THEN
     v_raw_username := v_metadata_username;
   ELSE
     v_raw_username := regexp_replace(public.identity_moderation_normalize(v_email_prefix), '[^a-z0-9]+', '_', 'g');
@@ -590,29 +629,48 @@ BEGIN
     v_raw_username := regexp_replace(v_raw_username, '^_+|_+$', '', 'g');
   END IF;
 
-  SELECT allowed INTO v_allowed
-  FROM public.evaluate_public_identity(v_raw_username, 'username')
-  LIMIT 1;
+  IF v_provider <> 'email' THEN
+    SELECT allowed INTO v_allowed
+    FROM public.evaluate_public_identity(v_raw_username, 'username')
+    LIMIT 1;
 
-  IF coalesce(v_allowed, false) THEN
-    v_candidate := public.identity_moderation_next_username(v_raw_username, NEW.id);
-  ELSE
-    v_candidate := public.identity_moderation_next_username('pirate_' || left(replace(NEW.id::text, '-', ''), 8), NEW.id);
+    IF coalesce(v_allowed, false) THEN
+      v_candidate_base := v_raw_username;
+    ELSE
+      v_candidate_base := 'pirate_' || left(replace(NEW.id::text, '-', ''), 8);
+    END IF;
   END IF;
 
-  v_raw_display_name := coalesce(NEW.raw_user_meta_data ->> 'display_name', v_candidate);
+  v_raw_display_name := coalesce(NEW.raw_user_meta_data ->> 'display_name', v_candidate_base);
   SELECT allowed INTO v_allowed
   FROM public.evaluate_public_identity(v_raw_display_name, 'display_name')
   LIMIT 1;
 
-  v_display_name := CASE
-    WHEN coalesce(v_allowed, false) THEN public.identity_moderation_clean_display(v_raw_display_name)
-    ELSE v_candidate
-  END;
+  IF coalesce(v_allowed, false) THEN
+    v_clean_display_name := public.identity_moderation_clean_display(v_raw_display_name);
+  END IF;
 
-  INSERT INTO public.profiles (id, username, display_name)
-  VALUES (NEW.id, v_candidate, v_display_name)
-  ON CONFLICT (id) DO NOTHING;
+  LOOP
+    v_attempt := v_attempt + 1;
+    IF v_attempt > 8 THEN
+      RAISE EXCEPTION 'IDENTITY_USERNAME_UNAVAILABLE' USING ERRCODE = 'P0001';
+    END IF;
+
+    v_candidate := public.identity_moderation_next_username(v_candidate_base, NEW.id);
+    v_display_name := coalesce(v_clean_display_name, v_candidate);
+
+    BEGIN
+      INSERT INTO public.profiles (id, username, display_name)
+      VALUES (NEW.id, v_candidate, v_display_name);
+
+      EXIT;
+    EXCEPTION
+      WHEN unique_violation THEN
+        IF EXISTS (SELECT 1 FROM public.profiles WHERE id = NEW.id) THEN
+          EXIT;
+        END IF;
+    END;
+  END LOOP;
 
   INSERT INTO public.user_wallets (user_id)
   VALUES (NEW.id)
@@ -637,8 +695,11 @@ DECLARE
   v_actor uuid := auth.uid();
   v_profile public.profiles%ROWTYPE;
   v_new_username text;
+  v_new_display_name text;
   v_old_username text;
   v_old_display_name text;
+  v_username_changed boolean;
+  v_display_name_changed boolean;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = 'P0001';
@@ -664,19 +725,28 @@ BEGIN
   v_old_username := v_profile.username;
   v_old_display_name := v_profile.display_name;
   v_new_username := v_profile.username;
-
-  PERFORM set_config('app.identity_moderation_username_override', 'admin_reset', true);
+  v_new_display_name := v_profile.display_name;
 
   IF _reset_username THEN
     v_new_username := public.identity_moderation_next_username('pirate_' || left(replace(_target_profile_id::text, '-', ''), 8), _target_profile_id);
   END IF;
 
+  IF _reset_display_name THEN
+    v_new_display_name := v_new_username;
+  END IF;
+
+  v_username_changed := coalesce(_reset_username, false) AND v_new_username IS DISTINCT FROM v_old_username;
+  v_display_name_changed := coalesce(_reset_display_name, false) AND v_new_display_name IS DISTINCT FROM v_old_display_name;
+
+  IF NOT v_username_changed AND NOT v_display_name_changed THEN
+    RAISE EXCEPTION 'IDENTITY_RESET_NO_CHANGE' USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM set_config('app.identity_moderation_username_override', 'admin_reset', true);
+
   UPDATE public.profiles
   SET username = v_new_username,
-      display_name = CASE
-        WHEN _reset_display_name THEN v_new_username
-        ELSE display_name
-      END
+      display_name = v_new_display_name
   WHERE id = _target_profile_id;
 
   UPDATE public.identity_moderation_flags
@@ -687,24 +757,24 @@ BEGIN
   WHERE profile_id = _target_profile_id
     AND status = 'open';
 
-  IF _reset_username THEN
+  IF v_username_changed THEN
     INSERT INTO public.identity_moderation_actions
       (profile_id, actor_user_id, action_type, field, previous_value, new_value, reason)
     VALUES
       (_target_profile_id, v_actor, 'admin_reset', 'username', v_old_username, v_new_username, coalesce(_reason, 'Admin reset public identity.'));
   END IF;
 
-  IF _reset_display_name THEN
+  IF v_display_name_changed THEN
     INSERT INTO public.identity_moderation_actions
       (profile_id, actor_user_id, action_type, field, previous_value, new_value, reason)
     VALUES
-      (_target_profile_id, v_actor, 'admin_reset', 'display_name', v_old_display_name, v_new_username, coalesce(_reason, 'Admin reset public identity.'));
+      (_target_profile_id, v_actor, 'admin_reset', 'display_name', v_old_display_name, v_new_display_name, coalesce(_reason, 'Admin reset public identity.'));
   END IF;
 
   RETURN jsonb_build_object(
     'profileId', _target_profile_id,
     'username', v_new_username,
-    'displayName', CASE WHEN _reset_display_name THEN v_new_username ELSE v_old_display_name END
+    'displayName', v_new_display_name
   );
 END;
 $$;

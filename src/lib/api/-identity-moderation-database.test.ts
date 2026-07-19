@@ -36,6 +36,10 @@ test("public identity moderation migration creates private moderation tables", (
 
   assert.match(migration, /severity integer NOT NULL CHECK \(severity BETWEEN 1 AND 4\)/);
   assert.match(typesSource, /severity: number/);
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_moderation_terms_active_unique\s+ON public\.identity_moderation_terms \(normalized_term, kind, match_mode\)\s+WHERE active/,
+  );
 });
 
 test("moderation policy supports expected categories and match modes without exposing a public list RPC", () => {
@@ -104,6 +108,8 @@ test("database normalization mirrors browser-side Unicode and contact checks", (
     /v_display_value text := public\.identity_moderation_clean_display\(v_value\)/,
   );
   assert.match(evaluateFunction, /translate\(v_display_value, chr\(8217\), ''''\)/);
+  assert.match(evaluateFunction, /\[\^\[:alnum:\]\[:space:\]\.,''_!\?&\(\) -\]/);
+  assert.doesNotMatch(evaluateFunction, /\[\^\[:alnum:\]\[:space:\]\.,''_!\?&\(\)\[\] -\]/);
   assert.match(
     migration,
     /REVOKE EXECUTE ON FUNCTION public\.identity_moderation_clean_display\(text\) FROM PUBLIC, anon, authenticated/,
@@ -154,6 +160,19 @@ test("handle_new_user preserves the wallet default and validates generated publi
 
   assert.match(
     signupFunction,
+    /v_provider := lower\(coalesce\(NEW\.raw_app_meta_data ->> 'provider', 'email'\)\)/,
+  );
+  assert.match(signupFunction, /IF v_provider = 'email' THEN/);
+  assert.match(signupFunction, /IDENTITY_USERNAME_REQUIRED/);
+  assert.match(signupFunction, /IDENTITY_USERNAME_REJECTED/);
+  assert.match(signupFunction, /IDENTITY_USERNAME_UNAVAILABLE/);
+  assert.match(
+    signupFunction,
+    /FROM public\.evaluate_public_identity\(v_metadata_username, 'username'\)/,
+  );
+  assert.match(signupFunction, /IF v_provider <> 'email' THEN/);
+  assert.match(
+    signupFunction,
     /FROM public\.evaluate_public_identity\(v_raw_username, 'username'\)/,
   );
   assert.match(signupFunction, /v_metadata_username := nullif\(btrim/);
@@ -166,7 +185,14 @@ test("handle_new_user preserves the wallet default and validates generated publi
     /regexp_replace\(public\.identity_moderation_normalize\(v_email_prefix\), '\[\^a-z0-9\]\+', '_', 'g'\)/,
   );
   assert.match(signupFunction, /'pirate_' \|\| left\(replace\(NEW\.id::text, '-', ''\), 8\)/);
+  assert.match(signupFunction, /LOOP[\s\S]*v_attempt := v_attempt \+ 1[\s\S]*IF v_attempt > 8/);
+  assert.match(signupFunction, /EXCEPTION\s+WHEN unique_violation THEN/);
+  assert.match(
+    signupFunction,
+    /IF EXISTS \(SELECT 1 FROM public\.profiles WHERE id = NEW\.id\) THEN/,
+  );
   assert.match(signupFunction, /INSERT INTO public\.profiles \(id, username, display_name\)/);
+  assert.doesNotMatch(signupFunction, /ON CONFLICT \(id\) DO NOTHING/);
   assert.match(signupFunction, /INSERT INTO public\.user_wallets \(user_id\)\s+VALUES \(NEW\.id\)/);
   assert.doesNotMatch(signupFunction, /berries\)/);
   assert.doesNotMatch(signupFunction, /\b10000\b|\b25000\b/);
@@ -213,10 +239,18 @@ test("admin reset RPC is security definer and keeps service-side admin verificat
     /set_config\('app\.identity_moderation_username_override', 'admin_reset', true\)/,
   );
   assert.match(resetFunction, /IDENTITY_RESET_SCOPE_REQUIRED/);
+  assert.match(resetFunction, /IDENTITY_RESET_NO_CHANGE/);
+  assert.match(resetFunction, /v_username_changed :=/);
+  assert.match(resetFunction, /v_display_name_changed :=/);
+  assert.ok(
+    resetFunction.indexOf("IDENTITY_RESET_NO_CHANGE") <
+      resetFunction.indexOf("set_config('app.identity_moderation_username_override'"),
+    "no-op resets should fail before enabling the transaction-local username override",
+  );
   assert.match(resetFunction, /UPDATE public\.identity_moderation_flags/);
   assert.match(resetFunction, /INSERT INTO public\.identity_moderation_actions/);
-  assert.match(resetFunction, /IF _reset_username THEN[\s\S]*'username'/);
-  assert.match(resetFunction, /IF _reset_display_name THEN[\s\S]*'display_name'/);
+  assert.match(resetFunction, /IF v_username_changed THEN[\s\S]*'username'/);
+  assert.match(resetFunction, /IF v_display_name_changed THEN[\s\S]*'display_name'/);
   assert.match(
     migration,
     /REVOKE EXECUTE ON FUNCTION public\.admin_reset_profile_identity\(uuid, boolean, boolean, text\) FROM PUBLIC, anon/,
