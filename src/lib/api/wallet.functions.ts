@@ -114,6 +114,10 @@ async function admin() {
   return supabaseAdmin;
 }
 
+async function identityPolicy() {
+  return await import("@/lib/moderation/public-identity.server");
+}
+
 export const getMe = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -166,14 +170,21 @@ export const getMe = createServerFn({ method: "GET" })
 
 export const updateProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ display_name: z.string().min(1).max(40) }).parse(d))
+  .inputValidator((d) => z.object({ display_name: z.string().min(1).max(80) }).parse(d))
   .handler(async ({ data, context }) => {
+    const displayName = data.display_name.trim();
+    const { evaluateDisplayNameOnServer } = await identityPolicy();
+    const evaluation = await evaluateDisplayNameOnServer(displayName);
+    if (!evaluation.allowed) {
+      throw new Error("That display name is not allowed.");
+    }
+
     const db = await admin();
     const { error } = await db
       .from("profiles")
-      .update({ display_name: data.display_name })
+      .update({ display_name: displayName })
       .eq("id", context.userId);
-    if (error) throw error;
+    if (error) throw new Error("That display name is not allowed.");
     return { ok: true };
   });
 

@@ -29,6 +29,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedPricingAdminRouteImport } from './routes/_authenticated/pricing-admin'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
 import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenticated/market-admin'
+import { Route as AuthenticatedIdentityModerationAdminRouteImport } from './routes/_authenticated/identity-moderation-admin'
 import { Route as AuthenticatedEventsAdminRouteImport } from './routes/_authenticated/events-admin'
 import { Route as AuthenticatedDailyCrewAdminRouteImport } from './routes/_authenticated/daily-crew-admin'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -134,6 +135,12 @@ const AuthenticatedMarketAdminRoute =
     path: '/market-admin',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedIdentityModerationAdminRoute =
+  AuthenticatedIdentityModerationAdminRouteImport.update({
+    id: '/identity-moderation-admin',
+    path: '/identity-moderation-admin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedEventsAdminRoute =
   AuthenticatedEventsAdminRouteImport.update({
     id: '/events-admin',
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
@@ -189,6 +197,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
@@ -215,6 +224,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/daily-crew-admin': typeof AuthenticatedDailyCrewAdminRoute
   '/_authenticated/events-admin': typeof AuthenticatedEventsAdminRoute
+  '/_authenticated/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/pricing-admin': typeof AuthenticatedPricingAdminRoute
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/daily-crew-admin'
     | '/events-admin'
+    | '/identity-moderation-admin'
     | '/market-admin'
     | '/portfolio'
     | '/pricing-admin'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/daily-crew-admin'
     | '/events-admin'
+    | '/identity-moderation-admin'
     | '/market-admin'
     | '/portfolio'
     | '/pricing-admin'
@@ -289,6 +301,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/daily-crew-admin'
     | '/_authenticated/events-admin'
+    | '/_authenticated/identity-moderation-admin'
     | '/_authenticated/market-admin'
     | '/_authenticated/portfolio'
     | '/_authenticated/pricing-admin'
@@ -458,6 +471,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMarketAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/identity-moderation-admin': {
+      id: '/_authenticated/identity-moderation-admin'
+      path: '/identity-moderation-admin'
+      fullPath: '/identity-moderation-admin'
+      preLoaderRoute: typeof AuthenticatedIdentityModerationAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/events-admin': {
       id: '/_authenticated/events-admin'
       path: '/events-admin'
@@ -486,6 +506,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedDailyCrewAdminRoute: typeof AuthenticatedDailyCrewAdminRoute
   AuthenticatedEventsAdminRoute: typeof AuthenticatedEventsAdminRoute
+  AuthenticatedIdentityModerationAdminRoute: typeof AuthenticatedIdentityModerationAdminRoute
   AuthenticatedMarketAdminRoute: typeof AuthenticatedMarketAdminRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
   AuthenticatedPricingAdminRoute: typeof AuthenticatedPricingAdminRoute
@@ -496,6 +517,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedDailyCrewAdminRoute: AuthenticatedDailyCrewAdminRoute,
   AuthenticatedEventsAdminRoute: AuthenticatedEventsAdminRoute,
+  AuthenticatedIdentityModerationAdminRoute:
+    AuthenticatedIdentityModerationAdminRoute,
   AuthenticatedMarketAdminRoute: AuthenticatedMarketAdminRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
   AuthenticatedPricingAdminRoute: AuthenticatedPricingAdminRoute,

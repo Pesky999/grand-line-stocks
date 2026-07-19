@@ -1664,6 +1664,174 @@ export type Database = {
           },
         ]
       }
+      identity_moderation_actions: {
+        Row: {
+          action_type: string
+          actor_user_id: string | null
+          created_at: string
+          field: string | null
+          id: string
+          new_value: string | null
+          previous_value: string | null
+          profile_id: string | null
+          reason: string | null
+          term_id: string | null
+        }
+        Insert: {
+          action_type: string
+          actor_user_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          profile_id?: string | null
+          reason?: string | null
+          term_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          actor_user_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          profile_id?: string | null
+          reason?: string | null
+          term_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_moderation_actions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "identity_moderation_actions_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "identity_moderation_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      identity_moderation_flags: {
+        Row: {
+          category: string
+          created_at: string
+          field: string
+          id: string
+          normalized_value: string
+          observed_value: string | null
+          profile_id: string
+          resolution_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          term_id: string | null
+          updated_at: string
+          violation_code: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          field: string
+          id?: string
+          normalized_value: string
+          observed_value?: string | null
+          profile_id: string
+          resolution_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          term_id?: string | null
+          updated_at?: string
+          violation_code: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          field?: string
+          id?: string
+          normalized_value?: string
+          observed_value?: string | null
+          profile_id?: string
+          resolution_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          term_id?: string | null
+          updated_at?: string
+          violation_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_moderation_flags_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "identity_moderation_flags_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "identity_moderation_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      identity_moderation_terms: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_core: boolean
+          kind: string
+          match_mode: string
+          normalized_term: string
+          notes: string | null
+          severity: number
+          term: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_core?: boolean
+          kind: string
+          match_mode: string
+          normalized_term: string
+          notes?: string | null
+          severity: number
+          term: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_core?: boolean
+          kind?: string
+          match_mode?: string
+          normalized_term?: string
+          notes?: string | null
+          severity?: number
+          term?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -2075,6 +2243,15 @@ export type Database = {
     Functions: {
       admin_bulk_import_daily_crew_builder_templates: {
         Args: { _templates: Json }
+        Returns: Json
+      }
+      admin_reset_profile_identity: {
+        Args: {
+          _reason?: string | null
+          _reset_display_name?: boolean
+          _reset_username?: boolean
+          _target_profile_id: string
+        }
         Returns: Json
       }
       admin_generate_daily_crew_rotation: {

@@ -90,6 +90,12 @@ function Admin() {
               >
                 → Daily Crew Mission Studio
               </Link>
+              <Link
+                to="/identity-moderation-admin"
+                className="inline-block border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-warn hover:text-warn"
+              >
+                {"->"} Identity Moderation
+              </Link>
             </div>
           </div>
         </div>

@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { TerminalShell } from "@/components/TerminalShell";
+import { checkPublicUsernameAvailability } from "@/lib/api/identity-moderation.functions";
+import { validateUsernameFormat } from "@/lib/moderation/public-identity";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -14,6 +16,10 @@ export const Route = createFileRoute("/auth")({
   }),
   component: AuthPage,
 });
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -34,12 +40,27 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
+        const normalizedUsername = username.trim();
+        const usernameFormat = validateUsernameFormat(normalizedUsername);
+        if (!usernameFormat.ok) {
+          toast.error(usernameFormat.message);
+          return;
+        }
+
+        const usernameCheck = await checkPublicUsernameAvailability({
+          data: { username: usernameFormat.value },
+        });
+        if (!usernameCheck.available) {
+          toast.error("That username is unavailable. Choose another.");
+          return;
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { username: username || email.split("@")[0] },
+            data: { username: usernameFormat.value },
           },
         });
         if (error) throw error;
@@ -64,22 +85,23 @@ function AuthPage() {
         toast.success("Welcome back, pirate.");
         navigate({ to: "/portfolio" });
       }
-    } catch (err: any) {
-      toast.error(err.message ?? "Auth failed");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Auth failed"));
     } finally {
       setBusy(false);
     }
   }
 
-
   async function handleGoogle() {
     setBusy(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-      if ((result as any).error) throw (result as any).error;
-      if (!(result as any).redirected) navigate({ to: "/portfolio" });
-    } catch (err: any) {
-      toast.error(err.message ?? "Google sign-in failed");
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+      });
+      if ("error" in result && result.error) throw result.error;
+      if (!("redirected" in result && result.redirected)) navigate({ to: "/portfolio" });
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Google sign-in failed"));
       setBusy(false);
     }
   }
@@ -90,7 +112,11 @@ function AuthPage() {
         <div className="terminal-panel">
           <div className="terminal-header flex items-center justify-between">
             <span>
-              {mode === "signin" ? "Sign In · Terminal" : mode === "signup" ? "Open Account" : "Reset Password"}
+              {mode === "signin"
+                ? "Sign In · Terminal"
+                : mode === "signup"
+                  ? "Open Account"
+                  : "Reset Password"}
             </span>
             {mode !== "forgot" && (
               <button
@@ -107,10 +133,18 @@ function AuthPage() {
               <Field label="Username">
                 <input
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  onChange={(e) => setUsername(e.target.value)}
                   placeholder="luffy_d"
+                  required
+                  minLength={3}
+                  maxLength={20}
+                  pattern="[a-z0-9](?:[a-z0-9_]{1,18}[a-z0-9])"
                   className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
                 />
+                <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">
+                  3-20 lowercase letters, numbers, and single underscores. Usernames cannot be
+                  changed after signup.
+                </span>
               </Field>
             )}
             <Field label="Email">
@@ -142,10 +176,10 @@ function AuthPage() {
               {busy
                 ? "…"
                 : mode === "signin"
-                ? "Sign In ▶"
-                : mode === "signup"
-                ? "Create Account ▶"
-                : "Send Reset Link ▶"}
+                  ? "Sign In ▶"
+                  : mode === "signup"
+                    ? "Create Account ▶"
+                    : "Send Reset Link ▶"}
             </button>
 
             {mode === "signin" && (
@@ -187,7 +221,9 @@ function AuthPage() {
           </form>
         </div>
         <p className="mt-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-          <Link to="/" className="hover:text-primary">← Back to market</Link>
+          <Link to="/" className="hover:text-primary">
+            ← Back to market
+          </Link>
         </p>
       </div>
     </TerminalShell>
@@ -197,7 +233,9 @@ function AuthPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="mb-1 block text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </span>
       {children}
     </label>
   );

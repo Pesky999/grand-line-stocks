@@ -10,6 +10,7 @@ import { useSignOut } from "@/hooks/useSignOut";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL } from "@/lib/legendary";
+import { validateDisplayNameFormat } from "@/lib/moderation/public-identity";
 import { formatShares } from "@/lib/trading/fractional-shares";
 import { toast } from "sonner";
 
@@ -68,9 +69,15 @@ function Profile() {
   const specialization = stats.specialization ?? "generalist";
 
   async function handleSave() {
+    const validation = validateDisplayNameFormat(displayName);
+    if (!validation.ok) {
+      toast.error(validation.message);
+      return;
+    }
+
     setSaving(true);
     try {
-      await updateProfile({ data: { display_name: displayName } });
+      await updateProfile({ data: { display_name: validation.value } });
       await invalidate();
       setEditing(false);
       toast.success("Profile updated.");
@@ -88,29 +95,40 @@ function Profile() {
           <div className="terminal-header">Trader Identity</div>
           <div className="grid gap-4 p-5 text-sm md:grid-cols-2">
             <Row label="Username">@{profile?.username}</Row>
+            <div className="text-[10px] leading-relaxed text-muted-foreground md:col-span-2">
+              Usernames are permanent public handles. If yours needs help, contact an admin.
+            </div>
             <Row label="Email">{data.email ?? "—"}</Row>
             <Row label="Display Name">
               {editing ? (
-                <div className="flex gap-2">
-                  <input
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder={profile?.display_name ?? ""}
-                    className="flex-1 border border-border bg-input px-2 py-1 tabular outline-none focus:border-primary"
-                  />
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="bg-primary px-3 py-1 text-[10px] uppercase tracking-widest text-primary-foreground disabled:opacity-40"
-                  >
-                    save
-                  </button>
-                  <button
-                    onClick={() => setEditing(false)}
-                    className="border border-border px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground"
-                  >
-                    x
-                  </button>
+                <div className="space-y-1">
+                  <div className="flex gap-2">
+                    <input
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder={profile?.display_name ?? ""}
+                      maxLength={40}
+                      className="flex-1 border border-border bg-input px-2 py-1 tabular outline-none focus:border-primary"
+                    />
+                    <button
+                      onClick={handleSave}
+                      disabled={
+                        saving || displayName.trim() === (profile?.display_name ?? "").trim()
+                      }
+                      className="bg-primary px-3 py-1 text-[10px] uppercase tracking-widest text-primary-foreground disabled:opacity-40"
+                    >
+                      save
+                    </button>
+                    <button
+                      onClick={() => setEditing(false)}
+                      className="border border-border px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground"
+                    >
+                      x
+                    </button>
+                  </div>
+                  <div className="text-[10px] leading-relaxed text-muted-foreground">
+                    Display names are public and must follow Berry Street identity rules.
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
