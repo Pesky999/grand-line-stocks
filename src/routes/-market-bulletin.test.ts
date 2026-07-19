@@ -11,6 +11,7 @@ const bulletinSource = read("src/routes/market-bulletin.tsx");
 const terminalShellSource = read("src/components/TerminalShell.tsx");
 const marketAdminSource = read("src/routes/_authenticated/market-admin.tsx");
 const livingMarketSource = read("src/lib/api/living-market.functions.ts");
+const homeSource = read("src/routes/index.tsx");
 const navSource = terminalShellSource.slice(
   terminalShellSource.indexOf("const NAV"),
   terminalShellSource.indexOf("export function TerminalShell"),
@@ -35,6 +36,23 @@ test("market bulletin route renders V2 public structure", () => {
     /function NewsSection|function EventsSection|function ReportsSection/,
   );
   assert.doesNotMatch(bulletinSource, /id="news"|id="events"|id="reports"/);
+});
+
+test("Market Snapshot labels the discussed report character accurately", () => {
+  const snapshotSource = sourceBetween(
+    bulletinSource,
+    "function MarketSnapshot",
+    "function SnapshotCell",
+  );
+
+  assert.match(snapshotSource, /label="Most discussed"/);
+  assert.doesNotMatch(snapshotSource, /label="Latest brief"/);
+});
+
+test("homepage uses public catalyst terminology", () => {
+  assert.match(homeSource, /Recent Catalysts/);
+  assert.match(homeSource, /No catalysts yet\./);
+  assert.doesNotMatch(homeSource, /Recent Events/);
 });
 
 test("separate News Events Reports panels and placeholders were removed", () => {

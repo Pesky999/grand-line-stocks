@@ -212,7 +212,7 @@ function MarketSnapshot({
         <SnapshotMover label="Top gainer" row={topGainer} bull />
         <SnapshotMover label="Top loser" row={topLoser} />
         <SnapshotCharacter label="Trending character" character={trending} />
-        <SnapshotCharacter label="Latest brief" character={latest?.discussed ?? null} />
+        <SnapshotCharacter label="Most discussed" character={latest?.discussed ?? null} />
       </div>
     </section>
   );

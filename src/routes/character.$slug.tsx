@@ -788,7 +788,7 @@ function CharacterPage() {
             <div className="terminal-header">Catalysts</div>
             <ul className="divide-y divide-border text-xs">
               {charEvents.length === 0 && (
-                <li className="px-3 py-3 text-muted-foreground">No events yet.</li>
+                <li className="px-3 py-3 text-muted-foreground">No catalysts yet.</li>
               )}
               {(charEvents as CharacterEventImpact[]).map((row, idx) => {
                 const e = row.market_events;

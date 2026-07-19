@@ -547,14 +547,14 @@ function Market() {
           </div>
           <div className="terminal-panel">
             <div className="terminal-header flex items-center justify-between">
-              <span>Recent Events</span>
+              <span>Recent Catalysts</span>
               <Link to="/events" className="text-muted-foreground hover:text-primary">
                 all →
               </Link>
             </div>
             <ul className="divide-y divide-border text-xs">
               {events.length === 0 && (
-                <li className="px-3 py-2 text-muted-foreground">No events yet.</li>
+                <li className="px-3 py-2 text-muted-foreground">No catalysts yet.</li>
               )}
               {events.map((e) => {
                 const impacts = e.market_event_impacts ?? [];

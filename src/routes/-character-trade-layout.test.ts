@@ -88,6 +88,17 @@ test("character intelligence displays non-price-moving Market Speculation", () =
   assert.doesNotMatch(intelligenceSource, /Active Rumors|market_rumors|pct_change|toFixed\(2\)%/);
 });
 
+test("character Catalysts panel uses catalyst empty-state language", () => {
+  const catalystsSource = sourceBetween(
+    renderedSource,
+    '<div className="terminal-header">Catalysts</div>',
+    '<div className="terminal-header">Top {c.name} Investors</div>',
+  );
+
+  assert.match(catalystsSource, /No catalysts yet\./);
+  assert.doesNotMatch(catalystsSource, /No events yet\./);
+});
+
 test("character page does not add quick trade or new API surface", () => {
   assert.doesNotMatch(characterSource, /Quick Trade|quickTrade|createServerFn|rpc\(/);
   assert.doesNotMatch(characterSource, /newTrade|quickBuy|quickSell/);
