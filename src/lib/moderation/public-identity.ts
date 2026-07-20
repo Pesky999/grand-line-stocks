@@ -18,6 +18,23 @@ export type PublicIdentityTermRule = {
   active?: boolean;
 };
 
+export const ACTIVE_IDENTITY_MODERATION_CATEGORIES = [
+  "common_profanity",
+  "severe_profanity",
+  "racial_ethnic_slur",
+  "religious_slur",
+  "nationality_slur",
+  "sex_gender_slur",
+  "sexual_orientation_slur",
+  "disability_slur",
+] as const;
+
+const activeIdentityModerationCategorySet = new Set<string>(ACTIVE_IDENTITY_MODERATION_CATEGORIES);
+
+export function isActiveIdentityModerationCategory(category: string) {
+  return activeIdentityModerationCategorySet.has(category);
+}
+
 export type PublicIdentityNormalizedForms = {
   original: string;
   nfkc: string;
@@ -68,9 +85,6 @@ export const DISPLAY_NAME_MAX_LENGTH = 40;
 const zeroWidthAndControl = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\ufeff]/g;
 const usernamePattern = /^[a-z0-9](?:[a-z0-9_]{1,18}[a-z0-9])$/;
 const displayNameAllowedPattern = /^[\p{L}\p{N}\p{M}][\p{L}\p{N}\p{M}\p{Zs} .,'\u2019_!?&()-]*$/u;
-const urlPattern = /\b(?:https?:\/\/|www\.)\S+/i;
-const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
-const phonePattern = /(?:\+?\d[\s().-]*){7,}/;
 const extremeRepeatedCharacterPattern = /(.)\1{9,}/u;
 
 const confusableCharacters: Record<string, string> = {
@@ -237,17 +251,12 @@ function normalizeRule(rule: PublicIdentityTermRule): PublicIdentityTermRule {
   return { ...rule, normalizedTerm };
 }
 
-function identityContainsContactInfo(value: string) {
-  const contactValue = String(value ?? "").normalize("NFKC");
-  return (
-    urlPattern.test(contactValue) ||
-    emailPattern.test(contactValue) ||
-    phonePattern.test(contactValue)
-  );
-}
-
 function matchesWord(source: string, term: string) {
   return source.split(" ").some((word) => word === term);
+}
+
+function isEnforcedBlockingRule(rule: PublicIdentityTermRule) {
+  return rule.kind === "blocked" && isActiveIdentityModerationCategory(rule.category);
 }
 
 function matchesRule(forms: PublicIdentityNormalizedForms, ruleInput: PublicIdentityTermRule) {
@@ -291,16 +300,6 @@ export function evaluatePublicIdentity(
   rules: readonly PublicIdentityTermRule[],
 ): PublicIdentityEvaluation {
   const normalized = normalizeIdentityForms(value);
-  if (identityContainsContactInfo(value)) {
-    return {
-      allowed: false,
-      code: "contact_info",
-      message: formatIdentityViolation("contact_info", field),
-      category: "contact_info",
-      normalized,
-    };
-  }
-
   const validation =
     field === "username" ? validateUsernameFormat(value) : validateDisplayNameFormat(value);
 
@@ -313,15 +312,14 @@ export function evaluatePublicIdentity(
   if (allowRule) return { allowed: true, normalized, matchedRule: allowRule };
 
   const matchedRule = activeRules.find(
-    (rule) => rule.kind !== "allow" && matchesRule(normalized, rule),
+    (rule) => isEnforcedBlockingRule(rule) && matchesRule(normalized, rule),
   );
 
   if (matchedRule) {
-    const code = matchedRule.kind === "reserved" ? "reserved" : "blocked";
     return {
       allowed: false,
-      code,
-      message: formatIdentityViolation(code, field),
+      code: "blocked",
+      message: formatIdentityViolation("blocked", field),
       category: matchedRule.category,
       matchedRule,
       normalized,

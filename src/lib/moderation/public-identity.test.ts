@@ -34,6 +34,14 @@ const rules: PublicIdentityTermRule[] = [
     severity: 3,
   },
   {
+    term: "reef",
+    normalizedTerm: "reef",
+    kind: "blocked",
+    category: "common_profanity",
+    matchMode: "compact_substring",
+    severity: 3,
+  },
+  {
     term: "classic",
     normalizedTerm: "classic",
     kind: "allow",
@@ -55,13 +63,12 @@ test("normalizes case, separators, leet characters, zero-width characters, and r
   assert.equal(forms.reducedCompact, "baadwoordii");
 });
 
-test("normalizes fullwidth input before contact-info detection", () => {
+test("normalizes fullwidth input without contact-info rejection", () => {
   const forms = normalizeIdentityForms("\uff57\uff57\uff57.example.com");
   const result = evaluatePublicIdentity("\uff57\uff57\uff57.example.com", "display_name", rules);
 
   assert.equal(forms.nfkc, "www.example.com");
-  assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.code, "contact_info");
+  assert.equal(result.allowed, true);
 });
 
 test("username format rejects uppercase, punctuation, spaces, doubled underscores, edge underscores, and excessive repeats", () => {
@@ -92,7 +99,7 @@ test("username moderation matching still catches digit obfuscation without chang
       term: "reef",
       normalizedTerm: "reef",
       kind: "blocked",
-      category: "synthetic",
+      category: "common_profanity",
       matchMode: "compact_substring",
       severity: 3,
       active: true,
@@ -104,7 +111,7 @@ test("username moderation matching still catches digit obfuscation without chang
   assert.equal(validateUsernameFormat("r33f_runner").ok, true);
   assert.equal(normalizeIdentityForms("r33f_runner").canonicalUsername, "r33f_runner");
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "synthetic");
+  if (!result.allowed) assert.equal(result.category, "common_profanity");
 });
 
 test("display name format accepts ordinary Unicode letters, combining marks, and typographic apostrophes", () => {
@@ -133,13 +140,23 @@ test("display name format removes unsafe invisible characters and rejects extrem
   assert.equal(validateDisplayNameFormat("Nami [Navigator]").ok, false);
 });
 
-test("reserved usernames are blocked by exact normalized identity", () => {
+test("reserved-looking usernames are no longer blocked by moderation", () => {
   const result = evaluatePublicIdentity("staff", "username", rules);
 
-  assert.equal(result.allowed, false);
-  if (!result.allowed) {
-    assert.equal(result.code, "reserved");
-    assert.equal(result.category, "reserved");
+  assert.equal(result.allowed, true);
+  for (const value of [
+    "admin",
+    "administrator",
+    "moderator",
+    "support",
+    "official",
+    "system",
+    "developer",
+    "owner",
+    "oda",
+    "berrystreet",
+  ]) {
+    assert.equal(evaluatePublicIdentity(value, "username", rules).allowed, true, value);
   }
 });
 
@@ -152,22 +169,22 @@ test("word rules block separated terms without overmatching inside unrelated wor
 });
 
 test("compact substring rules catch separator and leet evasions only when configured", () => {
-  const result = evaluatePublicIdentity("sp0-il-er", "display_name", rules);
+  const result = evaluatePublicIdentity("r33f runner", "display_name", rules);
 
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "harassment");
+  if (!result.allowed) assert.equal(result.category, "common_profanity");
 });
 
-test("compact substring rules catch limited homoglyph substitutions", () => {
-  const result = evaluatePublicIdentity("sp\u03bfi-ler", "display_name", rules);
+test("compact substring rules catch limited homoglyph substitutions for active categories", () => {
+  const result = evaluatePublicIdentity("r\u0435\u0435f runner", "display_name", rules);
 
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "harassment");
+  if (!result.allowed) assert.equal(result.category, "common_profanity");
 });
 
 test("allow rules apply only to complete normalized identities", () => {
   assert.equal(evaluatePublicIdentity("classic", "display_name", rules).allowed, true);
-  assert.equal(evaluatePublicIdentity("classic spoiler", "display_name", rules).allowed, false);
+  assert.equal(evaluatePublicIdentity("classic badword", "display_name", rules).allowed, false);
 });
 
 test("protected core rules can be evaluated before supplemental allowlist creation", () => {
@@ -186,7 +203,7 @@ test("protected core rules can be evaluated before supplemental allowlist creati
       term: "reef",
       normalizedTerm: "reef",
       kind: "blocked",
-      category: "synthetic",
+      category: "common_profanity",
       matchMode: "word",
       severity: 2,
       isCore: true,
@@ -196,7 +213,7 @@ test("protected core rules can be evaluated before supplemental allowlist creati
       term: "ember",
       normalizedTerm: "ember",
       kind: "blocked",
-      category: "synthetic",
+      category: "threat",
       matchMode: "substring",
       severity: 2,
       isCore: true,
@@ -206,7 +223,7 @@ test("protected core rules can be evaluated before supplemental allowlist creati
       term: "cipher",
       normalizedTerm: "cipher",
       kind: "blocked",
-      category: "synthetic",
+      category: "privacy_abuse",
       matchMode: "compact_substring",
       severity: 3,
       isCore: true,
@@ -214,11 +231,13 @@ test("protected core rules can be evaluated before supplemental allowlist creati
     },
   ];
 
-  for (const value of ["dock", "quiet reef captain", "emberly", "c1-ph-er"]) {
-    const result = evaluatePublicIdentity(value, "display_name", protectedRules);
-    assert.equal(result.allowed, false, `${value} should conflict with a protected rule`);
-    if (!result.allowed) assert.ok(result.matchedRule);
-  }
+  assert.equal(evaluatePublicIdentity("dock", "display_name", protectedRules).allowed, true);
+  assert.equal(evaluatePublicIdentity("emberly", "display_name", protectedRules).allowed, true);
+  assert.equal(evaluatePublicIdentity("c1-ph-er", "display_name", protectedRules).allowed, true);
+
+  const result = evaluatePublicIdentity("quiet reef captain", "display_name", protectedRules);
+  assert.equal(result.allowed, false, "approved profanity/slur categories should still block");
+  if (!result.allowed) assert.equal(result.category, "common_profanity");
 
   assert.equal(
     evaluatePublicIdentity("harbor friend", "display_name", protectedRules).allowed,
@@ -226,10 +245,60 @@ test("protected core rules can be evaluated before supplemental allowlist creati
   );
 });
 
-test("public identity rejects contact information with a generic reason", () => {
-  for (const value of ["captain@example.com", "www.example.com", "+1 (555) 123-4567"]) {
+test("contact-looking display names are not rejected by identity moderation alone", () => {
+  for (const value of ["www.example.com", "555 123-4567"]) {
     const result = evaluatePublicIdentity(value, "display_name", rules);
-    assert.equal(result.allowed, false, `${value} should fail`);
-    if (!result.allowed) assert.equal(result.code, "contact_info");
+    assert.equal(result.allowed, true, `${value} should be allowed by the narrowed policy`);
+  }
+});
+
+test("non-approved broad categories do not block unless independently approved", () => {
+  for (const category of [
+    "contact_info",
+    "threat",
+    "hate_group",
+    "harassment",
+    "privacy_abuse",
+    "sexual_profanity",
+  ]) {
+    const result = evaluatePublicIdentity("broadterm", "display_name", [
+      {
+        term: "broadterm",
+        normalizedTerm: "broadterm",
+        kind: "blocked",
+        category,
+        matchMode: "exact",
+        severity: 3,
+        active: true,
+      },
+    ]);
+    assert.equal(result.allowed, true, `${category} should not be enforced`);
+  }
+});
+
+test("approved profanity and slur categories remain enforceable", () => {
+  for (const category of [
+    "common_profanity",
+    "severe_profanity",
+    "racial_ethnic_slur",
+    "religious_slur",
+    "nationality_slur",
+    "sex_gender_slur",
+    "sexual_orientation_slur",
+    "disability_slur",
+  ]) {
+    const result = evaluatePublicIdentity("blockedterm", "display_name", [
+      {
+        term: "blockedterm",
+        normalizedTerm: "blockedterm",
+        kind: "blocked",
+        category,
+        matchMode: "exact",
+        severity: 3,
+        active: true,
+      },
+    ]);
+    assert.equal(result.allowed, false, `${category} should remain enforceable`);
+    if (!result.allowed) assert.equal(result.category, category);
   }
 });

@@ -47,10 +47,10 @@ test("public identity moderation migration creates private moderation tables", (
 test("moderation policy supports expected categories and match modes without exposing a public list RPC", () => {
   for (const category of [
     "reserved",
-    "contact_info",
     "threat",
     "hate_group",
     "common_profanity",
+    "severe_profanity",
     "harassment",
     "privacy_abuse",
     "racial_ethnic_slur",
@@ -112,7 +112,6 @@ test("database normalization mirrors browser-side Unicode and contact checks", (
     effectiveIdentitySql,
     /CREATE OR REPLACE FUNCTION public\.identity_moderation_clean_display/,
   );
-  assert.match(evaluateFunction, /v_contact_value text := normalize\(v_value, NFKC\)/);
   assert.match(
     evaluateFunction,
     /v_canonical text := public\.identity_username_canonical\(v_value\)/,
@@ -123,10 +122,7 @@ test("database normalization mirrors browser-side Unicode and contact checks", (
   assert.match(evaluateFunction, /IF v_canonical <> btrim\(v_value\)/);
   assert.match(evaluateFunction, /v_canonical !~ '\^\[a-z0-9\]/);
   assert.doesNotMatch(evaluateFunction, /v_normalized <> btrim\(v_value\)/);
-  assert.match(
-    evaluateFunction,
-    /v_contact_value ~\* '\(\^\|\[\^\[:alnum:\]_\]\)\(https\?:\/\/\|www\\\.\)'/,
-  );
+  assert.doesNotMatch(evaluateFunction, /v_contact_value|https\?:|www\\\.|contact_info/);
   assert.match(
     evaluateFunction,
     /v_display_value text := public\.identity_moderation_clean_display\(v_value\)/,
@@ -191,6 +187,8 @@ test("profile writes are moved behind triggers and trusted server paths", () => 
     triggerFunction,
     /IF TG_OP = 'INSERT' OR \(TG_OP = 'UPDATE' AND NEW\.username IS DISTINCT FROM OLD\.username\) THEN/,
   );
+  assert.match(triggerFunction, /IF v_override <> 'restore_incident' THEN/);
+  assert.doesNotMatch(triggerFunction, /identity_username_legacy_format_valid\(NEW\.username\)/);
   assert.match(
     triggerFunction,
     /IF NEW\.display_name IS NOT NULL AND v_override <> 'restore_incident' THEN/,
@@ -260,7 +258,7 @@ test("handle_new_user preserves the wallet default and validates generated publi
   );
 });
 
-test("hotfix disables automatic remediation and restores only unchanged incident replacements", () => {
+test("hotfix disables automatic remediation and restores exact incident-modified identities", () => {
   const restoreFunction = sourceBetween(
     hotfixMigration,
     "CREATE OR REPLACE FUNCTION public.restore_public_identity_remediation_incident()",
@@ -292,10 +290,20 @@ test("hotfix disables automatic remediation and restores only unchanged incident
     restoreFunction,
     /WHERE username = v_action\.previous_value[\s\S]*AND id IS DISTINCT FROM v_action\.profile_id/,
   );
-  assert.match(
+  assert.doesNotMatch(
     restoreFunction,
-    /NOT public\.identity_username_legacy_format_valid\(v_action\.previous_value\)/,
+    /identity_username_legacy_format_valid\(v_action\.previous_value\)/,
   );
+  assert.doesNotMatch(
+    restoreFunction,
+    /evaluate_public_identity\(v_action\.previous_value, 'username'\)/,
+  );
+  assert.doesNotMatch(
+    restoreFunction,
+    /evaluate_public_identity\(v_action\.previous_value, 'display_name'\)/,
+  );
+  assert.doesNotMatch(restoreFunction, /char_length\(v_action\.previous_value\)/);
+  assert.doesNotMatch(restoreFunction, /too_short|too_long|invalid_format/);
   assert.match(
     restoreFunction,
     /'Could not automatically restore July 19, 2026 username; manual review required\.'/,
@@ -307,16 +315,34 @@ test("hotfix disables automatic remediation and restores only unchanged incident
   );
   assert.match(
     restoreFunction,
-    /UPDATE public\.profiles[\s\S]*SET display_name = v_action\.previous_value[\s\S]*AND display_name = v_action\.new_value/,
+    /SET display_name = v_action\.previous_value[\s\S]*WHERE id = v_action\.profile_id[\s\S]*AND display_name = v_action\.new_value/,
   );
-  assert.match(restoreFunction, /action_type = 'admin_reset'[\s\S]*field = 'display_name'/);
+  assert.match(restoreFunction, /explicitDisplayNameCandidates[\s\S]*derivedDisplayNameCandidates/);
+  assert.match(
+    restoreFunction,
+    /explicit_display_action\.action_type = 'auto_remediate'[\s\S]*explicit_display_action\.field = 'display_name'/,
+  );
+  assert.match(
+    restoreFunction,
+    /v_derived_reason text := 'Restored display identity changed as a side effect/,
+  );
+  assert.match(
+    restoreFunction,
+    /later_action\.action_type IN \('admin_reset', 'incident_restore'\)/,
+  );
+  assert.match(restoreFunction, /field = 'username'[\s\S]*later_action\.action_type IN/);
+  assert.match(restoreFunction, /field = 'display_name'[\s\S]*later_action\.action_type IN/);
   assert.match(
     restoreFunction,
     /'Restored identity changed by the July 19, 2026 automatic-remediation incident\.'/,
   );
   assert.match(
     restoreFunction,
-    /jsonb_build_object\([\s\S]*'usernameCandidates'[\s\S]*'skippedBecauseChangedLater'/,
+    /'Restored display identity changed as a side effect of the July 19, 2026 username-remediation incident\.'/,
+  );
+  assert.match(
+    restoreFunction,
+    /jsonb_build_object\([\s\S]*'usernameCandidates'[\s\S]*'explicitDisplayNameCandidates'[\s\S]*'derivedDisplayNamesRestored'[\s\S]*'skippedBecauseChangedLater'/,
   );
   assert.match(
     hotfixMigration,
@@ -335,6 +361,50 @@ test("hotfix disables automatic remediation and restores only unchanged incident
     hotfixMigration,
     /DELETE FROM public\.profiles|TRUNCATE public\.profiles|DROP TABLE public\.profiles/,
   );
+});
+
+test("hotfix narrows active enforcement to approved profanity and slur categories", () => {
+  const evaluateFunction = sourceBetween(
+    hotfixMigration,
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+    "CREATE OR REPLACE FUNCTION public.identity_moderation_next_username",
+  );
+
+  assert.match(evaluateFunction, /AND kind = 'blocked'/);
+  for (const category of [
+    "common_profanity",
+    "severe_profanity",
+    "racial_ethnic_slur",
+    "religious_slur",
+    "nationality_slur",
+    "sex_gender_slur",
+    "sexual_orientation_slur",
+    "disability_slur",
+  ]) {
+    assert.match(evaluateFunction, new RegExp(`'${category}'`));
+  }
+
+  assert.doesNotMatch(evaluateFunction, /kind IN \('blocked', 'reserved'\)/);
+  assert.doesNotMatch(evaluateFunction, /CASE WHEN v_rule\.kind = 'reserved'/);
+  assert.match(
+    hotfixMigration,
+    /UPDATE public\.identity_moderation_terms[\s\S]*SET active = false[\s\S]*kind IN \('blocked', 'reserved'\)/,
+  );
+  for (const category of [
+    "reserved",
+    "contact_info",
+    "threat",
+    "hate_group",
+    "harassment",
+    "privacy_abuse",
+    "sexual_profanity",
+  ]) {
+    assert.doesNotMatch(
+      evaluateFunction,
+      new RegExp(`'${category}'`),
+      `${category} should not be in the active enforcement predicate`,
+    );
+  }
 });
 
 test("admin reset RPC is security definer and keeps service-side admin verification", () => {

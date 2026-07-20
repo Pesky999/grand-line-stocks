@@ -164,9 +164,13 @@ test("identity moderation server functions keep public precheck generic and admi
     /\.select\("id,term,normalized_term,kind,category,match_mode,severity,is_core,active"\)/,
   );
   assert.match(addRule, /\.eq\("is_core", true\)/);
-  assert.match(addRule, /\.in\("kind", \["blocked", "reserved"\]\)/);
+  assert.match(addRule, /\.eq\("kind", "blocked"\)/);
+  assert.match(addRule, /\.in\("category", \[\.\.\.ACTIVE_IDENTITY_MODERATION_CATEGORIES\]\)/);
   assert.doesNotMatch(addRule, /\.eq\("normalized_term", normalized\)/);
   assert.match(addRule, /Allowlist entry conflicts with a protected core rule/);
+  assert.match(apiSource, /function isAllowedSupplementalRule/);
+  assert.match(apiSource, /data\.kind === "blocked" && isActiveIdentityModerationCategory/);
+  assert.match(apiSource, /Only profanity and slur categories can be enforced\./);
   assert.match(apiSource, /normalizeTermForMatchMode/);
   assert.match(apiSource, /case "exact":[\s\S]*return forms\.leetNormalized/);
 

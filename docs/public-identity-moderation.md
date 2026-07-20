@@ -5,15 +5,15 @@ Berry Street public identity is made of two profile fields:
 - `username`: permanent public handle used in profile URLs and mentions.
 - `display_name`: editable public label shown on profile surfaces.
 
-This package moves public identity writes behind shared moderation policy and adds an admin
-moderation console for review and remediation.
+This package moves public identity writes behind a narrow profanity-and-slur policy and adds an
+admin moderation console for review and controlled resets.
 
 ## Threat Model
 
-The moderation layer is aimed at public identity abuse, not account punishment. It blocks public
-handles and display names that attempt profanity, hate language, sexualized terms, staff
-impersonation, URLs, contact details, or deliberate obfuscation. It also protects older clients and
-direct API/database attempts by enforcing the same rules in the database.
+The moderation layer is not a general identity trust-and-safety system. It blocks only approved
+profanity and slur categories when a new username is selected or a display name is changed in the
+future. Existing accounts are grandfathered, never automatically renamed, and may be flagged for
+administrator review instead of mutated.
 
 ## Architecture
 
@@ -23,11 +23,12 @@ direct API/database attempts by enforcing the same rules in the database.
   `src/lib/api/identity-moderation.functions.ts`.
 - The admin console route is `/identity-moderation-admin`.
 - Database safeguards are defined by
-  `supabase/migrations/20260719040000_public_identity_moderation.sql`.
+  `supabase/migrations/20260719040000_public_identity_moderation.sql`, then corrected by
+  `supabase/migrations/20260720020000_restore_profile_identities.sql`.
 
 The browser utility validates public format and returns generic messages. It does not ship the
-database policy list. Active moderation terms are private database rows loaded only on trusted
-server paths.
+private production lexicon. Active moderation terms are private database rows loaded only on trusted
+server paths, and the enforcement path honors only approved profanity/slur categories.
 
 The public username availability precheck returns only `{ available }`. It does not return the
 normalized handle, matched category, rule ID, severity, or rejection reason.
@@ -45,7 +46,12 @@ The root cause was mixing two separate concepts:
   lookalike characters to private blocked or reserved terms.
 
 Digits are valid username characters. They are used for moderation comparisons only when looking for
-obfuscated abuse, and they must never be rewritten into letters for the stored username.
+obfuscated profanity or slurs, and they must never be rewritten into letters for the stored username.
+
+The same incident also changed `display_name` as a side effect of username remediation when the
+display name was empty or equal to the original username. That side effect did not always produce a
+separate display-name audit action, so the restoration hotfix repairs both explicit display-name
+actions and username-derived display-name side effects.
 
 ## Public Identity Policy
 
@@ -54,8 +60,13 @@ letter or number, cannot use consecutive underscores, and cannot change after ac
 through the admin reset workflow.
 
 Display names are trimmed to 1-40 characters. They allow ordinary letters, numbers, spaces, and
-common punctuation, while rejecting invisible/control characters, contact details, extreme repeated
-characters, and private policy matches.
+common punctuation, while rejecting invisible/control characters, extreme repeated characters, and
+approved profanity/slur policy matches.
+
+Reserved-name filtering, contact-information filtering, broad threat terms, harassment terms,
+privacy-abuse terms, hate-group branding terms, and sexual-content-only categories are disabled by
+the hotfix. Rows are kept for audit history, but inactive or non-approved categories do not block the
+current enforcement path.
 
 Public rejection messages stay generic. They never reveal which rule, category, or term matched.
 
@@ -85,13 +96,23 @@ The migration also:
 - makes usernames immutable except for trusted remediation paths;
 - removes direct authenticated profile insert/update access;
 - preserves public `profiles` reads;
-- flags existing questionable profiles for admin review without changing their identities;
+- keeps rescans flag-only without changing existing identities;
 - exposes an admin reset RPC that performs its own admin-role check.
 
 The hotfix migration
 `supabase/migrations/20260720020000_restore_profile_identities.sql` corrects the canonical versus
 moderation split, disables the mutating automatic remediation function, and restores identities that
 were changed by the July 19 incident when the profile still contains the incident-generated value.
+It also deactivates non-approved blocked/reserved categories and makes the evaluator enforce only:
+
+- `common_profanity`
+- `severe_profanity`
+- `racial_ethnic_slur`
+- `religious_slur`
+- `nationality_slur`
+- `sex_gender_slur`
+- `sexual_orientation_slur`
+- `disability_slur`
 
 The latest signup side effects are preserved: profile creation still occurs in `handle_new_user()`,
 and wallet creation still inserts only `user_id`, so the current database default supplies the
@@ -103,8 +124,9 @@ Email/password signup now requires a username. The UI validates basic format and
 precheck before creating the account. Invalid usernames are rejected as submitted instead of being
 silently rewritten.
 
-Google/OAuth signup still works. If provider metadata cannot safely become a public username, the
-database trigger assigns a safe fallback handle.
+Google/OAuth signup still works. If provider metadata cannot safely become a public username because
+it is malformed, duplicated, or matches the active profanity/slur policy, the database trigger
+assigns a safe fallback handle. Legitimate provider-derived digits are preserved.
 
 The precheck is advisory rather than a reservation. Email signup rejects an explicitly unavailable
 username before profile creation. If a username becomes unavailable during a concurrent signup race,
@@ -119,13 +141,15 @@ generic.
 
 ## Core And Supplemental Rules
 
-The migration seeds a private core English policy across reserved names, contact-info markers,
-threats, hate-group identity branding, profanity, harassment, privacy abuse, slur categories, and
-sexual profanity. The complete term list intentionally stays out of browser bundles and docs.
+The original migration seeded a private core English policy across broader categories. The hotfix
+narrows active enforcement to approved profanity and slur categories only. Reserved names,
+contact-info markers, threat, hate-group, harassment, privacy-abuse, and sexual-content-only rows are
+left in the private tables for history but deactivated or ignored by the enforcement predicate.
 
-Admins can add supplemental blocked, reserved, or allowlist entries. Core rules cannot be deactivated
-from the admin UI. Allowlist rules apply only to a complete normalized identity; they do not globally
-allow prohibited substrings inside arbitrary names.
+Admins can add supplemental allowlist entries and supplemental blocked entries only for approved
+profanity/slur categories. Core rules cannot be deactivated from the admin UI. Allowlist rules apply
+only to a complete normalized identity; they do not globally allow prohibited substrings inside
+arbitrary names.
 
 The admin UI can display supplemental rules and non-blocked core/reserved entries for operations, but
 it does not list the protected core blocked lexicon by default. Supplemental allowlist entries are
@@ -149,22 +173,41 @@ selected fields unchanged are rejected as no-ops and do not resolve flags or cre
 
 Rescans are non-mutating. A rescan can create open review flags and skips duplicate active findings,
 but it must never change a username or display name. Controlled admin resets continue to validate
-the replacement value under the current policy.
+the replacement value under the current new-identity policy.
 
 ## Incident Restoration
 
 The restoration migration uses `identity_moderation_actions` audit history as its source of truth.
-It considers the earliest July 19 `auto_remediate` action for each affected profile and field. It
-restores an original value only when the current profile value still equals the recorded
+It considers the earliest July 19 `auto_remediate` action for each affected profile and field. The
+audit row's `previous_value` is the exact pre-incident identity and the row's `new_value` is the
 incident-generated replacement.
 
-Username restoration is skipped when the original username is now owned by another profile or no
-longer matches the corrected legacy username format. Display-name restoration is skipped when a
-later administrator display-name reset exists. Skipped or conflicted rows remain unchanged and are
-recorded for manual review without exposing original names through public APIs.
+Username restoration writes the exact audit-sourced `previous_value` back only when the current
+username still equals the generated `new_value`, no later username admin reset or successful
+incident restoration supersedes the action, and no other profile currently owns the exact original
+username. The restore path does not lowercase, trim, shorten, sanitize, run current moderation, or
+apply the 3-20-character new-account format policy to historical usernames.
 
-Successful restorations add `incident_restore` action history. The original incident actions and
-flags are preserved for auditability.
+Display-name restoration has two sources:
+
+- explicit display-name `auto_remediate` actions;
+- derived display-name side effects from username remediation, when the current display name still
+  equals the generated username and no explicit display-name action is responsible for the field.
+
+Explicit display-name actions take precedence over derived side-effect restoration. The historical
+audit value is restored exactly. Later administrator resets and later successful incident
+restorations supersede automatic restoration. If another profile currently owns a historical
+username, the restore leaves both profiles unchanged and records a private conflict for manual
+administrator review.
+
+The incident audit history is preserved. Successful restorations add `incident_restore` action
+history. Conflicts add `incident_restore_conflict` action history. The original incident actions and
+flags are not deleted or rewritten.
+
+One limitation is unavoidable: when username remediation changed a `NULL` display name or a display
+name equal to the original username, the audit row does not distinguish those two historical states.
+Restoring the original username as the visible display identity recovers the public-facing identity
+in either case.
 
 ## Deployment Notes
 
@@ -175,8 +218,8 @@ production migration process after review. Recommended order:
 2. Apply the public identity migration if it has not already been applied.
 3. Apply the restoration hotfix migration once.
 4. Refresh PostgREST schema cache through the included notification.
-5. Smoke-test digit-bearing signup, display-name edit on a grandfathered profile, public profile
-   reads, and the admin reset RPC.
+5. Smoke-test digit-bearing signup, reserved-looking signup, contact-looking display names,
+   display-name edit on a grandfathered profile, public profile reads, and the admin reset RPC.
 
 After applying, verify:
 
@@ -186,13 +229,16 @@ After applying, verify:
 - admin reset works only for admins;
 - moderation tables remain private.
 - the mutating automatic remediation function is absent;
-- restoration action counts match restored identity counts.
+- active blocked/reserved rows outside approved profanity/slur categories are inactive;
+- restoration action counts match restored identity counts;
+- unresolved restore candidates have private conflict actions.
 
 Read-only verification query outline:
 
 ```sql
 select
   to_regprocedure('public.identity_username_canonical(text)') is not null as canonical_exists,
+  (select allowed from public.evaluate_public_identity('wesley123', 'username') limit 1) as digit_username_allowed,
   exists (
     select 1
     from pg_trigger
@@ -200,7 +246,56 @@ select
   ) as profile_trigger_exists,
   to_regprocedure('public.remediate_existing_public_identities()') is null as auto_remediation_absent,
   has_function_privilege('anon', 'public.restore_public_identity_remediation_incident()', 'execute') as anon_can_restore,
-  has_function_privilege('authenticated', 'public.restore_public_identity_remediation_incident()', 'execute') as authenticated_can_restore;
+  has_function_privilege('authenticated', 'public.restore_public_identity_remediation_incident()', 'execute') as authenticated_can_restore,
+  has_function_privilege('service_role', 'public.restore_public_identity_remediation_incident()', 'execute') as service_role_can_restore,
+  not exists (
+    select 1
+    from public.identity_moderation_terms
+    where active
+      and kind in ('blocked', 'reserved')
+      and (
+        kind = 'reserved'
+        or category not in (
+          'common_profanity',
+          'severe_profanity',
+          'racial_ethnic_slur',
+          'religious_slur',
+          'nationality_slur',
+          'sex_gender_slur',
+          'sexual_orientation_slur',
+          'disability_slur'
+        )
+      )
+  ) as non_approved_categories_inactive,
+  exists (
+    select 1
+    from public.identity_moderation_terms
+    where active
+      and kind = 'blocked'
+      and category in (
+        'common_profanity',
+        'severe_profanity',
+        'racial_ethnic_slur',
+        'religious_slur',
+        'nationality_slur',
+        'sex_gender_slur',
+        'sexual_orientation_slur',
+        'disability_slur'
+      )
+  ) as approved_categories_active,
+  not has_table_privilege('authenticated', 'public.profiles', 'insert') as authenticated_profile_insert_revoked,
+  not has_table_privilege('authenticated', 'public.profiles', 'update') as authenticated_profile_update_revoked,
+  has_table_privilege('anon', 'public.profiles', 'select') as public_profile_reads_available,
+  (
+    select count(*)
+    from public.identity_moderation_actions
+    where action_type = 'incident_restore'
+  ) as incident_restore_actions,
+  (
+    select count(*)
+    from public.identity_moderation_actions
+    where action_type = 'incident_restore_conflict'
+  ) as incident_restore_conflicts;
 ```
 
 Conflict inspection should be performed only by an administrator with direct access to private

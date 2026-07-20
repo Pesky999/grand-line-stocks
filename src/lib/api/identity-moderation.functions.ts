@@ -4,7 +4,9 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
+  ACTIVE_IDENTITY_MODERATION_CATEGORIES,
   evaluatePublicIdentity,
+  isActiveIdentityModerationCategory,
   normalizeIdentityForms,
   type PublicIdentityMatchMode,
   type PublicIdentityTermRule,
@@ -121,6 +123,13 @@ function mapIdentityModerationRule(row: IdentityModerationTermRow): PublicIdenti
     isCore: row.is_core,
     active: row.active,
   };
+}
+
+function isAllowedSupplementalRule(data: { kind: string; category: string }) {
+  return (
+    data.kind === "allow" ||
+    (data.kind === "blocked" && isActiveIdentityModerationCategory(data.category.trim()))
+  );
 }
 
 export const checkPublicUsernameAvailability = createServerFn({ method: "POST" })
@@ -393,7 +402,8 @@ export const addIdentityModerationRule = createServerFn({ method: "POST" })
         .select("id,term,normalized_term,kind,category,match_mode,severity,is_core,active")
         .eq("active", true)
         .eq("is_core", true)
-        .in("kind", ["blocked", "reserved"])
+        .eq("kind", "blocked")
+        .in("category", [...ACTIVE_IDENTITY_MODERATION_CATEGORIES])
         .returns<IdentityModerationTermRow[]>();
 
       if (protectedRuleError) throw new Error("Could not validate moderation rule.");
@@ -405,6 +415,10 @@ export const addIdentityModerationRule = createServerFn({ method: "POST" })
       if (!protectedConflict.allowed && protectedConflict.matchedRule) {
         throw new Error("Allowlist entry conflicts with a protected core rule.");
       }
+    }
+
+    if (!isAllowedSupplementalRule(data)) {
+      throw new Error("Only profanity and slur categories can be enforced.");
     }
 
     const { data: inserted, error } = await db
@@ -445,13 +459,16 @@ export const setIdentityModerationRuleActive = createServerFn({ method: "POST" }
     const db = await admin();
     const { data: rule, error: ruleError } = await db
       .from("identity_moderation_terms")
-      .select("id,is_core")
+      .select("id,is_core,kind,category")
       .eq("id", data.termId)
       .maybeSingle();
 
     if (ruleError) throw new Error("Could not update moderation rule.");
     if (!rule) throw new Error("Moderation rule not found.");
     if (rule.is_core) throw new Error("Core moderation rules cannot be changed here.");
+    if (data.active && !isAllowedSupplementalRule(rule)) {
+      throw new Error("Only profanity and slur categories can be enforced.");
+    }
 
     const { error } = await db
       .from("identity_moderation_terms")

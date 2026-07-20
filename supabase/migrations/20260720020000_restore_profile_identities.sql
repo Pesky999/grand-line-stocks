@@ -117,19 +117,11 @@ DECLARE
   v_compact text := public.identity_moderation_compact(v_value);
   v_reduced text := public.identity_moderation_reduce_repeats(v_words);
   v_reduced_compact text := regexp_replace(public.identity_moderation_reduce_repeats(v_compact), '[^[:alnum:]]+', '', 'g');
-  v_contact_value text := normalize(v_value, NFKC);
   v_display_value text := public.identity_moderation_clean_display(v_value);
   v_rule public.identity_moderation_terms%ROWTYPE;
 BEGIN
   IF _field NOT IN ('username', 'display_name') THEN
     RETURN QUERY SELECT false, 'invalid_format'::text, 'format'::text, NULL::uuid;
-    RETURN;
-  END IF;
-
-  IF v_contact_value ~* '(^|[^[:alnum:]_])(https?://|www\.)'
-     OR v_contact_value ~* '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}'
-     OR v_contact_value ~ '(\+?[0-9][[:space:]().-]*){7,}' THEN
-    RETURN QUERY SELECT false, 'contact_info'::text, 'contact_info'::text, NULL::uuid;
     RETURN;
   END IF;
 
@@ -200,7 +192,17 @@ BEGIN
   INTO v_rule
   FROM public.identity_moderation_terms
   WHERE active
-    AND kind IN ('blocked', 'reserved')
+    AND kind = 'blocked'
+    AND category IN (
+      'common_profanity',
+      'severe_profanity',
+      'racial_ethnic_slur',
+      'religious_slur',
+      'nationality_slur',
+      'sex_gender_slur',
+      'sexual_orientation_slur',
+      'disability_slur'
+    )
     AND (
       (match_mode = 'exact' AND normalized_term IN (v_normalized, v_words, v_compact))
       OR (match_mode = 'word' AND normalized_term = ANY (regexp_split_to_array(v_words, '[[:space:]]+')))
@@ -213,7 +215,7 @@ BEGIN
   IF FOUND THEN
     RETURN QUERY SELECT
       false,
-      CASE WHEN v_rule.kind = 'reserved' THEN 'reserved' ELSE 'blocked' END,
+      'blocked'::text,
       v_rule.category,
       v_rule.id;
     RETURN;
@@ -299,11 +301,7 @@ BEGIN
   END IF;
 
   IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.username IS DISTINCT FROM OLD.username) THEN
-    IF v_override = 'restore_incident' THEN
-      IF NOT public.identity_username_legacy_format_valid(NEW.username) THEN
-        RAISE EXCEPTION 'IDENTITY_USERNAME_REJECTED' USING ERRCODE = 'P0001', DETAIL = 'invalid_format', HINT = 'format';
-      END IF;
-    ELSE
+    IF v_override <> 'restore_incident' THEN
       SELECT allowed, violation_code, category
       INTO v_allowed, v_code, v_category
       FROM public.evaluate_public_identity(NEW.username, 'username')
@@ -447,6 +445,25 @@ BEGIN
 END;
 $$;
 
+UPDATE public.identity_moderation_terms
+SET active = false,
+    updated_at = now()
+WHERE active
+  AND kind IN ('blocked', 'reserved')
+  AND (
+    kind = 'reserved'
+    OR category NOT IN (
+      'common_profanity',
+      'severe_profanity',
+      'racial_ethnic_slur',
+      'religious_slur',
+      'nationality_slur',
+      'sex_gender_slur',
+      'sexual_orientation_slur',
+      'disability_slur'
+    )
+  );
+
 CREATE OR REPLACE FUNCTION public.restore_public_identity_remediation_incident()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -459,11 +476,14 @@ DECLARE
   v_username_candidates integer := 0;
   v_usernames_restored integer := 0;
   v_username_conflicts integer := 0;
-  v_display_name_candidates integer := 0;
-  v_display_names_restored integer := 0;
+  v_explicit_display_name_candidates integer := 0;
+  v_explicit_display_names_restored integer := 0;
+  v_derived_display_name_candidates integer := 0;
+  v_derived_display_names_restored integer := 0;
   v_display_name_conflicts integer := 0;
   v_skipped_changed_later integer := 0;
   v_reason text := 'Restored identity changed by the July 19, 2026 automatic-remediation incident.';
+  v_derived_reason text := 'Restored display identity changed as a side effect of the July 19, 2026 username-remediation incident.';
 BEGIN
   PERFORM set_config('app.identity_moderation_username_override', 'restore_incident', true);
 
@@ -477,24 +497,53 @@ BEGIN
       AND new_value IS NOT NULL
     ORDER BY profile_id, field, created_at ASC, id ASC
   LOOP
-    v_username_candidates := v_username_candidates + 1;
-
     SELECT * INTO v_profile
     FROM public.profiles
     WHERE id = v_action.profile_id
     FOR UPDATE;
 
     IF NOT FOUND OR v_profile.username IS DISTINCT FROM v_action.new_value THEN
+      CONTINUE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.identity_moderation_actions existing
+      WHERE existing.profile_id = v_action.profile_id
+        AND existing.action_type = 'incident_restore_conflict'
+        AND existing.field = 'username'
+        AND existing.previous_value = v_action.new_value
+        AND existing.new_value = v_action.previous_value
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.identity_moderation_actions later_action
+      WHERE later_action.profile_id = v_action.profile_id
+        AND later_action.field = 'username'
+        AND later_action.action_type IN ('admin_reset', 'incident_restore')
+        AND (
+          later_action.created_at > v_action.created_at
+          OR (
+            later_action.created_at = v_action.created_at
+            AND later_action.id::text > v_action.id::text
+          )
+        )
+    ) THEN
       v_skipped_changed_later := v_skipped_changed_later + 1;
       CONTINUE;
     END IF;
+
+    v_username_candidates := v_username_candidates + 1;
 
     IF EXISTS (
       SELECT 1
       FROM public.profiles
       WHERE username = v_action.previous_value
         AND id IS DISTINCT FROM v_action.profile_id
-    ) OR NOT public.identity_username_legacy_format_valid(v_action.previous_value) THEN
+    ) THEN
       v_username_conflicts := v_username_conflicts + 1;
 
       INSERT INTO public.identity_moderation_actions
@@ -528,8 +577,23 @@ BEGIN
     IF FOUND THEN
       INSERT INTO public.identity_moderation_actions
         (profile_id, action_type, field, previous_value, new_value, reason, term_id)
-      VALUES
-        (v_action.profile_id, 'incident_restore', 'username', v_action.new_value, v_action.previous_value, v_reason, v_action.term_id);
+      SELECT
+        v_action.profile_id,
+        'incident_restore',
+        'username',
+        v_action.new_value,
+        v_action.previous_value,
+        v_reason,
+        v_action.term_id
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.identity_moderation_actions existing
+        WHERE existing.profile_id = v_action.profile_id
+          AND existing.action_type = 'incident_restore'
+          AND existing.field = 'username'
+          AND existing.previous_value = v_action.new_value
+          AND existing.new_value = v_action.previous_value
+      );
 
       v_usernames_restored := v_usernames_restored + 1;
     END IF;
@@ -545,50 +609,34 @@ BEGIN
       AND new_value IS NOT NULL
     ORDER BY profile_id, field, created_at ASC, id ASC
   LOOP
-    v_display_name_candidates := v_display_name_candidates + 1;
-
     SELECT * INTO v_profile
     FROM public.profiles
     WHERE id = v_action.profile_id
     FOR UPDATE;
 
     IF NOT FOUND OR v_profile.display_name IS DISTINCT FROM v_action.new_value THEN
-      v_skipped_changed_later := v_skipped_changed_later + 1;
       CONTINUE;
     END IF;
 
     IF EXISTS (
       SELECT 1
-      FROM public.identity_moderation_actions reset_action
-      WHERE reset_action.profile_id = v_action.profile_id
-        AND reset_action.action_type = 'admin_reset'
-        AND reset_action.field = 'display_name'
-        AND reset_action.created_at > v_action.created_at
+      FROM public.identity_moderation_actions later_action
+      WHERE later_action.profile_id = v_action.profile_id
+        AND later_action.field = 'display_name'
+        AND later_action.action_type IN ('admin_reset', 'incident_restore')
+        AND (
+          later_action.created_at > v_action.created_at
+          OR (
+            later_action.created_at = v_action.created_at
+            AND later_action.id::text > v_action.id::text
+          )
+        )
     ) THEN
-      v_display_name_conflicts := v_display_name_conflicts + 1;
-
-      INSERT INTO public.identity_moderation_actions
-        (profile_id, action_type, field, previous_value, new_value, reason, term_id)
-      SELECT
-        v_action.profile_id,
-        'incident_restore_conflict',
-        'display_name',
-        v_action.new_value,
-        v_action.previous_value,
-        'Could not automatically restore July 19, 2026 display name; manual review required.',
-        v_action.term_id
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM public.identity_moderation_actions existing
-        WHERE existing.profile_id = v_action.profile_id
-          AND existing.action_type = 'incident_restore_conflict'
-          AND existing.field = 'display_name'
-          AND existing.previous_value = v_action.new_value
-          AND existing.new_value = v_action.previous_value
-      );
-
+      v_skipped_changed_later := v_skipped_changed_later + 1;
       CONTINUE;
     END IF;
+
+    v_explicit_display_name_candidates := v_explicit_display_name_candidates + 1;
 
     UPDATE public.profiles
     SET display_name = v_action.previous_value
@@ -598,10 +646,107 @@ BEGIN
     IF FOUND THEN
       INSERT INTO public.identity_moderation_actions
         (profile_id, action_type, field, previous_value, new_value, reason, term_id)
-      VALUES
-        (v_action.profile_id, 'incident_restore', 'display_name', v_action.new_value, v_action.previous_value, v_reason, v_action.term_id);
+      SELECT
+        v_action.profile_id,
+        'incident_restore',
+        'display_name',
+        v_action.new_value,
+        v_action.previous_value,
+        v_reason,
+        v_action.term_id
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.identity_moderation_actions existing
+        WHERE existing.profile_id = v_action.profile_id
+          AND existing.action_type = 'incident_restore'
+          AND existing.field = 'display_name'
+          AND existing.previous_value = v_action.new_value
+          AND existing.new_value = v_action.previous_value
+      );
 
-      v_display_names_restored := v_display_names_restored + 1;
+      v_explicit_display_names_restored := v_explicit_display_names_restored + 1;
+    END IF;
+  END LOOP;
+
+  FOR v_action IN
+    SELECT DISTINCT ON (profile_id, field) *
+    FROM public.identity_moderation_actions
+    WHERE action_type = 'auto_remediate'
+      AND field = 'username'
+      AND reason = 'Existing username failed public identity policy during migration.'
+      AND previous_value IS NOT NULL
+      AND new_value IS NOT NULL
+    ORDER BY profile_id, field, created_at ASC, id ASC
+  LOOP
+    SELECT * INTO v_profile
+    FROM public.profiles
+    WHERE id = v_action.profile_id
+    FOR UPDATE;
+
+    IF NOT FOUND OR v_profile.display_name IS DISTINCT FROM v_action.new_value THEN
+      CONTINUE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.identity_moderation_actions explicit_display_action
+      WHERE explicit_display_action.profile_id = v_action.profile_id
+        AND explicit_display_action.action_type = 'auto_remediate'
+        AND explicit_display_action.field = 'display_name'
+        AND explicit_display_action.reason = 'Existing display name failed public identity policy during migration.'
+        AND explicit_display_action.previous_value IS NOT NULL
+        AND explicit_display_action.new_value IS NOT NULL
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.identity_moderation_actions later_action
+      WHERE later_action.profile_id = v_action.profile_id
+        AND later_action.field = 'display_name'
+        AND later_action.action_type IN ('admin_reset', 'incident_restore')
+        AND (
+          later_action.created_at > v_action.created_at
+          OR (
+            later_action.created_at = v_action.created_at
+            AND later_action.id::text > v_action.id::text
+          )
+        )
+    ) THEN
+      v_skipped_changed_later := v_skipped_changed_later + 1;
+      CONTINUE;
+    END IF;
+
+    v_derived_display_name_candidates := v_derived_display_name_candidates + 1;
+
+    UPDATE public.profiles
+    SET display_name = v_action.previous_value
+    WHERE id = v_action.profile_id
+      AND display_name = v_action.new_value;
+
+    IF FOUND THEN
+      INSERT INTO public.identity_moderation_actions
+        (profile_id, action_type, field, previous_value, new_value, reason, term_id)
+      SELECT
+        v_action.profile_id,
+        'incident_restore',
+        'display_name',
+        v_action.new_value,
+        v_action.previous_value,
+        v_derived_reason,
+        v_action.term_id
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.identity_moderation_actions existing
+        WHERE existing.profile_id = v_action.profile_id
+          AND existing.action_type = 'incident_restore'
+          AND existing.field = 'display_name'
+          AND existing.previous_value = v_action.new_value
+          AND existing.new_value = v_action.previous_value
+      );
+
+      v_derived_display_names_restored := v_derived_display_names_restored + 1;
     END IF;
   END LOOP;
 
@@ -609,8 +754,10 @@ BEGIN
     'usernameCandidates', v_username_candidates,
     'usernamesRestored', v_usernames_restored,
     'usernameConflicts', v_username_conflicts,
-    'displayNameCandidates', v_display_name_candidates,
-    'displayNamesRestored', v_display_names_restored,
+    'explicitDisplayNameCandidates', v_explicit_display_name_candidates,
+    'explicitDisplayNamesRestored', v_explicit_display_names_restored,
+    'derivedDisplayNameCandidates', v_derived_display_name_candidates,
+    'derivedDisplayNamesRestored', v_derived_display_names_restored,
     'displayNameConflicts', v_display_name_conflicts,
     'skippedBecauseChangedLater', v_skipped_changed_later
   );
