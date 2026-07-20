@@ -46,7 +46,8 @@ const rules: PublicIdentityTermRule[] = [
 test("normalizes case, separators, leet characters, zero-width characters, and repeats", () => {
   const forms = normalizeIdentityForms("B\u200b4AAD---Wooord!!");
 
-  assert.equal(forms.trimmed, "baaad---wooordii");
+  assert.equal(forms.trimmed, "b4aad---wooord!!");
+  assert.equal(forms.canonicalUsername, "b4aad---wooord!!");
   assert.equal(forms.leetNormalized, "baaad---wooordii");
   assert.equal(forms.separatorNormalized, "baaad wooordii");
   assert.equal(forms.compact, "baaadwooordii");
@@ -70,6 +71,40 @@ test("username format rejects uppercase, punctuation, spaces, doubled underscore
 
   assert.deepEqual(validateUsernameFormat("luffy_d"), { ok: true, value: "luffy_d" });
   assert.equal(validateUsernameFormat("ｌｕｆｆｙ").ok, false);
+});
+
+test("username canonical formatting preserves legitimate digits", () => {
+  for (const value of [
+    "wesley123",
+    "player1",
+    "zoro4life",
+    "pirate_007",
+    "gear5luffy",
+    "ace2026",
+  ]) {
+    assert.deepEqual(validateUsernameFormat(value), { ok: true, value });
+  }
+});
+
+test("username moderation matching still catches digit obfuscation without changing canonical output", () => {
+  const protectedRules: PublicIdentityTermRule[] = [
+    {
+      term: "reef",
+      normalizedTerm: "reef",
+      kind: "blocked",
+      category: "synthetic",
+      matchMode: "compact_substring",
+      severity: 3,
+      active: true,
+    },
+  ];
+
+  const result = evaluatePublicIdentity("r33f_runner", "username", protectedRules);
+
+  assert.equal(validateUsernameFormat("r33f_runner").ok, true);
+  assert.equal(normalizeIdentityForms("r33f_runner").canonicalUsername, "r33f_runner");
+  assert.equal(result.allowed, false);
+  if (!result.allowed) assert.equal(result.category, "synthetic");
 });
 
 test("display name format accepts ordinary Unicode letters, combining marks, and typographic apostrophes", () => {

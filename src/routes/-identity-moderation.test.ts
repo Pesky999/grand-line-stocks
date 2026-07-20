@@ -41,6 +41,13 @@ test("signup requires an explicitly valid username and runs a server precheck be
   assert.doesNotMatch(authSource, /replace\(\/\[\^a-z0-9_\]\/g, ""\)/);
   assert.match(authSource, /required/);
   assert.match(authSource, /pattern="\[a-z0-9\]\(\?:\[a-z0-9_\]\{1,18\}\[a-z0-9\]\)"/);
+  assert.match(authSource, /lowercase letters, numbers, and single underscores/);
+});
+
+test("signup accepts valid usernames containing digits without client-side rewriting", () => {
+  assert.match(authSource, /validateUsernameFormat\(normalizedUsername\)/);
+  assert.match(authSource, /data: \{ username: usernameFormat\.value \}/);
+  assert.doesNotMatch(authSource, /replaceConfusables|leet|identity_moderation_normalize/);
 });
 
 test("profile display-name editing validates locally and through the server API", () => {
@@ -56,6 +63,8 @@ test("profile display-name editing validates locally and through the server API"
   assert.match(walletApiSource, /evaluateDisplayNameOnServer/);
   assert.match(walletApiSource, /That display name is not allowed\./);
   assert.match(walletApiSource, /\.eq\("id", context\.userId\)/);
+  assert.doesNotMatch(profileSource, /updateProfile\(\{ data: \{ username/);
+  assert.doesNotMatch(walletApiSource, /z\.object\(\{ username/);
 });
 
 test("identity moderation admin console is admin-only and linked from the admin console", () => {
@@ -159,6 +168,7 @@ test("identity moderation server functions keep public precheck generic and admi
   assert.doesNotMatch(addRule, /\.eq\("normalized_term", normalized\)/);
   assert.match(addRule, /Allowlist entry conflicts with a protected core rule/);
   assert.match(apiSource, /normalizeTermForMatchMode/);
+  assert.match(apiSource, /case "exact":[\s\S]*return forms\.leetNormalized/);
 
   const rescan = sourceBetween(
     apiSource,
@@ -169,6 +179,9 @@ test("identity moderation server functions keep public precheck generic and admi
   assert.match(rescan, /\.eq\("term_id", result\.matchedRule\.id\)/);
   assert.match(rescan, /\.is\("term_id", null\)/);
   assert.match(rescan, /if \(\(existingFlags \?\? \[\]\)\.length > 0\) continue/);
+  assert.match(rescan, /\.from\("identity_moderation_flags"\)\.insert/);
+  assert.doesNotMatch(rescan, /\.from\("profiles"\)\.update/);
+  assert.doesNotMatch(rescan, /adminResetProfileIdentity|admin_reset_profile_identity/);
 
   for (const adminFunction of [
     "getIdentityModerationOverview",

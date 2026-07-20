@@ -24,6 +24,7 @@ export type PublicIdentityNormalizedForms = {
   stripped: string;
   lower: string;
   trimmed: string;
+  canonicalUsername: string;
   leetNormalized: string;
   separatorNormalized: string;
   compact: string;
@@ -119,8 +120,9 @@ export function normalizeIdentityForms(value: string): PublicIdentityNormalizedF
   const original = String(value ?? "");
   const nfkc = original.normalize("NFKC");
   const stripped = nfkc.replace(zeroWidthAndControl, "");
-  const lower = replaceConfusables(stripped.toLowerCase());
+  const lower = stripped.toLowerCase();
   const trimmed = lower.trim();
+  const canonicalUsername = trimmed;
   const leetNormalized = replaceConfusables(trimmed);
   const separatorNormalized = toWords(leetNormalized);
   const compact = toCompact(leetNormalized);
@@ -133,6 +135,7 @@ export function normalizeIdentityForms(value: string): PublicIdentityNormalizedF
     stripped,
     lower,
     trimmed,
+    canonicalUsername,
     leetNormalized,
     separatorNormalized,
     compact,
@@ -143,7 +146,7 @@ export function normalizeIdentityForms(value: string): PublicIdentityNormalizedF
 
 export function validateUsernameFormat(value: string): PublicIdentityValidationResult {
   const normalized = normalizeIdentityForms(value);
-  const username = normalized.trimmed;
+  const username = normalized.canonicalUsername;
 
   if (!username) {
     return { ok: false, code: "empty", message: "Choose a username." };

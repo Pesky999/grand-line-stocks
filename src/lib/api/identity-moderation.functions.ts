@@ -105,7 +105,7 @@ function normalizeTermForMatchMode(term: string, matchMode: PublicIdentityMatchM
     case "substring":
       return forms.separatorNormalized || forms.compact;
     case "exact":
-      return forms.trimmed;
+      return forms.leetNormalized;
   }
 }
 

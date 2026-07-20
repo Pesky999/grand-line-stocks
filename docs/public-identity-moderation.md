@@ -32,6 +32,21 @@ server paths.
 The public username availability precheck returns only `{ available }`. It does not return the
 normalized handle, matched category, rule ID, severity, or rejection reason.
 
+## July 19, 2026 Incident Hotfix
+
+The first production migration automatically scanned existing profiles and renamed identities that
+failed the new policy. That was incorrect. Existing player usernames and display names are
+grandfathered and must not be changed automatically.
+
+The root cause was mixing two separate concepts:
+
+- canonical username formatting, which preserves valid lowercase letters, digits, and underscores;
+- moderation matching, which may compare leetspeak, separators, repeated characters, and limited
+  lookalike characters to private blocked or reserved terms.
+
+Digits are valid username characters. They are used for moderation comparisons only when looking for
+obfuscated abuse, and they must never be rewritten into letters for the stored username.
+
 ## Public Identity Policy
 
 Usernames are 3-20 lowercase ASCII letters, numbers, and underscores. They must start and end with a
@@ -46,9 +61,13 @@ Public rejection messages stay generic. They never reveal which rule, category, 
 
 ## Normalization And Evasion
 
-The browser and database compare several forms of the proposed identity without changing the stored
-value: lowercase, zero-width/control stripped, separator-normalized, compact alphanumeric, repeated
-characters reduced, common leetspeak substitutions, and a limited set of common lookalike characters.
+The browser and database first calculate a canonical username by applying Unicode normalization,
+removing unsafe invisible/control characters, lowercasing, and trimming. This canonical formatting
+preserves digits and underscores.
+
+Moderation then compares several derived forms without changing the stored value: separator-
+normalized, compact alphanumeric, repeated-character-reduced, common leetspeak substitutions, and a
+limited set of common lookalike characters.
 
 The policy uses exact, whole-word, substring, and compact-substring matching. Compact matching is
 reserved for severe or deliberately obfuscated terms; short ambiguous terms use exact or word
@@ -66,8 +85,13 @@ The migration also:
 - makes usernames immutable except for trusted remediation paths;
 - removes direct authenticated profile insert/update access;
 - preserves public `profiles` reads;
-- scans existing profiles once and safely remediates any invalid public identities;
+- flags existing questionable profiles for admin review without changing their identities;
 - exposes an admin reset RPC that performs its own admin-role check.
+
+The hotfix migration
+`supabase/migrations/20260720020000_restore_profile_identities.sql` corrects the canonical versus
+moderation split, disables the mutating automatic remediation function, and restores identities that
+were changed by the July 19 incident when the profile still contains the incident-generated value.
 
 The latest signup side effects are preserved: profile creation still occurs in `handle_new_user()`,
 and wallet creation still inserts only `user_id`, so the current database default supplies the
@@ -89,7 +113,9 @@ valid profile. OAuth-derived unsafe identities use a neutral fallback instead of
 creation.
 
 Display names remain editable from the profile page, but the server validates every update before
-writing through the trusted path. User-facing errors stay generic.
+writing through the trusted path. Editing a display name does not revalidate or rewrite an unchanged
+username, so grandfathered usernames do not block normal profile use. User-facing errors stay
+generic.
 
 ## Core And Supplemental Rules
 
@@ -121,15 +147,36 @@ The admin console route uses the existing admin check pattern. The reset RPC als
 role server-side, so route protection is not the only guard. Reset requests that would leave the
 selected fields unchanged are rejected as no-ops and do not resolve flags or create action history.
 
+Rescans are non-mutating. A rescan can create open review flags and skips duplicate active findings,
+but it must never change a username or display name. Controlled admin resets continue to validate
+the replacement value under the current policy.
+
+## Incident Restoration
+
+The restoration migration uses `identity_moderation_actions` audit history as its source of truth.
+It considers the earliest July 19 `auto_remediate` action for each affected profile and field. It
+restores an original value only when the current profile value still equals the recorded
+incident-generated replacement.
+
+Username restoration is skipped when the original username is now owned by another profile or no
+longer matches the corrected legacy username format. Display-name restoration is skipped when a
+later administrator display-name reset exists. Skipped or conflicted rows remain unchanged and are
+recorded for manual review without exposing original names through public APIs.
+
+Successful restorations add `incident_restore` action history. The original incident actions and
+flags are preserved for auditability.
+
 ## Deployment Notes
 
-The migration is intentionally not applied by this branch. Apply it through the normal production
-migration process after review. Recommended order:
+The migrations are intentionally not applied by this branch. Apply them through the normal
+production migration process after review. Recommended order:
 
 1. Merge the application and migration together.
-2. Apply the migration once.
-3. Refresh PostgREST schema cache through the included notification.
-4. Smoke-test signup, display-name edit, public profile reads, and the admin reset RPC.
+2. Apply the public identity migration if it has not already been applied.
+3. Apply the restoration hotfix migration once.
+4. Refresh PostgREST schema cache through the included notification.
+5. Smoke-test digit-bearing signup, display-name edit on a grandfathered profile, public profile
+   reads, and the admin reset RPC.
 
 After applying, verify:
 
@@ -138,6 +185,30 @@ After applying, verify:
 - signup creates a profile and a wallet using the existing wallet default;
 - admin reset works only for admins;
 - moderation tables remain private.
+- the mutating automatic remediation function is absent;
+- restoration action counts match restored identity counts.
+
+Read-only verification query outline:
+
+```sql
+select
+  to_regprocedure('public.identity_username_canonical(text)') is not null as canonical_exists,
+  exists (
+    select 1
+    from pg_trigger
+    where tgname = 'enforce_public_identity_profile_trigger'
+  ) as profile_trigger_exists,
+  to_regprocedure('public.remediate_existing_public_identities()') is null as auto_remediation_absent,
+  has_function_privilege('anon', 'public.restore_public_identity_remediation_incident()', 'execute') as anon_can_restore,
+  has_function_privilege('authenticated', 'public.restore_public_identity_remediation_incident()', 'execute') as authenticated_can_restore;
+```
+
+Conflict inspection should be performed only by an administrator with direct access to private
+moderation action rows. Do not include original identities in public reports or dashboards.
+
+Rollback limitation: once restored values are written, rolling back the migration file itself does
+not reconstruct the incident-generated replacement values. Use the preserved action history for any
+manual follow-up.
 
 ## Known Limitations
 
@@ -145,3 +216,6 @@ This is not a full trust-and-safety system. It does not add suspensions, appeals
 CAPTCHA, external moderation services, chat moderation, or automated punishment. The seeded policy is
 curated but still benefits from admin review over time; supplemental terms and allowlist entries are
 the intended way to tune false positives and new abuse patterns after launch.
+
+Existing identities can remain grandfathered even if they would be flagged by a future policy scan.
+That is intentional; administrator review and controlled resets are the escalation path.
