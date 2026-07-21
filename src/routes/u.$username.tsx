@@ -1,6 +1,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getPublicProfile, listLegacy } from "@/lib/api/legendary.functions";
+import { AchievementMedallion } from "@/components/AchievementMedallion";
 import { TerminalShell } from "@/components/TerminalShell";
 import { formatBerries } from "@/lib/wallet";
 import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL, TIER_TONE, rankDeltaLabel } from "@/lib/legendary";
@@ -239,18 +240,26 @@ function PublicProfile() {
               <ul className="divide-y divide-border">
                 {(d.achievements as PublicProfileAchievement[]).map((ua) => (
                   <li key={ua.achievements.code} className="px-3 py-2">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-bold">
-                        {ua.achievements.icon} {ua.achievements.name}
-                      </span>
-                      <span
-                        className={`border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}
-                      >
-                        {ua.achievements.tier}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {ua.achievements.description}
+                    <div className="flex items-start gap-2">
+                      <AchievementMedallion
+                        code={ua.achievements.code}
+                        name={ua.achievements.name}
+                        icon={ua.achievements.icon}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-sm font-bold">{ua.achievements.name}</span>
+                          <span
+                            className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}
+                          >
+                            {ua.achievements.tier}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {ua.achievements.description}
+                        </div>
+                      </div>
                     </div>
                   </li>
                 ))}
