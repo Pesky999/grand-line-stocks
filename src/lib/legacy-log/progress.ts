@@ -62,6 +62,8 @@ const ACHIEVEMENT_ORDER = [
   "diamond_hands",
 ] as const;
 
+const BERRY_SYMBOL = "\u0E3F";
+
 function value(input: number | null | undefined) {
   return Number.isFinite(Number(input)) ? Number(input) : 0;
 }
@@ -72,9 +74,9 @@ function clampPercent(current: number, target: number) {
 }
 
 function formatBerries(value: number) {
-  if (value > 0 && value < 0.01) return "à¸¿<0.01";
+  if (value > 0 && value < 0.01) return `${BERRY_SYMBOL}<0.01`;
   const fractionDigits = Math.abs(value) > 0 && Math.abs(value) < 1 ? 2 : 0;
-  return `à¸¿${value.toLocaleString("en-US", {
+  return `${BERRY_SYMBOL}${value.toLocaleString("en-US", {
     maximumFractionDigits: 2,
     minimumFractionDigits: fractionDigits,
   })}`;

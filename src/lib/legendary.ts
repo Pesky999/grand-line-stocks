@@ -49,8 +49,7 @@ export const SPEC_DESCRIPTION: Record<string, string> = {
     "More than 50% of lifetime buy volume is in growth characters, unless a higher-priority volume rule qualifies.",
   event_trader:
     "At least 10 total trades and more than 30% of all trades occurred within two hours after a market event was published. This overrides the volume-based classifications.",
-  whale:
-    "Average current open-position value exceeds à¸¿250,000 or net worth exceeds à¸¿5,000,000. This is the final override.",
+  whale: `Average current open-position value exceeds \u0E3F250,000 or net worth exceeds \u0E3F5,000,000. This is the final override.`,
 };
 
 export const SPEC_ORDER = [

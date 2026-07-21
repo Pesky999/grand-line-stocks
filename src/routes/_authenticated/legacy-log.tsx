@@ -254,7 +254,7 @@ function LegacyLog() {
                     <div className="font-bold text-yellow-400">{record.title}</div>
                     <div className="mt-1 text-muted-foreground">{record.description}</div>
                     <div className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-                      {new Date(record.achieved_at).toLocaleString()} - à¸¿
+                      {new Date(record.achieved_at).toLocaleString()} - {"\u0E3F"}
                       {formatBerries(Number(record.value ?? 0))}
                     </div>
                   </li>

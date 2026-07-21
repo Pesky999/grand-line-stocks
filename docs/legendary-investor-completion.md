@@ -88,8 +88,9 @@ current metric later falls below the original unlock threshold. Current metrics
 remain visible in the progress label where they help explain the player's live
 state.
 
-First Profit displays realized P&L against the catalog threshold of `à¸¿0.01`
-and states that any positive realized profit qualifies.
+First Profit displays realized P&L against the catalog threshold of `0.01`
+with the Berry symbol U+0E3F, and states that any positive realized profit
+qualifies.
 
 The title ladder uses four visible states: `current`, `complete`, `next`, and
 `locked`. Only the first title above the current reputation total can be `next`;

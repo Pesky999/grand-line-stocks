@@ -15,6 +15,11 @@ const authenticatedRouteSource = read("src/routes/_authenticated/route.tsx");
 const terminalShellSource = read("src/components/TerminalShell.tsx");
 const profileSource = read("src/routes/_authenticated/profile.tsx");
 const routeTreeSource = read("src/routeTree.gen.ts");
+const legendSource = read("src/lib/legendary.ts");
+const progressSource = read("src/lib/legacy-log/progress.ts");
+const progressTestSource = read("src/lib/legacy-log/progress.test.ts");
+const docsSource = read("docs/legendary-investor-completion.md");
+const mojibakeBerry = "\u00e0\u00b8\u00bf";
 
 test("Legacy Log route is registered under the authenticated route group", () => {
   assert.equal(existsSync(legacyRoutePath), true);
@@ -23,6 +28,19 @@ test("Legacy Log route is registered under the authenticated route group", () =>
   assert.match(routeTreeSource, /AuthenticatedLegacyLogRouteImport/);
   assert.match(routeTreeSource, /'\/legacy-log': typeof AuthenticatedLegacyLogRoute/);
   assert.match(routeTreeSource, /'\/_authenticated\/legacy-log'/);
+});
+
+test("Legendary UI files do not contain the mojibake Berry symbol sequence", () => {
+  for (const [name, source] of [
+    ["docs", docsSource],
+    ["progress", progressSource],
+    ["progress tests", progressTestSource],
+    ["legendary metadata", legendSource],
+    ["route tests", read("src/routes/-legendary-investor-completion.test.ts")],
+    ["Legacy Log route", legacyRouteSource],
+  ] as const) {
+    assert.equal(source.includes(mojibakeBerry), false, `${name} contains mojibake Berry symbol`);
+  }
 });
 
 test("TerminalShell includes authenticated Legacy navigation in desktop and mobile menus", () => {
@@ -103,13 +121,15 @@ test("Legacy Log displays exact title ladder states and specialization rules", (
   assert.match(legacyRouteSource, /Specializations are dynamic classifications/);
   assert.match(legacyRouteSource, /Rules are shown in evaluation order/);
   assert.match(legacyRouteSource, /SPEC_ORDER\.map/);
-  assert.match(read("src/lib/legendary.ts"), /generalist: "Fallback when no specialization/);
-  assert.match(read("src/lib/legendary.ts"), /meme_investor: "More than 40%/);
-  assert.match(read("src/lib/legendary.ts"), /speculator:\s+"More than 50%/);
-  assert.match(read("src/lib/legendary.ts"), /value_investor:\s+"More than 50%/);
-  assert.match(read("src/lib/legendary.ts"), /growth_investor:\s+"More than 50%/);
-  assert.match(read("src/lib/legendary.ts"), /event_trader:\s+"At least 10 total trades/);
-  assert.match(read("src/lib/legendary.ts"), /whale:\s+"Average current open-position/);
+  assert.match(legendSource, /generalist: "Fallback when no specialization/);
+  assert.match(legendSource, /meme_investor: "More than 40%/);
+  assert.match(legendSource, /speculator:\s+"More than 50%/);
+  assert.match(legendSource, /value_investor:\s+"More than 50%/);
+  assert.match(legendSource, /growth_investor:\s+"More than 50%/);
+  assert.match(legendSource, /event_trader:\s+"At least 10 total trades/);
+  assert.match(legendSource, /whale:\s+`Average current open-position/);
+  assert.match(legendSource, /\\u0E3F250,000/);
+  assert.match(legendSource, /\\u0E3F5,000,000/);
 });
 
 test("Legacy Log records section keeps the two-template MVP scope", () => {
@@ -117,6 +137,7 @@ test("Legacy Log records section keeps the two-template MVP scope", () => {
   assert.match(legacyRouteSource, /First Millionaire Pirate/);
   assert.match(legacyRouteSource, /First\s+\[Character\]\s+Millionaire/);
   assert.match(legacyRouteSource, /No first-to legacy records claimed yet\./);
+  assert.match(legacyRouteSource, /\{"\\u0E3F"\}/);
   assert.doesNotMatch(legacyRouteSource, /characters\.map|listCharacters|all characters/i);
 });
 

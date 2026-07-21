@@ -114,13 +114,13 @@ test("first profit tracks the catalog cent threshold without hiding fractional p
   assert.equal(firstProfit.current, 0.005);
   assert.equal(firstProfit.target, 0.01);
   assert.equal(firstProfit.progressPercent, 50);
-  assert.match(firstProfit.progressLabel, /à¸¿<0\.01 realized/);
+  assert.match(firstProfit.progressLabel, /\u0E3F<0\.01 realized/);
   assert.match(firstProfit.progressLabel, /any positive realized profit qualifies/);
 });
 
 test("Berry progress labels use the Berry symbol consistently", () => {
-  assert.match(row("hundred_k_profit").progressLabel, /à¸¿12,345 \/ à¸¿100,000 realized/);
-  assert.match(row("millionaire").progressLabel, /à¸¿900,000 \/ à¸¿1,000,000 net worth/);
+  assert.match(row("hundred_k_profit").progressLabel, /\u0E3F12,345 \/ \u0E3F100,000 realized/);
+  assert.match(row("millionaire").progressLabel, /\u0E3F900,000 \/ \u0E3F1,000,000 net worth/);
 });
 
 test("unlocked reputation achievements remain visibly complete if reputation later falls", () => {
