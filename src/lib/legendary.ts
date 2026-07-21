@@ -17,6 +17,7 @@ export const TITLE_LADDER = [
 ] as const;
 
 export type InvestorTitleCode = (typeof TITLE_LADDER)[number]["code"];
+export type InvestorTitleStatus = "current" | "complete" | "next" | "locked";
 
 export const TITLE_TONE: Record<string, string> = {
   rookie_pirate: "text-muted-foreground border-muted-foreground/40",
@@ -38,21 +39,26 @@ export const SPEC_LABEL: Record<string, string> = {
 };
 
 export const SPEC_DESCRIPTION: Record<string, string> = {
-  generalist: "Balanced activity without a dominant trading style yet.",
-  value_investor: "Mostly buying stable blue-chip characters.",
-  growth_investor: "Mostly buying growth-category characters.",
-  speculator: "Mostly buying speculative characters.",
-  meme_investor: "A large share of buy volume is in meme-category characters.",
-  event_trader: "A meaningful share of trades happen soon after market events publish.",
-  whale: "Large average positions or very high net worth.",
+  generalist: "Fallback when no specialization rule qualifies.",
+  meme_investor: "More than 40% of lifetime buy volume is in meme-category characters.",
+  speculator:
+    "More than 50% of lifetime buy volume is in speculative characters, unless Meme Investor already qualifies.",
+  value_investor:
+    "More than 50% of lifetime buy volume is in blue-chip characters, unless a higher-priority volume rule qualifies.",
+  growth_investor:
+    "More than 50% of lifetime buy volume is in growth characters, unless a higher-priority volume rule qualifies.",
+  event_trader:
+    "At least 10 total trades and more than 30% of all trades occurred within two hours after a market event was published. This overrides the volume-based classifications.",
+  whale:
+    "Average current open-position value exceeds à¸¿250,000 or net worth exceeds à¸¿5,000,000. This is the final override.",
 };
 
 export const SPEC_ORDER = [
   "generalist",
+  "meme_investor",
+  "speculator",
   "value_investor",
   "growth_investor",
-  "speculator",
-  "meme_investor",
   "event_trader",
   "whale",
 ] as const;
@@ -73,6 +79,23 @@ export const TIER_TONE: Record<string, string> = {
 
 export function getNextInvestorTitle(reputationScore: number) {
   return TITLE_LADDER.find((title) => reputationScore < title.threshold) ?? null;
+}
+
+export function getInvestorTitleStatus({
+  titleCode,
+  currentTitle,
+  reputationScore,
+}: {
+  titleCode: InvestorTitleCode;
+  currentTitle: string;
+  reputationScore: number;
+}): InvestorTitleStatus {
+  if (titleCode === currentTitle) return "current";
+  const title = TITLE_LADDER.find((entry) => entry.code === titleCode);
+  if (!title) return "locked";
+  if (reputationScore >= title.threshold) return "complete";
+  if (currentTitle === "pirate_king_investor") return "locked";
+  return getNextInvestorTitle(reputationScore)?.code === titleCode ? "next" : "locked";
 }
 
 export function rankDeltaLabel(prev: number | null | undefined, curr: number) {

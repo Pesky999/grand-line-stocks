@@ -12,6 +12,7 @@ import {
   TITLE_LABEL,
   TITLE_LADDER,
   TITLE_TONE,
+  getInvestorTitleStatus,
   getNextInvestorTitle,
 } from "@/lib/legendary";
 import { buildAchievementProgressRows } from "@/lib/legacy-log/progress";
@@ -60,6 +61,12 @@ function LegacyLog() {
   const nextTitle = getNextInvestorTitle(reputationScore);
   const stats = log.data?.stats;
   const legacyRecords = log.data?.legacyRecords ?? [];
+  const emptyAchievementMessage =
+    filter === "all"
+      ? "No achievements in this tier."
+      : filter === "unlocked"
+        ? "No unlocked achievements in this tier."
+        : "No locked achievements in this tier.";
 
   return (
     <TerminalShell>
@@ -142,7 +149,7 @@ function LegacyLog() {
                     </h2>
                     {tierRows.length === 0 ? (
                       <div className="border border-border/60 p-3 text-xs text-muted-foreground">
-                        No {filter} achievements in this tier.
+                        {emptyAchievementMessage}
                       </div>
                     ) : (
                       <div className="grid gap-2 md:grid-cols-2">
@@ -162,8 +169,12 @@ function LegacyLog() {
               <div className="terminal-header">Reputation Title Ladder</div>
               <div className="divide-y divide-border text-xs">
                 {TITLE_LADDER.map((title) => {
-                  const complete = reputationScore >= title.threshold;
-                  const isCurrent = currentTitle === title.code;
+                  const status = getInvestorTitleStatus({
+                    titleCode: title.code,
+                    currentTitle,
+                    reputationScore,
+                  });
+                  const isCurrent = status === "current";
                   return (
                     <div key={title.code} className="flex items-center justify-between px-4 py-3">
                       <div>
@@ -182,12 +193,14 @@ function LegacyLog() {
                         className={`border px-2 py-1 text-[10px] uppercase tracking-widest ${
                           isCurrent
                             ? "border-primary text-primary"
-                            : complete
+                            : status === "complete"
                               ? "border-bull/60 text-bull"
-                              : "border-border text-muted-foreground"
+                              : status === "next"
+                                ? "border-accent/60 text-accent"
+                                : "border-border text-muted-foreground"
                         }`}
                       >
-                        {isCurrent ? "current" : complete ? "complete" : "next"}
+                        {status}
                       </span>
                     </div>
                   );
@@ -199,7 +212,8 @@ function LegacyLog() {
               <div className="terminal-header">Specialization</div>
               <div className="p-4 text-xs text-muted-foreground">
                 Specializations are dynamic classifications and can change as your trading behavior
-                changes.
+                changes. Rules are shown in evaluation order; later override rules can replace an
+                earlier volume classification when their condition qualifies.
               </div>
               <div className="divide-y divide-border text-xs">
                 {SPEC_ORDER.map((spec) => (
@@ -240,7 +254,7 @@ function LegacyLog() {
                     <div className="font-bold text-yellow-400">{record.title}</div>
                     <div className="mt-1 text-muted-foreground">{record.description}</div>
                     <div className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-                      {new Date(record.achieved_at).toLocaleString()} - B
+                      {new Date(record.achieved_at).toLocaleString()} - à¸¿
                       {formatBerries(Number(record.value ?? 0))}
                     </div>
                   </li>

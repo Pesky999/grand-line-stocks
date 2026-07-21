@@ -72,7 +72,12 @@ function clampPercent(current: number, target: number) {
 }
 
 function formatBerries(value: number) {
-  return `B${Math.round(value).toLocaleString()}`;
+  if (value > 0 && value < 0.01) return "à¸¿<0.01";
+  const fractionDigits = Math.abs(value) > 0 && Math.abs(value) < 1 ? 2 : 0;
+  return `à¸¿${value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: fractionDigits,
+  })}`;
 }
 
 function formatNumber(value: number) {
@@ -118,8 +123,8 @@ function buildKnownProgress(code: string, metrics: LegacyLogMetrics) {
     case "first_profit":
       return progress(
         value(metrics.realizedPnl),
-        1,
-        `${formatBerries(value(metrics.realizedPnl))} realized`,
+        0.01,
+        `${formatBerries(value(metrics.realizedPnl))} realized; any positive realized profit qualifies`,
       );
     case "first_event":
       return booleanProgress(!!metrics.firstEventEligible, "Live through a published market event");
@@ -129,7 +134,7 @@ function buildKnownProgress(code: string, metrics: LegacyLogMetrics) {
       return progress(
         value(metrics.realizedPnl),
         100_000,
-        `${formatBerries(value(metrics.realizedPnl))} / B100,000 realized`,
+        `${formatBerries(value(metrics.realizedPnl))} / ${formatBerries(100_000)} realized`,
       );
     case "streak_30":
       return progress(value(metrics.loginStreak), 30, `${value(metrics.loginStreak)} / 30 days`);
@@ -137,7 +142,7 @@ function buildKnownProgress(code: string, metrics: LegacyLogMetrics) {
       return progress(
         value(metrics.currentNetWorth),
         1_000_000,
-        `${formatBerries(value(metrics.currentNetWorth))} / B1,000,000 net worth`,
+        `${formatBerries(value(metrics.currentNetWorth))} / ${formatBerries(1_000_000)} net worth`,
       );
     case "top_100":
       return rankProgress(metrics.currentRank, 100);
@@ -216,6 +221,10 @@ export function buildAchievementProgressRows({
     .map((entry) => {
       const known = buildKnownProgress(entry.code, metrics ?? {});
       const unlockedAt = unlockedByCode.get(entry.code) ?? null;
+      const visibleProgress =
+        unlockedAt !== null && known.progressPercent !== null
+          ? { ...known, progressPercent: 100 }
+          : known;
       return {
         code: entry.code,
         name: entry.name,
@@ -226,7 +235,7 @@ export function buildAchievementProgressRows({
         reputationReward: Number(entry.reputation_reward),
         unlocked: unlockedAt !== null,
         unlockedAt,
-        ...known,
+        ...visibleProgress,
       };
     });
 }

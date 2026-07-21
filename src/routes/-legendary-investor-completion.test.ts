@@ -26,7 +26,12 @@ test("Legacy Log route is registered under the authenticated route group", () =>
 });
 
 test("TerminalShell includes authenticated Legacy navigation in desktop and mobile menus", () => {
-  assert.match(terminalShellSource, /\{ to: "\/legacy-log", label: "Legacy", chip: "F8" \}/);
+  assert.match(
+    terminalShellSource,
+    /\{ to: "\/legacy-log", label: "Legacy", chip: "F8", authOnly: true \}/,
+  );
+  assert.match(terminalShellSource, /authOnly\?: boolean/);
+  assert.match(terminalShellSource, /!i\.authOnly \|\| !!user/);
   assert.match(terminalShellSource, /nav\.map\(\(item\) =>/);
   assert.match(terminalShellSource, /\[\{item\.chip\}\] \{item\.label\.toUpperCase\(\)\}/);
   assert.match(terminalShellSource, /\[\{item\.chip\}\]/);
@@ -79,18 +84,32 @@ test("Legacy Log shows all achievement filters, tiers, and locked criteria", () 
   assert.match(legacyRouteSource, /progressLabel/);
   assert.match(legacyRouteSource, /progressPercent !== null/);
   assert.match(legacyRouteSource, /achievement\.unlocked \? "unlocked" : "locked"/);
+  assert.match(legacyRouteSource, /No achievements in this tier\./);
+  assert.match(legacyRouteSource, /No unlocked achievements in this tier\./);
+  assert.match(legacyRouteSource, /No locked achievements in this tier\./);
+  assert.doesNotMatch(legacyRouteSource, /No \{filter\} achievements in this tier\./);
 });
 
-test("Legacy Log displays title ladder thresholds and specialization explanations", () => {
+test("Legacy Log displays exact title ladder states and specialization rules", () => {
   assert.match(legacyRouteSource, /Reputation Title Ladder/);
   assert.match(legacyRouteSource, /TITLE_LADDER\.map/);
+  assert.match(legacyRouteSource, /getInvestorTitleStatus/);
+  assert.match(legacyRouteSource, /status === "complete"/);
+  assert.match(legacyRouteSource, /status === "next"/);
+  assert.match(legacyRouteSource, /\{status\}/);
   for (const threshold of ["0", "100", "300", "600", "850", "950"]) {
     assert.match(read("src/lib/legendary.ts"), new RegExp(`threshold: ${threshold}`));
   }
   assert.match(legacyRouteSource, /Specializations are dynamic classifications/);
+  assert.match(legacyRouteSource, /Rules are shown in evaluation order/);
   assert.match(legacyRouteSource, /SPEC_ORDER\.map/);
-  assert.match(read("src/lib/legendary.ts"), /generalist: "Balanced activity/);
-  assert.match(read("src/lib/legendary.ts"), /whale: "Large average positions/);
+  assert.match(read("src/lib/legendary.ts"), /generalist: "Fallback when no specialization/);
+  assert.match(read("src/lib/legendary.ts"), /meme_investor: "More than 40%/);
+  assert.match(read("src/lib/legendary.ts"), /speculator:\s+"More than 50%/);
+  assert.match(read("src/lib/legendary.ts"), /value_investor:\s+"More than 50%/);
+  assert.match(read("src/lib/legendary.ts"), /growth_investor:\s+"More than 50%/);
+  assert.match(read("src/lib/legendary.ts"), /event_trader:\s+"At least 10 total trades/);
+  assert.match(read("src/lib/legendary.ts"), /whale:\s+"Average current open-position/);
 });
 
 test("Legacy Log records section keeps the two-template MVP scope", () => {

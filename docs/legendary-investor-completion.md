@@ -83,6 +83,22 @@ Authenticated users get `/legacy-log`, which shows:
 - All seven dynamic specializations and their current conditions.
 - Claimed first-to legacy records for the authenticated user.
 
+Unlocked achievements remain visibly complete in the Legacy Log even if the
+current metric later falls below the original unlock threshold. Current metrics
+remain visible in the progress label where they help explain the player's live
+state.
+
+First Profit displays realized P&L against the catalog threshold of `à¸¿0.01`
+and states that any positive realized profit qualifies.
+
+The title ladder uses four visible states: `current`, `complete`, `next`, and
+`locked`. Only the first title above the current reputation total can be `next`;
+Pirate King Investor has no next title.
+
+Specializations are displayed in their effective evaluation order: Generalist,
+Meme Investor, Speculator, Value Investor, Growth Investor, Event Trader, then
+Whale. Event Trader and Whale are override classifications.
+
 The Legacy Log read function is read-only. It does not refresh progression or
 write activity.
 

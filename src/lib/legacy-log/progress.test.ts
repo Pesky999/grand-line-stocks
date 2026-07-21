@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAchievementProgressRows, type AchievementCatalogEntry } from "./progress.ts";
+import { TITLE_LADDER, getInvestorTitleStatus } from "../legendary.ts";
 
 const catalog: AchievementCatalogEntry[] = [
   ["first_trade", "First Trade", "beginner", "trading", 10],
@@ -103,6 +104,51 @@ test("clamps numeric achievement progress to zero through one hundred", () => {
   assert.equal(millionaire.progressPercent, 100);
 });
 
+test("first profit tracks the catalog cent threshold without hiding fractional profit", () => {
+  const firstProfit = buildAchievementProgressRows({
+    catalog,
+    unlocked: [],
+    metrics: { realizedPnl: 0.005 },
+  }).find((entry) => entry.code === "first_profit")!;
+
+  assert.equal(firstProfit.current, 0.005);
+  assert.equal(firstProfit.target, 0.01);
+  assert.equal(firstProfit.progressPercent, 50);
+  assert.match(firstProfit.progressLabel, /à¸¿<0\.01 realized/);
+  assert.match(firstProfit.progressLabel, /any positive realized profit qualifies/);
+});
+
+test("Berry progress labels use the Berry symbol consistently", () => {
+  assert.match(row("hundred_k_profit").progressLabel, /à¸¿12,345 \/ à¸¿100,000 realized/);
+  assert.match(row("millionaire").progressLabel, /à¸¿900,000 \/ à¸¿1,000,000 net worth/);
+});
+
+test("unlocked reputation achievements remain visibly complete if reputation later falls", () => {
+  const yonko = buildAchievementProgressRows({
+    catalog,
+    unlocked: [{ code: "yonko_investor", unlockedAt: "2026-07-20T00:00:00Z" }],
+    metrics: { reputationScore: 640 },
+  }).find((entry) => entry.code === "yonko_investor")!;
+
+  assert.equal(yonko.unlocked, true);
+  assert.equal(yonko.current, 640);
+  assert.equal(yonko.target, 850);
+  assert.equal(yonko.progressLabel, "640 / 850 reputation");
+  assert.equal(yonko.progressPercent, 100);
+});
+
+test("unlocked rank achievements remain visibly complete if rank later falls", () => {
+  const topTen = buildAchievementProgressRows({
+    catalog,
+    unlocked: [{ code: "top_10", unlockedAt: "2026-07-20T00:00:00Z" }],
+    metrics: { currentRank: 245 },
+  }).find((entry) => entry.code === "top_10")!;
+
+  assert.equal(topTen.unlocked, true);
+  assert.equal(topTen.progressLabel, "Current #245 - Goal Top 10");
+  assert.equal(topTen.progressPercent, 100);
+});
+
 test("rank progress labels match the public goal language", () => {
   assert.equal(row("top_100").progressLabel, "Current #245 - Goal Top 100");
   assert.equal(row("top_10").progressLabel, "Current #245 - Goal Top 10");
@@ -178,4 +224,37 @@ test("unknown future achievement codes render safely from the catalog", () => {
   assert.equal(future.current, null);
   assert.equal(future.target, null);
   assert.equal(future.progressPercent, null);
+});
+
+test("title ladder labels only the first title above reputation as next", () => {
+  const statuses = TITLE_LADDER.map((title) =>
+    getInvestorTitleStatus({
+      titleCode: title.code,
+      currentTitle: "warlord_investor",
+      reputationScore: 640,
+    }),
+  );
+
+  assert.deepEqual(statuses, ["complete", "complete", "complete", "current", "next", "locked"]);
+  assert.equal(statuses.filter((status) => status === "next").length, 1);
+});
+
+test("pirate king current title has no next title", () => {
+  const statuses = TITLE_LADDER.map((title) =>
+    getInvestorTitleStatus({
+      titleCode: title.code,
+      currentTitle: "pirate_king_investor",
+      reputationScore: 1_000,
+    }),
+  );
+
+  assert.deepEqual(statuses, [
+    "complete",
+    "complete",
+    "complete",
+    "complete",
+    "complete",
+    "current",
+  ]);
+  assert.equal(statuses.filter((status) => status === "next").length, 0);
 });

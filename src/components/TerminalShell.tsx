@@ -27,14 +27,21 @@ function Clock() {
   return <span className="tabular">{t} UTC</span>;
 }
 
-type NavItem = { to: string; label: string; chip?: string; tone?: "accent"; adminOnly?: boolean };
+type NavItem = {
+  to: string;
+  label: string;
+  chip?: string;
+  tone?: "accent";
+  adminOnly?: boolean;
+  authOnly?: boolean;
+};
 const NAV: NavItem[] = [
   { to: "/", label: "Market", chip: "F1" },
   { to: "/portfolio", label: "Portfolio", chip: "F2" },
   { to: "/market-bulletin", label: "Market Bulletin", chip: "F3" },
   { to: "/leaderboards", label: "Ranks", chip: "F6" },
   { to: "/games", label: "Games", chip: "F7" },
-  { to: "/legacy-log", label: "Legacy", chip: "F8" },
+  { to: "/legacy-log", label: "Legacy", chip: "F8", authOnly: true },
   { to: "/admin", label: "Admin", chip: "F9", tone: "accent", adminOnly: true },
 ];
 
@@ -49,7 +56,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
     staleTime: 5 * 60_000,
   });
   const isAdmin = !!adminInfo?.isAdmin;
-  const nav = NAV.filter((i) => !i.adminOnly || isAdmin);
+  const nav = NAV.filter((i) => (!i.adminOnly || isAdmin) && (!i.authOnly || !!user));
 
   return (
     <div className="relative z-10 min-h-screen">
