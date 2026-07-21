@@ -13,6 +13,7 @@ import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL } from "@/lib/legendary";
 import { validateDisplayNameFormat } from "@/lib/moderation/public-identity";
 import { formatShares } from "@/lib/trading/fractional-shares";
 import { toast } from "sonner";
+import { AchievementMedallion } from "@/components/AchievementMedallion";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({ meta: [{ title: "Profile — Berry Street" }] }),
@@ -220,10 +221,16 @@ function Profile() {
                 {ach.slice(0, 8).map((ua) => (
                   <span
                     key={ua.achievements.code}
-                    className="border border-border px-2 py-1 text-[11px]"
+                    className="inline-flex items-center gap-2 border border-border px-2 py-1 text-[11px]"
                     title={ua.achievements.description}
                   >
-                    {ua.achievements.icon} {ua.achievements.name}
+                    <AchievementMedallion
+                      code={ua.achievements.code}
+                      name={ua.achievements.name}
+                      icon={ua.achievements.icon}
+                      size="sm"
+                    />
+                    {ua.achievements.name}
                   </span>
                 ))}
               </div>

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AchievementMedallion } from "@/components/AchievementMedallion";
 import { TerminalShell } from "@/components/TerminalShell";
 import { getMyLegacyLog, LEGACY_LOG_QUERY_KEY } from "@/lib/api/legendary.functions";
 import {
@@ -305,13 +306,18 @@ function AchievementCard({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-bold">
-            <span className="mr-1">{achievement.icon}</span>
-            {achievement.name}
-          </div>
-          <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            {achievement.description}
+        <div className="flex min-w-0 items-start gap-3">
+          <AchievementMedallion
+            code={achievement.code}
+            name={achievement.name}
+            icon={achievement.icon}
+            size="lg"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-bold">{achievement.name}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {achievement.description}
+            </div>
           </div>
         </div>
         <span
