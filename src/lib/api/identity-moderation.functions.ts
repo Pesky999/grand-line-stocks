@@ -6,6 +6,7 @@ import type { Database } from "@/integrations/supabase/types";
 import {
   ACTIVE_IDENTITY_MODERATION_CATEGORIES,
   evaluatePublicIdentity,
+  evaluatePublicIdentityModerationOnly,
   isActiveIdentityModerationCategory,
   normalizeIdentityForms,
   type PublicIdentityMatchMode,
@@ -493,8 +494,7 @@ export const rescanIdentityModerationProfiles = createServerFn({ method: "POST" 
   .handler(async ({ context }) => {
     await requireAdmin(context.userId, context.supabase);
     const db = await admin();
-    const { evaluateDisplayNameOnServer, evaluateUsernameOnServer, loadIdentityModerationRules } =
-      await identityPolicy();
+    const { loadIdentityModerationRules } = await identityPolicy();
     const rules = await loadIdentityModerationRules({ force: true });
     const { data: profiles, error } = await db
       .from("profiles")
@@ -509,10 +509,7 @@ export const rescanIdentityModerationProfiles = createServerFn({ method: "POST" 
       for (const field of ["username", "display_name"] as const) {
         const value = field === "username" ? profile.username : profile.display_name;
         if (!value) continue;
-        const result =
-          field === "username"
-            ? await evaluateUsernameOnServer(value)
-            : await evaluateDisplayNameOnServer(value);
+        const result = evaluatePublicIdentityModerationOnly(value, field, rules);
         if (result.allowed) continue;
 
         let duplicateRequest = db
@@ -541,7 +538,7 @@ export const rescanIdentityModerationProfiles = createServerFn({ method: "POST" 
           normalized_value: result.normalized.compact,
           term_id: result.matchedRule?.id ?? null,
           violation_code: result.code,
-          category: result.category ?? "format",
+          category: result.category ?? "moderation",
           status: "open",
         });
 

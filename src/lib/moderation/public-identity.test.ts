@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   evaluatePublicIdentity,
+  evaluatePublicIdentityModerationOnly,
   normalizeIdentityForms,
   validateDisplayNameFormat,
   validateUsernameFormat,
@@ -300,5 +301,19 @@ test("approved profanity and slur categories remain enforceable", () => {
     ]);
     assert.equal(result.allowed, false, `${category} should remain enforceable`);
     if (!result.allowed) assert.equal(result.category, category);
+  }
+});
+
+test("moderation-only evaluation flags active terms without applying new-identity formatting", () => {
+  const historicalUsername = "aa";
+  const allowed = evaluatePublicIdentityModerationOnly(historicalUsername, "username", rules);
+  const blocked = evaluatePublicIdentityModerationOnly("badword", "username", rules);
+
+  assert.equal(validateUsernameFormat(historicalUsername).ok, false);
+  assert.equal(allowed.allowed, true);
+  assert.equal(blocked.allowed, false);
+  if (!blocked.allowed) {
+    assert.equal(blocked.code, "blocked");
+    assert.equal(blocked.category, "common_profanity");
   }
 });

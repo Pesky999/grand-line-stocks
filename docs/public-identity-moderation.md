@@ -59,14 +59,16 @@ Usernames are 3-20 lowercase ASCII letters, numbers, and underscores. They must 
 letter or number, cannot use consecutive underscores, and cannot change after account creation except
 through the admin reset workflow.
 
-Display names are trimmed to 1-40 characters. They allow ordinary letters, numbers, spaces, and
-common punctuation, while rejecting invisible/control characters, extreme repeated characters, and
-approved profanity/slur policy matches.
+Display names are trimmed to 1-40 characters when they are newly selected or changed. They allow
+ordinary letters, numbers, spaces, and common punctuation, while rejecting invisible/control
+characters, extreme repeated characters, and approved profanity/slur policy matches. Unchanged
+existing display names remain grandfathered during username-only administrator resets.
 
 Reserved-name filtering, contact-information filtering, broad threat terms, harassment terms,
-privacy-abuse terms, hate-group branding terms, and sexual-content-only categories are disabled by
-the hotfix. Rows are kept for audit history, but inactive or non-approved categories do not block the
-current enforcement path.
+privacy-abuse terms, hate-group branding terms, ordinary insults, and sexual-content-only terms are
+disabled by the hotfix. Rows are kept for audit history, but inactive or non-approved categories do
+not block the current enforcement path. Actual vulgar profanity remains blocked even when the
+original seed placed those rows in a broader sexual-content category.
 
 Public rejection messages stay generic. They never reveal which rule, category, or term matched.
 
@@ -116,7 +118,8 @@ It also deactivates non-approved blocked/reserved categories and makes the evalu
 
 The latest signup side effects are preserved: profile creation still occurs in `handle_new_user()`,
 and wallet creation still inserts only `user_id`, so the current database default supplies the
-starting Berry balance.
+starting Berry balance. The hotfix also curates the private term rows so the active policy is based on
+actual cuss words and slurs rather than broad category labels alone.
 
 ## Signup And Profile Editing
 
@@ -129,10 +132,11 @@ it is malformed, duplicated, or matches the active profanity/slur policy, the da
 assigns a safe fallback handle. Legitimate provider-derived digits are preserved.
 
 The precheck is advisory rather than a reservation. Email signup rejects an explicitly unavailable
-username before profile creation. If a username becomes unavailable during a concurrent signup race,
-`handle_new_user()` retries bounded candidate allocation so the Auth user is not left without a
-valid profile. OAuth-derived unsafe identities use a neutral fallback instead of failing the account
-creation.
+username before profile creation. If a manually selected username becomes unavailable during a
+concurrent signup race, `handle_new_user()` raises `IDENTITY_USERNAME_UNAVAILABLE` and rolls back
+account creation rather than silently assigning a different public handle. OAuth-derived unsafe or
+duplicated identities may still use bounded suffix allocation or a neutral fallback because the user
+did not explicitly choose that handle.
 
 Display names remain editable from the profile page, but the server validates every update before
 writing through the trusted path. Editing a display name does not revalidate or rewrite an unchanged
@@ -142,9 +146,10 @@ generic.
 ## Core And Supplemental Rules
 
 The original migration seeded a private core English policy across broader categories. The hotfix
-narrows active enforcement to approved profanity and slur categories only. Reserved names,
-contact-info markers, threat, hate-group, harassment, privacy-abuse, and sexual-content-only rows are
-left in the private tables for history but deactivated or ignored by the enforcement predicate.
+narrows active enforcement to curated profanity and slur rows only. Reserved names, contact-info
+markers, threat, hate-group, harassment, privacy-abuse, ordinary-insult rows, and sexual-content-only
+rows are left in the private tables for history but deactivated or ignored by the enforcement
+predicate.
 
 Admins can add supplemental allowlist entries and supplemental blocked entries only for approved
 profanity/slur categories. Core rules cannot be deactivated from the admin UI. Allowlist rules apply
@@ -171,9 +176,11 @@ The admin console route uses the existing admin check pattern. The reset RPC als
 role server-side, so route protection is not the only guard. Reset requests that would leave the
 selected fields unchanged are rejected as no-ops and do not resolve flags or create action history.
 
-Rescans are non-mutating. A rescan can create open review flags and skips duplicate active findings,
-but it must never change a username or display name. Controlled admin resets continue to validate
-the replacement value under the current new-identity policy.
+Rescans are non-mutating and moderation-only. A rescan can create open review flags for active
+profanity/slur matches and skips duplicate active findings, but it must never change a username or
+display name and must not flag grandfathered identities merely for current length or formatting
+rules. Controlled admin resets continue to validate the replacement value under the current
+new-identity policy.
 
 ## Incident Restoration
 
@@ -204,6 +211,10 @@ The incident audit history is preserved. Successful restorations add `incident_r
 history. Conflicts add `incident_restore_conflict` action history. The original incident actions and
 flags are not deleted or rewritten.
 
+The restoration summary is identity-free and count-only. It reports candidate, restored, conflict,
+changed-later skip, and missing-profile counts. Rerunning the hotfix does not inflate candidate or
+skip counts for identities that already received a successful restore or conflict action.
+
 One limitation is unavoidable: when username remediation changed a `NULL` display name or a display
 name equal to the original username, the audit row does not distinguish those two historical states.
 Restoring the original username as the visible display identity recovers the public-facing identity
@@ -219,7 +230,9 @@ production migration process after review. Recommended order:
 3. Apply the restoration hotfix migration once.
 4. Refresh PostgREST schema cache through the included notification.
 5. Smoke-test digit-bearing signup, reserved-looking signup, contact-looking display names,
-   display-name edit on a grandfathered profile, public profile reads, and the admin reset RPC.
+   username-only admin reset on a grandfathered display name, display-name edit on a grandfathered
+   profile, public profile reads, manual username collision handling, OAuth fallback handling, and
+   the admin reset RPC.
 
 After applying, verify:
 
@@ -230,6 +243,8 @@ After applying, verify:
 - moderation tables remain private.
 - the mutating automatic remediation function is absent;
 - active blocked/reserved rows outside approved profanity/slur categories are inactive;
+- active sexual-content-only rows are inactive and actual vulgar profanity rows are classified under
+  severe profanity;
 - restoration action counts match restored identity counts;
 - unresolved restore candidates have private conflict actions.
 

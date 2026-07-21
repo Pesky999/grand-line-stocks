@@ -179,11 +179,15 @@ test("identity moderation server functions keep public precheck generic and admi
     "export const rescanIdentityModerationProfiles",
     "return { scanned: profiles?.length ?? 0, flagged, activeRules: rules.length }",
   );
+  assert.match(rescan, /evaluatePublicIdentityModerationOnly\(value, field, rules\)/);
+  assert.doesNotMatch(rescan, /evaluateUsernameOnServer|evaluateDisplayNameOnServer/);
+  assert.doesNotMatch(rescan, /invalid_format|too_short|too_long|reserved|contact_info/);
   assert.match(rescan, /\.in\("status", \["open", "reviewed"\]\)/);
   assert.match(rescan, /\.eq\("term_id", result\.matchedRule\.id\)/);
   assert.match(rescan, /\.is\("term_id", null\)/);
   assert.match(rescan, /if \(\(existingFlags \?\? \[\]\)\.length > 0\) continue/);
   assert.match(rescan, /\.from\("identity_moderation_flags"\)\.insert/);
+  assert.match(rescan, /category: result\.category \?\? "moderation"/);
   assert.doesNotMatch(rescan, /\.from\("profiles"\)\.update/);
   assert.doesNotMatch(rescan, /adminResetProfileIdentity|admin_reset_profile_identity/);
 

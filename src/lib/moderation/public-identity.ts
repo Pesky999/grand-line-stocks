@@ -307,6 +307,15 @@ export function evaluatePublicIdentity(
     return { ...validation, allowed: false, normalized };
   }
 
+  return evaluatePublicIdentityModerationOnly(value, field, rules, normalized);
+}
+
+export function evaluatePublicIdentityModerationOnly(
+  value: string,
+  field: PublicIdentityField,
+  rules: readonly PublicIdentityTermRule[],
+  normalized = normalizeIdentityForms(value),
+): PublicIdentityEvaluation {
   const activeRules = rules.filter((rule) => rule.active !== false);
   const allowRule = activeRules.find((rule) => allowsCompleteIdentity(normalized, rule));
   if (allowRule) return { allowed: true, normalized, matchedRule: allowRule };
