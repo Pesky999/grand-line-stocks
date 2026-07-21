@@ -2598,7 +2598,11 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_my_daily_activity: { Args: never; Returns: Json }
+      record_user_daily_activity: { Args: { _user_id: string }; Returns: number }
+      refresh_all_user_progression: { Args: never; Returns: Json }
       refresh_leaderboards: { Args: never; Returns: undefined }
+      refresh_user_progression: { Args: { _user_id: string }; Returns: Json }
       reset_character_pricing_ratings: {
         Args: { _character_id: string }
         Returns: boolean
