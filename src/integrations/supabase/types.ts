@@ -2254,6 +2254,10 @@ export type Database = {
         }
         Returns: Json
       }
+      restore_public_identity_remediation_incident: {
+        Args: never
+        Returns: Json
+      }
       admin_generate_daily_crew_rotation: {
         Args: {
           _plan_id: string
