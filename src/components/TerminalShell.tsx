@@ -34,6 +34,7 @@ const NAV: NavItem[] = [
   { to: "/market-bulletin", label: "Market Bulletin", chip: "F3" },
   { to: "/leaderboards", label: "Ranks", chip: "F6" },
   { to: "/games", label: "Games", chip: "F7" },
+  { to: "/legacy-log", label: "Legacy", chip: "F8" },
   { to: "/admin", label: "Admin", chip: "F9", tone: "accent", adminOnly: true },
 ];
 

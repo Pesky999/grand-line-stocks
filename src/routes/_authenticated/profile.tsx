@@ -158,8 +158,14 @@ function Profile() {
         </div>
 
         <div className="terminal-panel">
-          <div className="terminal-header flex items-center justify-between">
+          <div className="terminal-header flex items-center justify-between gap-3">
             <span>Prestige</span>
+            <Link
+              to="/legacy-log"
+              className="text-[10px] uppercase tracking-widest text-primary hover:underline"
+            >
+              open Legacy Log →
+            </Link>
             {username && (
               <Link
                 to="/u/$username"
