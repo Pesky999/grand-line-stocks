@@ -281,33 +281,33 @@ INSERT INTO public.achievements (
     20
   ),
   (
-    'first_lesson',
-    'First Lesson',
-    'Answer your first trivia question correctly.',
+    'mission_log',
+    'Mission Log',
+    'Submit 5 Daily Crew missions.',
     'beginner'::public.achievement_tier,
-    'Trivia',
+    'Daily Crew',
     '*',
-    '{"unlock":"Answer your first trivia question correctly.","trivia_correct":1}'::jsonb,
+    '{"unlock":"Submit 5 Daily Crew missions.","daily_crew_submissions":5}'::jsonb,
     5
   ),
   (
-    'sea_scholar',
-    'Sea Scholar',
-    'Answer 25 trivia questions correctly.',
+    'crew_scholar',
+    'Crew Scholar',
+    'Earn an A or S rank on 10 Daily Crew missions.',
     'intermediate'::public.achievement_tier,
-    'Trivia',
+    'Daily Crew',
     '*',
-    '{"unlock":"Answer 25 trivia questions correctly.","trivia_correct":25}'::jsonb,
+    '{"unlock":"Earn an A or S rank on 10 Daily Crew missions.","daily_crew_high_rank_count":10}'::jsonb,
     10
   ),
   (
-    'ohara_archivist',
-    'Ohara Archivist',
-    'Answer 100 trivia questions correctly.',
+    'grand_fleet_archivist',
+    'Grand Fleet Archivist',
+    'Achieve a perfect score on 5 Daily Crew missions.',
     'advanced'::public.achievement_tier,
-    'Trivia',
+    'Daily Crew',
     '*',
-    '{"unlock":"Answer 100 trivia questions correctly.","trivia_correct":100}'::jsonb,
+    '{"unlock":"Achieve a perfect score on 5 Daily Crew missions.","daily_crew_perfect_count":5}'::jsonb,
     20
   )
 ON CONFLICT (code) DO UPDATE
@@ -344,7 +344,8 @@ DECLARE
   v_daily_crew_a_or_s boolean := false;
   v_daily_crew_s boolean := false;
   v_daily_crew_perfect boolean := false;
-  v_trivia_correct_count integer := 0;
+  v_daily_crew_a_or_s_count integer := 0;
+  v_daily_crew_perfect_count integer := 0;
 BEGIN
   SELECT *
     INTO s
@@ -408,22 +409,20 @@ BEGIN
          COALESCE(MAX(submissions.score), 0),
          COALESCE(BOOL_OR(submissions.rank IN ('a'::public.daily_crew_rank, 's'::public.daily_crew_rank)), false),
          COALESCE(BOOL_OR(submissions.rank = 's'::public.daily_crew_rank), false),
-         COALESCE(BOOL_OR(submissions.score >= missions.max_score), false)
+         COALESCE(BOOL_OR(submissions.score >= missions.max_score), false),
+         COUNT(*) FILTER (WHERE submissions.rank IN ('a'::public.daily_crew_rank, 's'::public.daily_crew_rank)),
+         COUNT(*) FILTER (WHERE submissions.score = missions.max_score)
     INTO v_daily_crew_submission_count,
          v_daily_crew_best_score,
          v_daily_crew_a_or_s,
          v_daily_crew_s,
-         v_daily_crew_perfect
+         v_daily_crew_perfect,
+         v_daily_crew_a_or_s_count,
+         v_daily_crew_perfect_count
   FROM public.daily_crew_submissions AS submissions
   JOIN public.daily_crew_missions AS missions
     ON missions.id = submissions.mission_id
   WHERE submissions.user_id = _user_id;
-
-  SELECT COUNT(*)
-    INTO v_trivia_correct_count
-  FROM public.trivia_attempts AS attempts
-  WHERE attempts.user_id = _user_id
-    AND attempts.correct = true;
 
   IF s.total_trades >= 1 AND public.grant_achievement(_user_id, 'first_trade') THEN
     v_count := v_count + 1;
@@ -633,15 +632,15 @@ BEGIN
     v_count := v_count + 1;
   END IF;
 
-  IF v_trivia_correct_count >= 1 AND public.grant_achievement(_user_id, 'first_lesson') THEN
+  IF v_daily_crew_submission_count >= 5 AND public.grant_achievement(_user_id, 'mission_log') THEN
     v_count := v_count + 1;
   END IF;
 
-  IF v_trivia_correct_count >= 25 AND public.grant_achievement(_user_id, 'sea_scholar') THEN
+  IF v_daily_crew_a_or_s_count >= 10 AND public.grant_achievement(_user_id, 'crew_scholar') THEN
     v_count := v_count + 1;
   END IF;
 
-  IF v_trivia_correct_count >= 100 AND public.grant_achievement(_user_id, 'ohara_archivist') THEN
+  IF v_daily_crew_perfect_count >= 5 AND public.grant_achievement(_user_id, 'grand_fleet_archivist') THEN
     v_count := v_count + 1;
   END IF;
 

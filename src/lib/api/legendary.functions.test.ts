@@ -47,7 +47,6 @@ test("getMyLegacyLog scopes private reads to the authenticated player", () => {
   assert.match(legacyLog, /\.from\("grand_line_guess_stats"\)[\s\S]*\.eq\("user_id", userId\)/);
   assert.match(legacyLog, /\.from\("grand_line_guess_results"\)[\s\S]*\.eq\("user_id", userId\)/);
   assert.match(legacyLog, /\.from\("daily_crew_submissions"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("trivia_attempts"\)[\s\S]*\.eq\("user_id", userId\)/);
 });
 
 test("Legacy Log returns catalog, unlocked achievements, records, and private progress metrics", () => {
@@ -80,7 +79,8 @@ test("Legacy Log returns catalog, unlocked achievements, records, and private pr
   assert.match(legacyLog, /dailyCrewBestScore/);
   assert.match(legacyLog, /dailyCrewBestRank/);
   assert.match(legacyLog, /dailyCrewPerfectEligible/);
-  assert.match(legacyLog, /triviaCorrectCount: Number\(triviaCorrectCount \?\? 0\)/);
+  assert.match(legacyLog, /dailyCrewHighRankCount/);
+  assert.match(legacyLog, /dailyCrewPerfectCount/);
 });
 
 test("Legacy Log first-event and largest-holder eligibility are returned as booleans only", () => {
@@ -107,8 +107,15 @@ test("Legacy Log reads new achievement expansion data sources without writes", (
   assert.match(legacyLog, /\.select\("score,rank,daily_crew_missions\(max_score\)"\)/);
   assert.match(
     legacyLog,
+    /dailyCrewRows\.filter\(\(submission\) =>[\s\S]*\["a", "s"\]\.includes\(submission\.rank\)/,
+  );
+  assert.match(
+    legacyLog,
     /Number\(submission\.score\) >= Number\(submission\.daily_crew_missions\?\.max_score \?\? 100\)/,
   );
-  assert.match(legacyLog, /\.from\("trivia_attempts"\)[\s\S]*\.eq\("correct", true\)/);
+  assert.match(
+    legacyLog,
+    /Number\(submission\.score\) === Number\(submission\.daily_crew_missions\?\.max_score \?\? 100\)/,
+  );
   assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
 });

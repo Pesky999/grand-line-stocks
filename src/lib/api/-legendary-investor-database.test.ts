@@ -75,9 +75,9 @@ const expansionAchievementCodes = [
   "a_rank_captain",
   "s_rank_commander",
   "perfect_crew",
-  "first_lesson",
-  "sea_scholar",
-  "ohara_archivist",
+  "mission_log",
+  "crew_scholar",
+  "grand_fleet_archivist",
 ];
 
 test("legendary progression migration is transactional and scoped", () => {
@@ -186,7 +186,11 @@ test("achievement expansion checker uses the approved market and game data sourc
     checker,
     /FROM public\.daily_crew_submissions AS submissions[\s\S]*JOIN public\.daily_crew_missions AS missions/,
   );
-  assert.match(checker, /FROM public\.trivia_attempts AS attempts/);
+  assert.match(
+    checker,
+    /COUNT\(\*\) FILTER \(WHERE submissions\.rank IN \('a'::public\.daily_crew_rank, 's'::public\.daily_crew_rank\)\)/,
+  );
+  assert.match(checker, /COUNT\(\*\) FILTER \(WHERE submissions\.score = missions\.max_score\)/);
 });
 
 test("achievement expansion unlock thresholds match the approved manifest", () => {
@@ -224,12 +228,14 @@ test("achievement expansion unlock thresholds match the approved manifest", () =
     ["v_daily_crew_a_or_s", "a_rank_captain"],
     ["v_daily_crew_s", "s_rank_commander"],
     ["v_daily_crew_perfect", "perfect_crew"],
-    ["v_trivia_correct_count >= 1", "first_lesson"],
-    ["v_trivia_correct_count >= 25", "sea_scholar"],
-    ["v_trivia_correct_count >= 100", "ohara_archivist"],
+    ["v_daily_crew_submission_count >= 5", "mission_log"],
+    ["v_daily_crew_a_or_s_count >= 10", "crew_scholar"],
+    ["v_daily_crew_perfect_count >= 5", "grand_fleet_archivist"],
   ] as const) {
     assert.match(checker, new RegExp(`${condition}[\\s\\S]*'${code}'`), code);
   }
+
+  assert.doesNotMatch(checker, /v_trivia_correct_count/);
 });
 
 test("achievement expansion backfills through the existing progression refresh system", () => {
@@ -268,7 +274,7 @@ test("achievement expansion checker remains service-role only with fixed search 
 test("achievement expansion migration does not mutate wallets, gameplay rewards, prices, or holdings", () => {
   assert.doesNotMatch(
     expansionMigration,
-    /\b(?:UPDATE|INSERT INTO|DELETE FROM|ALTER TABLE)\s+public\.(?:user_wallets|wallet_ledger_entries|transactions|price_history|character_price_history|user_holdings|daily_crew_submissions|daily_crew_missions|grand_line_guess|trivia_attempts|market_rumors|market_events)/i,
+    /\b(?:UPDATE|INSERT INTO|DELETE FROM|ALTER TABLE)\s+public\.(?:user_wallets|wallet_ledger_entries|transactions|price_history|character_price_history|user_holdings|daily_crew_submissions|daily_crew_missions|grand_line_guess|market_rumors|market_events)/i,
   );
   assert.doesNotMatch(
     expansionMigration,

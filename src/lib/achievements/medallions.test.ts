@@ -51,9 +51,9 @@ const expansionAchievementCodes = [
   "a_rank_captain",
   "s_rank_commander",
   "perfect_crew",
-  "first_lesson",
-  "sea_scholar",
-  "ohara_archivist",
+  "mission_log",
+  "crew_scholar",
+  "grand_fleet_archivist",
 ] as const;
 
 const achievementCodes = [...originalAchievementCodes, ...expansionAchievementCodes] as const;

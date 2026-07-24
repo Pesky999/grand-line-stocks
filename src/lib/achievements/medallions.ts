@@ -40,9 +40,9 @@ export const ACHIEVEMENT_MEDALLION_PATHS = {
   a_rank_captain: "/achievements/medallions/a_rank_captain.webp",
   s_rank_commander: "/achievements/medallions/s_rank_commander.webp",
   perfect_crew: "/achievements/medallions/perfect_crew.webp",
-  first_lesson: "/achievements/medallions/first_lesson.webp",
-  sea_scholar: "/achievements/medallions/sea_scholar.webp",
-  ohara_archivist: "/achievements/medallions/ohara_archivist.webp",
+  mission_log: "/achievements/medallions/mission_log.webp",
+  crew_scholar: "/achievements/medallions/crew_scholar.webp",
+  grand_fleet_archivist: "/achievements/medallions/grand_fleet_archivist.webp",
 } as const;
 
 export type AchievementMedallionCode = keyof typeof ACHIEVEMENT_MEDALLION_PATHS;

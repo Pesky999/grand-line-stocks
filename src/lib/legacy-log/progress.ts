@@ -34,7 +34,8 @@ export type LegacyLogMetrics = {
   dailyCrewBestScore?: number | null;
   dailyCrewBestRank?: string | null;
   dailyCrewPerfectEligible?: boolean | null;
-  triviaCorrectCount?: number | null;
+  dailyCrewHighRankCount?: number | null;
+  dailyCrewPerfectCount?: number | null;
   maxOpenHoldingAgeDays?: number | null;
   largestHolderEligible?: boolean | null;
   firstEventEligible?: boolean | null;
@@ -104,9 +105,9 @@ const ACHIEVEMENT_ORDER = [
   "a_rank_captain",
   "s_rank_commander",
   "perfect_crew",
-  "first_lesson",
-  "sea_scholar",
-  "ohara_archivist",
+  "mission_log",
+  "crew_scholar",
+  "grand_fleet_archivist",
 ] as const;
 
 const BERRY_SYMBOL = "\u0E3F";
@@ -398,23 +399,23 @@ function buildKnownProgress(code: string, metrics: LegacyLogMetrics) {
           ? "Perfect Daily Crew score achieved"
           : `${value(metrics.dailyCrewBestScore)} / 100 Daily Crew score`,
       );
-    case "first_lesson":
+    case "mission_log":
       return progress(
-        value(metrics.triviaCorrectCount),
-        1,
-        `${value(metrics.triviaCorrectCount)} / 1 correct trivia answer`,
+        value(metrics.dailyCrewSubmissionCount),
+        5,
+        `${value(metrics.dailyCrewSubmissionCount)} / 5 Daily Crew missions submitted`,
       );
-    case "sea_scholar":
+    case "crew_scholar":
       return progress(
-        value(metrics.triviaCorrectCount),
-        25,
-        `${value(metrics.triviaCorrectCount)} / 25 correct trivia answers`,
+        value(metrics.dailyCrewHighRankCount),
+        10,
+        `${value(metrics.dailyCrewHighRankCount)} / 10 Daily Crew A/S ranks`,
       );
-    case "ohara_archivist":
+    case "grand_fleet_archivist":
       return progress(
-        value(metrics.triviaCorrectCount),
-        100,
-        `${value(metrics.triviaCorrectCount)} / 100 correct trivia answers`,
+        value(metrics.dailyCrewPerfectCount),
+        5,
+        `${value(metrics.dailyCrewPerfectCount)} / 5 perfect Daily Crew missions`,
       );
     default:
       return {

@@ -205,28 +205,21 @@ const expansionCatalog: AchievementCatalogEntry[] = [
     "Daily Crew",
     20,
   ],
+  ["mission_log", "Mission Log", "Submit 5 Daily Crew missions.", "beginner", "Daily Crew", 5],
   [
-    "first_lesson",
-    "First Lesson",
-    "Answer your first trivia question correctly.",
-    "beginner",
-    "Trivia",
-    5,
-  ],
-  [
-    "sea_scholar",
-    "Sea Scholar",
-    "Answer 25 trivia questions correctly.",
+    "crew_scholar",
+    "Crew Scholar",
+    "Earn an A or S rank on 10 Daily Crew missions.",
     "intermediate",
-    "Trivia",
+    "Daily Crew",
     10,
   ],
   [
-    "ohara_archivist",
-    "Ohara Archivist",
-    "Answer 100 trivia questions correctly.",
+    "grand_fleet_archivist",
+    "Grand Fleet Archivist",
+    "Achieve a perfect score on 5 Daily Crew missions.",
     "advanced",
-    "Trivia",
+    "Daily Crew",
     20,
   ],
 ].map(([code, name, description, tier, category, reward]) => ({
@@ -267,7 +260,8 @@ function row(code: string) {
       dailyCrewBestScore: 85,
       dailyCrewBestRank: "a",
       dailyCrewPerfectEligible: false,
-      triviaCorrectCount: 26,
+      dailyCrewHighRankCount: 6,
+      dailyCrewPerfectCount: 2,
       wins: 28,
       losses: 14,
       maxOpenHoldingAgeDays: 55,
@@ -297,7 +291,7 @@ test("renders exactly 44 achievement progress rows in tier order", () => {
       "seven_day_sail",
       "first_sight",
       "first_command",
-      "first_lesson",
+      "mission_log",
       "hundred_trades",
       "hundred_k_profit",
       "streak_30",
@@ -309,7 +303,7 @@ test("renders exactly 44 achievement progress rows in tier order", () => {
       "observation_haki",
       "clue_free_navigator",
       "a_rank_captain",
-      "sea_scholar",
+      "crew_scholar",
       "millionaire",
       "top_100",
       "top_10",
@@ -322,7 +316,7 @@ test("renders exactly 44 achievement progress rows in tier order", () => {
       "winning_route",
       "s_rank_commander",
       "perfect_crew",
-      "ohara_archivist",
+      "grand_fleet_archivist",
       "yonko_investor",
       "pirate_king",
       "market_prophet",
@@ -372,9 +366,9 @@ test("renders every new achievement with progress labels and thresholds", () => 
     ["a_rank_captain", 1, 1, /Best Daily Crew rank: A/],
     ["s_rank_commander", 0, 1, /Best Daily Crew rank: A/],
     ["perfect_crew", 85, 100, /85 \/ 100 Daily Crew score/],
-    ["first_lesson", 26, 1, /26 \/ 1 correct trivia answer/],
-    ["sea_scholar", 26, 25, /26 \/ 25 correct trivia answers/],
-    ["ohara_archivist", 26, 100, /26 \/ 100 correct trivia answers/],
+    ["mission_log", 2, 5, /2 \/ 5 Daily Crew missions submitted/],
+    ["crew_scholar", 6, 10, /6 \/ 10 Daily Crew A\/S ranks/],
+    ["grand_fleet_archivist", 2, 5, /2 \/ 5 perfect Daily Crew missions/],
   ];
 
   assert.equal(cases.length, 30);
@@ -393,12 +387,12 @@ test("new locked achievements show partial percentages and unlocked achievements
 
   const unlocked = buildAchievementProgressRows({
     catalog,
-    unlocked: [{ code: "ohara_archivist", unlockedAt: "2026-07-22T00:00:00Z" }],
-    metrics: { triviaCorrectCount: 26 },
-  }).find((entry) => entry.code === "ohara_archivist")!;
+    unlocked: [{ code: "grand_fleet_archivist", unlockedAt: "2026-07-22T00:00:00Z" }],
+    metrics: { dailyCrewPerfectCount: 2 },
+  }).find((entry) => entry.code === "grand_fleet_archivist")!;
 
-  assert.equal(unlocked.current, 26);
-  assert.equal(unlocked.target, 100);
+  assert.equal(unlocked.current, 2);
+  assert.equal(unlocked.target, 5);
   assert.equal(unlocked.progressPercent, 100);
 });
 

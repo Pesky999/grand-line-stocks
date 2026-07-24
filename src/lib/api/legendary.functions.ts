@@ -227,7 +227,6 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       { data: glgStats, error: glgStatsError },
       { count: glgHintsFreeCount, error: glgHintsFreeError },
       { data: dailyCrewSubmissions, error: dailyCrewError },
-      { count: triviaCorrectCount, error: triviaCorrectError },
     ] = await Promise.all([
       db.from("user_stats").select("*").eq("user_id", userId).maybeSingle(),
       db
@@ -281,11 +280,6 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
         .from("daily_crew_submissions")
         .select("score,rank,daily_crew_missions(max_score)")
         .eq("user_id", userId),
-      db
-        .from("trivia_attempts")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("correct", true),
     ]);
 
     for (const error of [
@@ -299,7 +293,6 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       glgStatsError,
       glgHintsFreeError,
       dailyCrewError,
-      triviaCorrectError,
     ]) {
       if (error) throw error;
     }
@@ -360,6 +353,13 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       (submission) =>
         Number(submission.score) >= Number(submission.daily_crew_missions?.max_score ?? 100),
     );
+    const dailyCrewHighRankCount = dailyCrewRows.filter((submission) =>
+      ["a", "s"].includes(submission.rank),
+    ).length;
+    const dailyCrewPerfectCount = dailyCrewRows.filter(
+      (submission) =>
+        Number(submission.score) === Number(submission.daily_crew_missions?.max_score ?? 100),
+    ).length;
 
     const now = Date.now();
     const maxOpenHoldingAgeDays = positiveHoldings.reduce((max, holding) => {
@@ -412,7 +412,8 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
         dailyCrewBestScore,
         dailyCrewBestRank,
         dailyCrewPerfectEligible,
-        triviaCorrectCount: Number(triviaCorrectCount ?? 0),
+        dailyCrewHighRankCount,
+        dailyCrewPerfectCount,
         maxOpenHoldingAgeDays,
         largestHolderEligible,
         firstEventEligible: (firstEvent ?? []).length > 0,
