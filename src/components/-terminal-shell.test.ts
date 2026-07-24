@@ -20,6 +20,11 @@ function sourceBetween(source: string, startMarker: string, endMarker: string) {
 }
 
 const headerSource = sourceBetween(terminalShellSource, "<header", "</header>");
+const navSource = sourceBetween(
+  terminalShellSource,
+  "const NAV: NavItem[] = [",
+  "];\n\nexport function TerminalShell",
+);
 
 test("TerminalShell shared header is sticky but not fixed", () => {
   const headerClass = terminalShellSource.match(/<header className="([^"]+)"/)?.[1] ?? "";
@@ -38,6 +43,29 @@ test("TerminalShell header preserves brand, desktop nav, and mobile menu", () =>
   assert.match(headerSource, /nav\.map\(\(item\) =>/);
   assert.match(headerSource, /<SheetTrigger asChild>/);
   assert.match(headerSource, /aria-label="Open navigation"/);
+});
+
+test("TerminalShell navigation shortcut labels are sequential for public, signed-in, and admin items", () => {
+  for (const [to, label, chip] of [
+    ["/", "Market", "F1"],
+    ["/portfolio", "Portfolio", "F2"],
+    ["/market-bulletin", "Market Bulletin", "F3"],
+    ["/leaderboards", "Ranks", "F4"],
+    ["/games", "Games", "F5"],
+  ] as const) {
+    assert.match(
+      navSource,
+      new RegExp(`\\{ to: "${to.replace("/", "\\/")}", label: "${label}", chip: "${chip}" \\}`),
+      `${label} should use ${chip}`,
+    );
+  }
+
+  assert.match(navSource, /\{ to: "\/legacy-log", label: "Legacy", chip: "F6", authOnly: true \}/);
+  assert.match(
+    navSource,
+    /\{ to: "\/admin", label: "Admin", chip: "F7", tone: "accent", adminOnly: true \}/,
+  );
+  assert.doesNotMatch(navSource, /chip: "F[89]"/);
 });
 
 test("TerminalShell keeps the shared header before the page main", () => {
