@@ -35,6 +35,11 @@ test("Daily Crew Builder route renders the mission, jobs, pool, and saved result
   assert.match(routeSource, /Saved Crew Result/);
   assert.match(routeSource, /role\.name/);
   assert.match(routeSource, /pool\.map/);
+  assert.match(routeSource, /character\.name/);
+  assert.match(routeSource, /assignedRoleForCharacter/);
+  assert.match(routeSource, /\{assignedRole\}/);
+  assert.doesNotMatch(routeSource, /character\.displayOrder/);
+  assert.doesNotMatch(routeSource, /character\.visibleTags/);
 });
 
 test("Daily Crew Builder route keeps hidden fixture data out of the browser-visible route module", () => {
@@ -44,7 +49,7 @@ test("Daily Crew Builder route keeps hidden fixture data out of the browser-visi
   assert.doesNotMatch(routeSource, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(
     routeSource,
-    /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/,
+    /displayOrder|visibleTags|primaryRole|isStrawHat|roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/,
   );
   assert.doesNotMatch(
     routeSource,

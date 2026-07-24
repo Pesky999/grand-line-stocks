@@ -4,7 +4,6 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "../../integrations/supabase/auth-middleware.ts";
 import type { Database, Json } from "../../integrations/supabase/types.ts";
 import {
-  DAILY_CREW_ROLE_LABELS,
   DAILY_CREW_ROLES,
   scoreDailyCrewSubmission,
   toPublicDailyCrewMission,

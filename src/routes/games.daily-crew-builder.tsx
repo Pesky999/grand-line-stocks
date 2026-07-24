@@ -433,28 +433,13 @@ function DailyCrewBuilderPage() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                            #{character.displayOrder}
-                          </div>
-                          <h3 className="mt-1 text-sm font-bold text-foreground">
-                            {character.name}
-                          </h3>
+                          <h3 className="text-sm font-bold text-foreground">{character.name}</h3>
                         </div>
                         {assignedRole && (
                           <span className="border border-primary/40 px-2 py-1 text-[10px] uppercase tracking-widest text-primary">
                             {assignedRole}
                           </span>
                         )}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {character.visibleTags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground"
-                          >
-                            {tag}
-                          </span>
-                        ))}
                       </div>
                     </article>
                   );
