@@ -46,7 +46,7 @@ test("Legendary UI files do not contain the mojibake Berry symbol sequence", () 
 test("TerminalShell includes authenticated Legacy navigation in desktop and mobile menus", () => {
   assert.match(
     terminalShellSource,
-    /\{ to: "\/legacy-log", label: "Legacy", chip: "F8", authOnly: true \}/,
+    /\{ to: "\/legacy-log", label: "Legacy", chip: "F6", authOnly: true \}/,
   );
   assert.match(terminalShellSource, /authOnly\?: boolean/);
   assert.match(terminalShellSource, /!i\.authOnly \|\| !!user/);

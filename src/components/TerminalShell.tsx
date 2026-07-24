@@ -39,10 +39,10 @@ const NAV: NavItem[] = [
   { to: "/", label: "Market", chip: "F1" },
   { to: "/portfolio", label: "Portfolio", chip: "F2" },
   { to: "/market-bulletin", label: "Market Bulletin", chip: "F3" },
-  { to: "/leaderboards", label: "Ranks", chip: "F6" },
-  { to: "/games", label: "Games", chip: "F7" },
-  { to: "/legacy-log", label: "Legacy", chip: "F8", authOnly: true },
-  { to: "/admin", label: "Admin", chip: "F9", tone: "accent", adminOnly: true },
+  { to: "/leaderboards", label: "Ranks", chip: "F4" },
+  { to: "/games", label: "Games", chip: "F5" },
+  { to: "/legacy-log", label: "Legacy", chip: "F6", authOnly: true },
+  { to: "/admin", label: "Admin", chip: "F7", tone: "accent", adminOnly: true },
 ];
 
 export function TerminalShell({ children }: { children: ReactNode }) {
