@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildAchievementProgressRows, type AchievementCatalogEntry } from "./progress.ts";
 import { TITLE_LADDER, getInvestorTitleStatus } from "../legendary.ts";
 
-const catalog: AchievementCatalogEntry[] = [
+const originalCatalog: AchievementCatalogEntry[] = [
   ["first_trade", "First Trade", "beginner", "trading", 10],
   ["first_profit", "First Profit", "beginner", "trading", 15],
   ["first_event", "First Market Event", "beginner", "market", 10],
@@ -30,16 +30,238 @@ const catalog: AchievementCatalogEntry[] = [
   reputation_reward: Number(reward),
 }));
 
+const expansionCatalog: AchievementCatalogEntry[] = [
+  ["deckhand_dealer", "Deckhand Dealer", "Complete 10 trades.", "beginner", "Trading", 5],
+  [
+    "balanced_ledger",
+    "Balanced Ledger",
+    "Complete 25 buys and 25 sells.",
+    "intermediate",
+    "Trading",
+    10,
+  ],
+  [
+    "million_berry_mover",
+    "Million-Berry Mover",
+    "Reach \u0E3F1,000,000 in lifetime trade volume.",
+    "advanced",
+    "Trading",
+    20,
+  ],
+  [
+    "big_score",
+    "Big Score",
+    "Earn at least \u0E3F10,000 profit from one sell.",
+    "intermediate",
+    "Trading",
+    10,
+  ],
+  [
+    "treasure_haul",
+    "Treasure Haul",
+    "Earn at least \u0E3F50,000 profit from one sell.",
+    "advanced",
+    "Trading",
+    20,
+  ],
+  ["storm_trader", "Storm Trader", "Complete 500 trades.", "legendary", "Trading", 40],
+  [
+    "first_crew",
+    "First Crew",
+    "Own shares in 3 characters simultaneously.",
+    "beginner",
+    "Portfolio",
+    5,
+  ],
+  [
+    "crew_builder",
+    "Crew Builder",
+    "Own shares in 10 characters simultaneously.",
+    "intermediate",
+    "Portfolio",
+    10,
+  ],
+  [
+    "grand_fleet",
+    "Grand Fleet",
+    "Own shares in 25 characters simultaneously.",
+    "advanced",
+    "Portfolio",
+    20,
+  ],
+  [
+    "four_seas_investor",
+    "Four Seas Investor",
+    "Own a Blue Chip, Growth, Speculative, and Meme stock simultaneously.",
+    "intermediate",
+    "Portfolio",
+    10,
+  ],
+  ["rising_bounty", "Rising Bounty", "Reach \u0E3F50,000 net worth.", "beginner", "Wealth", 5],
+  [
+    "supernova_fortune",
+    "Supernova Fortune",
+    "Reach \u0E3F250,000 net worth.",
+    "intermediate",
+    "Wealth",
+    10,
+  ],
+  [
+    "emperors_treasury",
+    "Emperor's Treasury",
+    "Reach \u0E3F5,000,000 net worth.",
+    "legendary",
+    "Wealth",
+    40,
+  ],
+  [
+    "whale_position",
+    "Whale Position",
+    "Hold one position worth at least \u0E3F250,000.",
+    "advanced",
+    "Portfolio",
+    20,
+  ],
+  ["seven_day_sail", "Seven-Day Sail", "Maintain a 7-day login streak.", "beginner", "Activity", 5],
+  [
+    "seasoned_sailor",
+    "Seasoned Sailor",
+    "Be active on 100 distinct days.",
+    "advanced",
+    "Activity",
+    20,
+  ],
+  [
+    "unbroken_voyage",
+    "Unbroken Voyage",
+    "Maintain a 100-day login streak.",
+    "legendary",
+    "Activity",
+    40,
+  ],
+  [
+    "king_of_exchange",
+    "King of the Exchange",
+    "Reach rank #1 on the all-time net-worth leaderboard.",
+    "legendary",
+    "Leaderboard",
+    40,
+  ],
+  [
+    "first_sight",
+    "First Sight",
+    "Solve your first daily puzzle.",
+    "beginner",
+    "Grand Line Guess",
+    5,
+  ],
+  [
+    "observation_haki",
+    "Observation Haki",
+    "Solve a puzzle on the first guess.",
+    "intermediate",
+    "Grand Line Guess",
+    10,
+  ],
+  [
+    "clue_free_navigator",
+    "Clue-Free Navigator",
+    "Solve a puzzle without using a hint.",
+    "intermediate",
+    "Grand Line Guess",
+    10,
+  ],
+  [
+    "winning_route",
+    "Winning Route",
+    "Win 10 daily puzzles consecutively.",
+    "advanced",
+    "Grand Line Guess",
+    20,
+  ],
+  [
+    "grand_line_oracle",
+    "Grand Line Oracle",
+    "Win 50 daily puzzles.",
+    "legendary",
+    "Grand Line Guess",
+    40,
+  ],
+  [
+    "first_command",
+    "First Command",
+    "Submit your first Daily Crew mission.",
+    "beginner",
+    "Daily Crew",
+    5,
+  ],
+  ["a_rank_captain", "A-Rank Captain", "Earn an A or S rank.", "intermediate", "Daily Crew", 10],
+  ["s_rank_commander", "S-Rank Commander", "Earn an S rank.", "advanced", "Daily Crew", 20],
+  [
+    "perfect_crew",
+    "Perfect Crew",
+    "Achieve the maximum possible mission score.",
+    "advanced",
+    "Daily Crew",
+    20,
+  ],
+  ["mission_log", "Mission Log", "Submit 5 Daily Crew missions.", "beginner", "Daily Crew", 5],
+  [
+    "crew_scholar",
+    "Crew Scholar",
+    "Earn an A or S rank on 10 Daily Crew missions.",
+    "intermediate",
+    "Daily Crew",
+    10,
+  ],
+  [
+    "grand_fleet_archivist",
+    "Grand Fleet Archivist",
+    "Achieve a perfect score on 5 Daily Crew missions.",
+    "advanced",
+    "Daily Crew",
+    20,
+  ],
+].map(([code, name, description, tier, category, reward]) => ({
+  code: String(code),
+  name: String(name),
+  description: String(description),
+  tier: String(tier),
+  category: String(category),
+  icon: "*",
+  reputation_reward: Number(reward),
+}));
+
+const catalog = [...originalCatalog, ...expansionCatalog];
+
 function row(code: string) {
   const rows = buildAchievementProgressRows({
     catalog,
     unlocked: [{ code: "first_trade", unlockedAt: "2026-07-20T00:00:00Z" }],
     metrics: {
       totalTrades: 42,
+      totalBuys: 20,
+      totalSells: 30,
+      totalVolume: 750_000,
+      bestTradePnl: 12_345,
       realizedPnl: 12_345,
       loginStreak: 7,
+      daysActive: 44,
       currentNetWorth: 900_000,
       currentRank: 245,
+      largestPositionValue: 100_000,
+      holdingCharacterCount: 8,
+      holdingCategoryCount: 3,
+      glgWins: 12,
+      glgOneShotWins: 1,
+      glgBestStreak: 6,
+      glgHintsFreeSolved: true,
+      dailyCrewSubmissionCount: 2,
+      dailyCrewBestScore: 85,
+      dailyCrewBestRank: "a",
+      dailyCrewPerfectEligible: false,
+      dailyCrewHighRankCount: 6,
+      dailyCrewPerfectCount: 2,
       wins: 28,
       losses: 14,
       maxOpenHoldingAgeDays: 55,
@@ -53,28 +275,136 @@ function row(code: string) {
   return entry;
 }
 
-test("renders all 14 current achievement progress rows in tier order", () => {
+test("renders exactly 44 achievement progress rows in tier order", () => {
   const rows = buildAchievementProgressRows({ catalog, unlocked: [], metrics: {} });
 
+  assert.equal(rows.length, 44);
   assert.deepEqual(
     rows.map((entry) => entry.code),
     [
       "first_trade",
       "first_profit",
       "first_event",
+      "deckhand_dealer",
+      "first_crew",
+      "rising_bounty",
+      "seven_day_sail",
+      "first_sight",
+      "first_command",
+      "mission_log",
       "hundred_trades",
       "hundred_k_profit",
       "streak_30",
+      "balanced_ledger",
+      "big_score",
+      "crew_builder",
+      "four_seas_investor",
+      "supernova_fortune",
+      "observation_haki",
+      "clue_free_navigator",
+      "a_rank_captain",
+      "crew_scholar",
       "millionaire",
       "top_100",
       "top_10",
       "largest_holder",
+      "million_berry_mover",
+      "treasure_haul",
+      "grand_fleet",
+      "whale_position",
+      "seasoned_sailor",
+      "winning_route",
+      "s_rank_commander",
+      "perfect_crew",
+      "grand_fleet_archivist",
       "yonko_investor",
       "pirate_king",
       "market_prophet",
       "diamond_hands",
+      "storm_trader",
+      "emperors_treasury",
+      "unbroken_voyage",
+      "king_of_exchange",
+      "grand_line_oracle",
     ],
   );
+});
+
+test("preserves the original 14 achievement catalog entries unchanged", () => {
+  assert.deepEqual(
+    catalog.filter((entry) => originalCatalog.some((original) => original.code === entry.code)),
+    originalCatalog,
+  );
+});
+
+test("renders every new achievement with progress labels and thresholds", () => {
+  const cases: Array<[string, number | null, number | null, RegExp]> = [
+    ["deckhand_dealer", 42, 10, /42 \/ 10 trades/],
+    ["balanced_ledger", 20, 25, /20 \/ 25 buys - 30 \/ 25 sells/],
+    ["million_berry_mover", 750_000, 1_000_000, /\u0E3F750,000 \/ \u0E3F1,000,000 lifetime volume/],
+    ["big_score", 12_345, 10_000, /\u0E3F12,345 \/ \u0E3F10,000 best sell profit/],
+    ["treasure_haul", 12_345, 50_000, /\u0E3F12,345 \/ \u0E3F50,000 best sell profit/],
+    ["storm_trader", 42, 500, /42 \/ 500 trades/],
+    ["first_crew", 8, 3, /8 \/ 3 open character positions/],
+    ["crew_builder", 8, 10, /8 \/ 10 open character positions/],
+    ["grand_fleet", 8, 25, /8 \/ 25 open character positions/],
+    ["four_seas_investor", 3, 4, /3 \/ 4 stock categories held/],
+    ["rising_bounty", 900_000, 50_000, /\u0E3F900,000 \/ \u0E3F50,000 net worth/],
+    ["supernova_fortune", 900_000, 250_000, /\u0E3F900,000 \/ \u0E3F250,000 net worth/],
+    ["emperors_treasury", 900_000, 5_000_000, /\u0E3F900,000 \/ \u0E3F5,000,000 net worth/],
+    ["whale_position", 100_000, 250_000, /\u0E3F100,000 \/ \u0E3F250,000 largest position/],
+    ["seven_day_sail", 7, 7, /7 \/ 7 days/],
+    ["seasoned_sailor", 44, 100, /44 \/ 100 active days/],
+    ["unbroken_voyage", 7, 100, /7 \/ 100 days/],
+    ["king_of_exchange", 0.004081632653061225, 1, /Current #245 - Goal Top 1/],
+    ["first_sight", 12, 1, /12 \/ 1 puzzle solved/],
+    ["observation_haki", 1, 1, /1 \/ 1 first-guess solve/],
+    ["clue_free_navigator", 1, 1, /Solve a puzzle without using a hint/],
+    ["winning_route", 6, 10, /6 \/ 10 puzzle win streak/],
+    ["grand_line_oracle", 12, 50, /12 \/ 50 puzzles solved/],
+    ["first_command", 2, 1, /2 \/ 1 Daily Crew mission submitted/],
+    ["a_rank_captain", 1, 1, /Best Daily Crew rank: A/],
+    ["s_rank_commander", 0, 1, /Best Daily Crew rank: A/],
+    ["perfect_crew", 85, 100, /85 \/ 100 Daily Crew score/],
+    ["mission_log", 2, 5, /2 \/ 5 Daily Crew missions submitted/],
+    ["crew_scholar", 6, 10, /6 \/ 10 Daily Crew A\/S ranks/],
+    ["grand_fleet_archivist", 2, 5, /2 \/ 5 perfect Daily Crew missions/],
+  ];
+
+  assert.equal(cases.length, 30);
+  for (const [code, current, target, label] of cases) {
+    const entry = row(code);
+    assert.equal(entry.current, current, `${code} current`);
+    assert.equal(entry.target, target, `${code} target`);
+    assert.match(entry.progressLabel, label, `${code} label`);
+  }
+});
+
+test("new locked achievements show partial percentages and unlocked achievements stay complete", () => {
+  const locked = row("grand_line_oracle");
+  assert.equal(locked.unlocked, false);
+  assert.equal(locked.progressPercent, 24);
+
+  const unlocked = buildAchievementProgressRows({
+    catalog,
+    unlocked: [{ code: "grand_fleet_archivist", unlockedAt: "2026-07-22T00:00:00Z" }],
+    metrics: { dailyCrewPerfectCount: 2 },
+  }).find((entry) => entry.code === "grand_fleet_archivist")!;
+
+  assert.equal(unlocked.current, 2);
+  assert.equal(unlocked.target, 5);
+  assert.equal(unlocked.progressPercent, 100);
+});
+
+test("perfect crew progress shows the completed state when a max score is achieved", () => {
+  const perfectCrew = buildAchievementProgressRows({
+    catalog,
+    unlocked: [],
+    metrics: { dailyCrewBestScore: 100, dailyCrewPerfectEligible: true },
+  }).find((entry) => entry.code === "perfect_crew")!;
+
+  assert.equal(perfectCrew.progressPercent, 100);
+  assert.equal(perfectCrew.progressLabel, "Perfect Daily Crew score achieved");
 });
 
 test("marks locked and unlocked states without hiding locked criteria", () => {

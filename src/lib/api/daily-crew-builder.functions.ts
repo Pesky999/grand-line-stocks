@@ -188,8 +188,7 @@ type DailyCrewPayoutFailure = {
 };
 
 type DailyCrewPayoutAttempt =
-  | { ok: true; result: DailyCrewPayoutResult }
-  | { ok: false; failure: DailyCrewPayoutFailure };
+  { ok: true; result: DailyCrewPayoutResult } | { ok: false; failure: DailyCrewPayoutFailure };
 
 function safeDailyCrewPayoutCode(step: DailyCrewPayoutErrorStep, supabaseCode?: string): string {
   const safeCode = supabaseCode?.replace(/[^A-Za-z0-9_]/g, "_");
@@ -222,6 +221,13 @@ function logDailyCrewPayoutSupabaseError(
     details: error.details,
     hint: error.hint,
   });
+}
+
+async function refreshDailyCrewProgressionSafely(db: DailyCrewDb, userId: string) {
+  const { error } = await db.rpc("refresh_user_progression", { _user_id: userId });
+  if (error) {
+    logDailyCrewPayoutSupabaseError("Daily Crew Builder progression refresh failed", error);
+  }
 }
 
 async function admin(): Promise<DailyCrewDb> {
@@ -568,6 +574,9 @@ export const submitDailyCrewBuilderPreview = createServerFn({ method: "POST" })
     if (error) throw error;
 
     const persistedResult = parsePersistedResult(rpcResult, computedResult);
+    if (!persistedResult.alreadySubmitted) {
+      await refreshDailyCrewProgressionSafely(db, context.userId);
+    }
     if (persistedResult.rewardPaid) return persistedResult;
 
     const payoutAttempt = await awardDailyCrewBuilderRewardSafely(db, {

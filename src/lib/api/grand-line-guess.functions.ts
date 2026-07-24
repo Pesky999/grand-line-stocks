@@ -9,20 +9,43 @@ async function admin() {
 }
 
 type CharRow = {
-  id: string; name: string; slug: string; gender: string | null;
-  affiliation: string | null; affiliation_category: string | null;
-  devil_fruit_display: string | null; devil_fruit_name: string | null; has_devil_fruit: boolean;
-  haki_raw: string | null; has_armament: boolean; has_observation: boolean; has_conquerors: boolean;
-  bounty_display: string | null; bounty_numeric: number | null; bounty_unknown: boolean; bounty_is_minimum: boolean;
-  height_cm: number | null; height_unknown: boolean;
-  first_arc: string | null; first_arc_order: number | null;
+  id: string;
+  name: string;
+  slug: string;
+  gender: string | null;
+  affiliation: string | null;
+  affiliation_category: string | null;
+  devil_fruit_display: string | null;
+  devil_fruit_name: string | null;
+  has_devil_fruit: boolean;
+  haki_raw: string | null;
+  has_armament: boolean;
+  has_observation: boolean;
+  has_conquerors: boolean;
+  bounty_display: string | null;
+  bounty_numeric: number | null;
+  bounty_unknown: boolean;
+  bounty_is_minimum: boolean;
+  height_cm: number | null;
+  height_unknown: boolean;
+  first_arc: string | null;
+  first_arc_order: number | null;
 };
 
-type Cell = { value: string; result: "exact" | "partial" | "wrong" | "unknown" | "higher" | "lower" | "earlier" | "later"; label?: string };
+type Cell = {
+  value: string;
+  result: "exact" | "partial" | "wrong" | "unknown" | "higher" | "lower" | "earlier" | "later";
+  label?: string;
+};
 type Feedback = {
-  character: Cell; gender: Cell; affiliation: Cell; devil_fruit: Cell;
+  character: Cell;
+  gender: Cell;
+  affiliation: Cell;
+  devil_fruit: Cell;
   haki: Cell & { armament?: boolean; observation?: boolean; conquerors?: boolean };
-  bounty: Cell; height: Cell; first_arc: Cell;
+  bounty: Cell;
+  height: Cell;
+  first_arc: Cell;
 };
 
 // Classify a character's Devil Fruit into its type per the source spreadsheet.
@@ -34,16 +57,29 @@ function devilFruitType(c: CharRow): string {
   if (/Yami Yami no Mi\s*\/\s*Gura Gura no Mi/i.test(name)) return "Paramecia/Logia";
   // Logia fruits (canonical set present in the source document).
   const LOGIA = new Set([
-    "Mera Mera no Mi", "Hie Hie no Mi", "Pika Pika no Mi", "Magu Magu no Mi",
-    "Goro Goro no Mi", "Suna Suna no Mi", "Moku Moku no Mi", "Gasu Gasu no Mi",
-    "Mori Mori no Mi", "Yami Yami no Mi", "Yuki Yuki no Mi", "Numa Numa no Mi",
+    "Mera Mera no Mi",
+    "Hie Hie no Mi",
+    "Pika Pika no Mi",
+    "Magu Magu no Mi",
+    "Goro Goro no Mi",
+    "Suna Suna no Mi",
+    "Moku Moku no Mi",
+    "Gasu Gasu no Mi",
+    "Mori Mori no Mi",
+    "Yami Yami no Mi",
+    "Yuki Yuki no Mi",
+    "Numa Numa no Mi",
   ]);
   if (LOGIA.has(name)) return "Logia";
   // Zoan: natural (Hito/Ryu/Neko/Ushi/Uo/Tori/Kumo/Hebi/Zou/Inu/Sara/Mushi/Kame),
   // mythical/ancient via Model:, artificial SMILE fruits, and Artificial Zoan prefixes.
   if (/\bSMILE\b/i.test(name)) return "Zoan";
   if (/^Artificial\s+/i.test(name)) return "Zoan";
-  if (/^(Hito Hito|Ryu Ryu|Neko Neko|Ushi Ushi|Uo Uo|Tori Tori|Kumo Kumo|Hebi Hebi|Zou Zou|Inu Inu|Sara Sara|Mushi Mushi|Kame Kame)\b/i.test(name)) {
+  if (
+    /^(Hito Hito|Ryu Ryu|Neko Neko|Ushi Ushi|Uo Uo|Tori Tori|Kumo Kumo|Hebi Hebi|Zou Zou|Inu Inu|Sara Sara|Mushi Mushi|Kame Kame)\b/i.test(
+      name,
+    )
+  ) {
     return "Zoan";
   }
   // Everything else categorised as Paramecia (covers Mochi Mochi/Special Paramecia
@@ -54,11 +90,26 @@ function devilFruitType(c: CharRow): string {
 function computeFeedback(guess: CharRow, target: CharRow): Feedback {
   const fb: Feedback = {
     character: { value: guess.name, result: guess.id === target.id ? "exact" : "wrong" },
-    gender: { value: guess.gender ?? "Unknown", result: !guess.gender || !target.gender ? "unknown" : guess.gender === target.gender ? "exact" : "wrong" },
+    gender: {
+      value: guess.gender ?? "Unknown",
+      result:
+        !guess.gender || !target.gender
+          ? "unknown"
+          : guess.gender === target.gender
+            ? "exact"
+            : "wrong",
+    },
     affiliation: (() => {
-      if (!guess.affiliation || !target.affiliation) return { value: guess.affiliation ?? "Unknown", result: "unknown" as const };
-      if (guess.affiliation === target.affiliation) return { value: guess.affiliation, result: "exact" as const };
-      if (guess.affiliation_category && target.affiliation_category && guess.affiliation_category === target.affiliation_category) return { value: guess.affiliation, result: "partial" as const };
+      if (!guess.affiliation || !target.affiliation)
+        return { value: guess.affiliation ?? "Unknown", result: "unknown" as const };
+      if (guess.affiliation === target.affiliation)
+        return { value: guess.affiliation, result: "exact" as const };
+      if (
+        guess.affiliation_category &&
+        target.affiliation_category &&
+        guess.affiliation_category === target.affiliation_category
+      )
+        return { value: guess.affiliation, result: "partial" as const };
       return { value: guess.affiliation, result: "wrong" as const };
     })(),
     devil_fruit: (() => {
@@ -73,7 +124,7 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
       const t = [target.has_armament, target.has_observation, target.has_conquerors];
       const overlap = g.some((v, i) => v && t[i]);
       const equal = g.every((v, i) => v === t[i]);
-      const noneEither = g.every(v => !v) && t.every(v => !v);
+      const noneEither = g.every((v) => !v) && t.every((v) => !v);
       const chips = [g[0] && "ARM", g[1] && "OBS", g[2] && "COC"].filter(Boolean).join(" ");
       const value = chips || "—";
       let result: Cell["result"] = "wrong";
@@ -87,15 +138,32 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
     })(),
     height: (() => {
       const gd = guess.height_cm != null ? `${guess.height_cm} cm` : "Unknown";
-      if (guess.height_unknown || target.height_unknown || guess.height_cm == null || target.height_cm == null) return { value: gd, result: "unknown" as const };
+      if (
+        guess.height_unknown ||
+        target.height_unknown ||
+        guess.height_cm == null ||
+        target.height_cm == null
+      )
+        return { value: gd, result: "unknown" as const };
       if (guess.height_cm === target.height_cm) return { value: gd, result: "exact" as const };
-      return { value: gd, result: target.height_cm > guess.height_cm ? "higher" as const : "lower" as const };
+      return {
+        value: gd,
+        result: target.height_cm > guess.height_cm ? ("higher" as const) : ("lower" as const),
+      };
     })(),
     first_arc: (() => {
       const gd = guess.first_arc ?? "Unknown";
-      if (guess.first_arc_order == null || target.first_arc_order == null) return { value: gd, result: "unknown" as const };
-      if (guess.first_arc_order === target.first_arc_order) return { value: gd, result: "exact" as const };
-      return { value: gd, result: target.first_arc_order > guess.first_arc_order ? "later" as const : "earlier" as const };
+      if (guess.first_arc_order == null || target.first_arc_order == null)
+        return { value: gd, result: "unknown" as const };
+      if (guess.first_arc_order === target.first_arc_order)
+        return { value: gd, result: "exact" as const };
+      return {
+        value: gd,
+        result:
+          target.first_arc_order > guess.first_arc_order
+            ? ("later" as const)
+            : ("earlier" as const),
+      };
     })(),
   };
   return fb;
@@ -103,7 +171,8 @@ function computeFeedback(guess: CharRow, target: CharRow): Feedback {
 
 type GuessAdminClient = Awaited<ReturnType<typeof admin>>;
 
-const REWARD_PAYOUT_ERROR_MESSAGE = "Could not award Grand Line Guess reward. Please refresh and try again.";
+const REWARD_PAYOUT_ERROR_MESSAGE =
+  "Could not award Grand Line Guess reward. Please refresh and try again.";
 type PayoutErrorStep =
   | "WALLET_PRECHECK_SELECT_FAILED"
   | "WALLET_PRECHECK_INSERT_FAILED"
@@ -171,6 +240,13 @@ function logGrandLineGuessSupabaseError(
   });
 }
 
+async function refreshGrandLineGuessProgressionSafely(db: GuessAdminClient, userId: string) {
+  const { error } = await db.rpc("refresh_user_progression", { _user_id: userId });
+  if (error) {
+    logGrandLineGuessSupabaseError("Grand Line Guess progression refresh failed", error);
+  }
+}
+
 async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: string) {
   const existing = await db
     .from("user_wallets")
@@ -179,7 +255,10 @@ async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: st
     .maybeSingle();
 
   if (existing.error) {
-    logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition check failed", existing.error);
+    logGrandLineGuessSupabaseError(
+      "Grand Line Guess wallet precondition check failed",
+      existing.error,
+    );
     throw new GrandLineGuessPayoutError("WALLET_PRECHECK_SELECT_FAILED", existing.error.code);
   }
 
@@ -203,12 +282,18 @@ async function ensureGrandLineGuessRewardWallet(db: GuessAdminClient, userId: st
     if (!raced.error && raced.data) return;
 
     if (raced.error) {
-      logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition race recheck failed", raced.error);
+      logGrandLineGuessSupabaseError(
+        "Grand Line Guess wallet precondition race recheck failed",
+        raced.error,
+      );
       throw new GrandLineGuessPayoutError("WALLET_PRECHECK_RACE_RECHECK_FAILED", raced.error.code);
     }
   }
 
-  logGrandLineGuessSupabaseError("Grand Line Guess wallet precondition insert failed", created.error);
+  logGrandLineGuessSupabaseError(
+    "Grand Line Guess wallet precondition insert failed",
+    created.error,
+  );
   throw new GrandLineGuessPayoutError("WALLET_PRECHECK_INSERT_FAILED", created.error.code);
 }
 
@@ -246,17 +331,16 @@ function utcDate(): string {
 }
 
 // PUBLIC: safe autocomplete
-export const getGrandLineGuessAutocomplete = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const db = await admin();
-    const { data, error } = await db
-      .from("grand_line_guess_characters")
-      .select("id,slug,name")
-      .eq("active", true)
-      .order("name");
-    if (error) throw error;
-    return data ?? [];
-  });
+export const getGrandLineGuessAutocomplete = createServerFn({ method: "GET" }).handler(async () => {
+  const db = await admin();
+  const { data, error } = await db
+    .from("grand_line_guess_characters")
+    .select("id,slug,name")
+    .eq("active", true)
+    .order("name");
+  if (error) throw error;
+  return data ?? [];
+});
 
 async function ensurePuzzle(userId: string) {
   const db = await admin();
@@ -280,17 +364,32 @@ async function ensurePuzzle(userId: string) {
   const ins = await db
     .from("grand_line_guess_daily_puzzles")
     .insert({ user_id: userId, puzzle_date: today, character_id: pick.id, status: "active" })
-    .select("*").single();
+    .select("*")
+    .single();
   if (ins.error) {
     // race: re-fetch
-    const r = await db.from("grand_line_guess_daily_puzzles").select("*").eq("user_id", userId).eq("puzzle_date", today).single();
+    const r = await db
+      .from("grand_line_guess_daily_puzzles")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("puzzle_date", today)
+      .single();
     if (r.error) throw r.error;
     return r.data;
   }
   // ensure result row exists
-  await db.from("grand_line_guess_results").insert({
-    puzzle_id: ins.data.id, user_id: userId,
-  }).select().maybeSingle().then(()=>{}, ()=>{});
+  await db
+    .from("grand_line_guess_results")
+    .insert({
+      puzzle_id: ins.data.id,
+      user_id: userId,
+    })
+    .select()
+    .maybeSingle()
+    .then(
+      () => {},
+      () => {},
+    );
   return ins.data;
 }
 
@@ -302,10 +401,12 @@ const HINT_TIERS: { tier: number; unlock_at: number; label: string }[] = [
 
 function computeHintText(tier: number, target: CharRow): string {
   if (tier === 1) return `Gender: ${target.gender?.trim() ? target.gender : "Unknown"}`;
-  if (tier === 2) return `Affiliation: ${target.affiliation?.trim() ? target.affiliation : "Unknown"}`;
-  if (tier === 3) return target.has_devil_fruit
-    ? "The mystery character HAS a Devil Fruit."
-    : "The mystery character does NOT have a Devil Fruit.";
+  if (tier === 2)
+    return `Affiliation: ${target.affiliation?.trim() ? target.affiliation : "Unknown"}`;
+  if (tier === 3)
+    return target.has_devil_fruit
+      ? "The mystery character HAS a Devil Fruit."
+      : "The mystery character does NOT have a Devil Fruit.";
   return "Unknown";
 }
 
@@ -313,25 +414,42 @@ async function loadState(userId: string) {
   const db = await admin();
   const puzzle = await ensurePuzzle(userId);
   const [attemptsR, resultR, targetR] = await Promise.all([
-    db.from("grand_line_guess_attempts").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).order("attempt_number"),
-    db.from("grand_line_guess_results").select("*").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle(),
+    db
+      .from("grand_line_guess_attempts")
+      .select("*")
+      .eq("puzzle_id", puzzle.id)
+      .eq("user_id", userId)
+      .order("attempt_number"),
+    db
+      .from("grand_line_guess_results")
+      .select("*")
+      .eq("puzzle_id", puzzle.id)
+      .eq("user_id", userId)
+      .maybeSingle(),
     db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single(),
   ]);
   const attempts = attemptsR.data ?? [];
   const result = resultR.data;
-  const correctAttempt = attempts.find((attempt: { is_correct: boolean }) => attempt.is_correct) ?? null;
+  const correctAttempt =
+    attempts.find((attempt: { is_correct: boolean }) => attempt.is_correct) ?? null;
   const effectivelySolved = Boolean(result?.solved || correctAttempt);
   const rewardPaid = result?.reward_paid ?? false;
-  const rewardPayoutPending = Boolean((result?.solved && !rewardPaid) || (correctAttempt && !rewardPaid));
-  const correctAttemptNumber = correctAttempt?.attempt_number ?? (result?.solved ? result.attempts_used : null);
-  const pendingRewardAmount = rewardPayoutPending && correctAttemptNumber != null
-    ? rewardForAttempt(correctAttemptNumber)
-    : null;
+  const rewardPayoutPending = Boolean(
+    (result?.solved && !rewardPaid) || (correctAttempt && !rewardPaid),
+  );
+  const correctAttemptNumber =
+    correctAttempt?.attempt_number ?? (result?.solved ? result.attempts_used : null);
+  const pendingRewardAmount =
+    rewardPayoutPending && correctAttemptNumber != null
+      ? rewardForAttempt(correctAttemptNumber)
+      : null;
   let answer: { name: string; slug: string } | null = null;
   if (effectivelySolved || puzzle.status === "expired") {
     if (targetR.data) answer = { name: targetR.data.name, slug: targetR.data.slug };
   }
-  const wrongCount = attempts.filter((attempt: { is_correct: boolean }) => !attempt.is_correct).length;
+  const wrongCount = attempts.filter(
+    (attempt: { is_correct: boolean }) => !attempt.is_correct,
+  ).length;
   const hintsUsed = result?.hints_used ?? 0;
   const target = targetR.data as CharRow | null;
   const hints = HINT_TIERS.map((t) => {
@@ -359,7 +477,9 @@ async function loadState(userId: string) {
     hints,
     solved: effectivelySolved,
     reward_paid: rewardPaid,
-    reward_amount: rewardPaid ? (result?.reward_amount ?? 0) : (pendingRewardAmount ?? result?.reward_amount ?? 0),
+    reward_amount: rewardPaid
+      ? (result?.reward_amount ?? 0)
+      : (pendingRewardAmount ?? result?.reward_amount ?? 0),
     reward_payout_pending: rewardPayoutPending,
     pending_reward_amount: pendingRewardAmount,
     potential_next_reward: potentialReward,
@@ -437,11 +557,20 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     const puzzle = await ensurePuzzle(userId);
     if (puzzle.status !== "active") throw new Error("Puzzle is no longer active.");
 
-    const targetR = await db.from("grand_line_guess_characters").select("*").eq("id", puzzle.character_id).single();
+    const targetR = await db
+      .from("grand_line_guess_characters")
+      .select("*")
+      .eq("id", puzzle.character_id)
+      .single();
     if (targetR.error || !targetR.data) throw new Error("Puzzle target missing.");
     const target = targetR.data as CharRow;
 
-    const guessR = await db.from("grand_line_guess_characters").select("*").eq("id", data.guessed_character_id).eq("active", true).maybeSingle();
+    const guessR = await db
+      .from("grand_line_guess_characters")
+      .select("*")
+      .eq("id", data.guessed_character_id)
+      .eq("active", true)
+      .maybeSingle();
     if (!guessR.data) throw new Error("That character is not available.");
     const guess = guessR.data as CharRow;
 
@@ -451,7 +580,7 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
       .select("id,guessed_character_id,attempt_number,is_correct")
       .eq("puzzle_id", puzzle.id)
       .eq("user_id", userId);
-    const duplicateAttempt = existing.data?.find(a => a.guessed_character_id === guess.id);
+    const duplicateAttempt = existing.data?.find((a) => a.guessed_character_id === guess.id);
     if (duplicateAttempt) {
       if (guess.id === target.id && duplicateAttempt.is_correct) {
         const rewardError = await awardGrandLineGuessRewardSafely(db, {
@@ -460,6 +589,9 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
           attemptNumber: duplicateAttempt.attempt_number,
           rewardAmount: rewardForAttempt(duplicateAttempt.attempt_number),
         });
+        if (!rewardError) {
+          await refreshGrandLineGuessProgressionSafely(db, userId);
+        }
         const state = await loadState(userId);
         return rewardError ? applyPayoutFailure(state, rewardError) : state;
       }
@@ -470,10 +602,18 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
     const feedback = computeFeedback(guess, target);
     const isCorrect = feedback.character.result === "exact";
 
-    const ins = await db.from("grand_line_guess_attempts").insert({
-      puzzle_id: puzzle.id, user_id: userId, guessed_character_id: guess.id,
-      attempt_number: attemptNumber, feedback, is_correct: isCorrect,
-    }).select().single();
+    const ins = await db
+      .from("grand_line_guess_attempts")
+      .insert({
+        puzzle_id: puzzle.id,
+        user_id: userId,
+        guessed_character_id: guess.id,
+        attempt_number: attemptNumber,
+        feedback,
+        is_correct: isCorrect,
+      })
+      .select()
+      .single();
     if (ins.error) {
       if (ins.error.code === "23505") {
         const retry = await db
@@ -491,6 +631,9 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
               attemptNumber: retry.data.attempt_number,
               rewardAmount: rewardForAttempt(retry.data.attempt_number),
             });
+            if (!rewardError) {
+              await refreshGrandLineGuessProgressionSafely(db, userId);
+            }
             const state = await loadState(userId);
             return rewardError ? applyPayoutFailure(state, rewardError) : state;
           }
@@ -512,27 +655,39 @@ export const submitGrandLineGuess = createServerFn({ method: "POST" })
         const state = await loadState(userId);
         return applyPayoutFailure(state, rewardError);
       }
+      await refreshGrandLineGuessProgressionSafely(db, userId);
     } else {
       // ensure result row
-      const existingResult = await db.from("grand_line_guess_results").select("hints_used").eq("puzzle_id", puzzle.id).eq("user_id", userId).maybeSingle();
+      const existingResult = await db
+        .from("grand_line_guess_results")
+        .select("hints_used")
+        .eq("puzzle_id", puzzle.id)
+        .eq("user_id", userId)
+        .maybeSingle();
       const hintsUsed = existingResult.data?.hints_used ?? 0;
-      await db.from("grand_line_guess_results").upsert({
-        puzzle_id: puzzle.id, user_id: userId,
-        attempts_used: attemptNumber, hints_used: hintsUsed,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "puzzle_id,user_id" });
+      await db.from("grand_line_guess_results").upsert(
+        {
+          puzzle_id: puzzle.id,
+          user_id: userId,
+          attempts_used: attemptNumber,
+          hints_used: hintsUsed,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "puzzle_id,user_id" },
+      );
     }
 
     return loadState(userId);
   });
 
-
-
-
 export const getGrandLineGuessStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const db = await admin();
-    const r = await db.from("grand_line_guess_stats").select("*").eq("user_id", context.userId).maybeSingle();
+    const r = await db
+      .from("grand_line_guess_stats")
+      .select("*")
+      .eq("user_id", context.userId)
+      .maybeSingle();
     return r.data;
   });

@@ -12,12 +12,30 @@ export type AchievementCatalogEntry = {
 
 export type LegacyLogMetrics = {
   totalTrades?: number | null;
+  totalBuys?: number | null;
+  totalSells?: number | null;
+  totalVolume?: number | null;
+  bestTradePnl?: number | null;
   realizedPnl?: number | null;
   loginStreak?: number | null;
+  daysActive?: number | null;
   currentNetWorth?: number | null;
   currentRank?: number | null;
   wins?: number | null;
   losses?: number | null;
+  largestPositionValue?: number | null;
+  holdingCharacterCount?: number | null;
+  holdingCategoryCount?: number | null;
+  glgWins?: number | null;
+  glgOneShotWins?: number | null;
+  glgBestStreak?: number | null;
+  glgHintsFreeSolved?: boolean | null;
+  dailyCrewSubmissionCount?: number | null;
+  dailyCrewBestScore?: number | null;
+  dailyCrewBestRank?: string | null;
+  dailyCrewPerfectEligible?: boolean | null;
+  dailyCrewHighRankCount?: number | null;
+  dailyCrewPerfectCount?: number | null;
   maxOpenHoldingAgeDays?: number | null;
   largestHolderEligible?: boolean | null;
   firstEventEligible?: boolean | null;
@@ -60,6 +78,36 @@ const ACHIEVEMENT_ORDER = [
   "pirate_king",
   "market_prophet",
   "diamond_hands",
+  "deckhand_dealer",
+  "balanced_ledger",
+  "million_berry_mover",
+  "big_score",
+  "treasure_haul",
+  "storm_trader",
+  "first_crew",
+  "crew_builder",
+  "grand_fleet",
+  "four_seas_investor",
+  "rising_bounty",
+  "supernova_fortune",
+  "emperors_treasury",
+  "whale_position",
+  "seven_day_sail",
+  "seasoned_sailor",
+  "unbroken_voyage",
+  "king_of_exchange",
+  "first_sight",
+  "observation_haki",
+  "clue_free_navigator",
+  "winning_route",
+  "grand_line_oracle",
+  "first_command",
+  "a_rank_captain",
+  "s_rank_commander",
+  "perfect_crew",
+  "mission_log",
+  "crew_scholar",
+  "grand_fleet_archivist",
 ] as const;
 
 const BERRY_SYMBOL = "\u0E3F";
@@ -100,6 +148,29 @@ function booleanProgress(done: boolean, label: string) {
     current: done ? 1 : 0,
     target: 1,
     progressPercent: done ? 100 : 0,
+    progressLabel: label,
+  };
+}
+
+function dualProgress({
+  firstCurrent,
+  firstTarget,
+  secondCurrent,
+  secondTarget,
+  label,
+}: {
+  firstCurrent: number;
+  firstTarget: number;
+  secondCurrent: number;
+  secondTarget: number;
+  label: string;
+}) {
+  const firstPercent = clampPercent(firstCurrent, firstTarget) ?? 0;
+  const secondPercent = clampPercent(secondCurrent, secondTarget) ?? 0;
+  return {
+    current: Math.min(firstCurrent, secondCurrent),
+    target: Math.min(firstTarget, secondTarget),
+    progressPercent: Math.min(firstPercent, secondPercent),
     progressLabel: label,
   };
 }
@@ -186,6 +257,165 @@ function buildKnownProgress(code: string, metrics: LegacyLogMetrics) {
         value(metrics.maxOpenHoldingAgeDays),
         60,
         `${Math.floor(value(metrics.maxOpenHoldingAgeDays))} / 60 open holding days`,
+      );
+    case "deckhand_dealer":
+      return progress(value(metrics.totalTrades), 10, `${value(metrics.totalTrades)} / 10 trades`);
+    case "balanced_ledger":
+      return dualProgress({
+        firstCurrent: value(metrics.totalBuys),
+        firstTarget: 25,
+        secondCurrent: value(metrics.totalSells),
+        secondTarget: 25,
+        label: `${value(metrics.totalBuys)} / 25 buys - ${value(metrics.totalSells)} / 25 sells`,
+      });
+    case "million_berry_mover":
+      return progress(
+        value(metrics.totalVolume),
+        1_000_000,
+        `${formatBerries(value(metrics.totalVolume))} / ${formatBerries(1_000_000)} lifetime volume`,
+      );
+    case "big_score":
+      return progress(
+        value(metrics.bestTradePnl),
+        10_000,
+        `${formatBerries(value(metrics.bestTradePnl))} / ${formatBerries(10_000)} best sell profit`,
+      );
+    case "treasure_haul":
+      return progress(
+        value(metrics.bestTradePnl),
+        50_000,
+        `${formatBerries(value(metrics.bestTradePnl))} / ${formatBerries(50_000)} best sell profit`,
+      );
+    case "storm_trader":
+      return progress(
+        value(metrics.totalTrades),
+        500,
+        `${value(metrics.totalTrades)} / 500 trades`,
+      );
+    case "first_crew":
+      return progress(
+        value(metrics.holdingCharacterCount),
+        3,
+        `${value(metrics.holdingCharacterCount)} / 3 open character positions`,
+      );
+    case "crew_builder":
+      return progress(
+        value(metrics.holdingCharacterCount),
+        10,
+        `${value(metrics.holdingCharacterCount)} / 10 open character positions`,
+      );
+    case "grand_fleet":
+      return progress(
+        value(metrics.holdingCharacterCount),
+        25,
+        `${value(metrics.holdingCharacterCount)} / 25 open character positions`,
+      );
+    case "four_seas_investor":
+      return progress(
+        value(metrics.holdingCategoryCount),
+        4,
+        `${value(metrics.holdingCategoryCount)} / 4 stock categories held`,
+      );
+    case "rising_bounty":
+      return progress(
+        value(metrics.currentNetWorth),
+        50_000,
+        `${formatBerries(value(metrics.currentNetWorth))} / ${formatBerries(50_000)} net worth`,
+      );
+    case "supernova_fortune":
+      return progress(
+        value(metrics.currentNetWorth),
+        250_000,
+        `${formatBerries(value(metrics.currentNetWorth))} / ${formatBerries(250_000)} net worth`,
+      );
+    case "emperors_treasury":
+      return progress(
+        value(metrics.currentNetWorth),
+        5_000_000,
+        `${formatBerries(value(metrics.currentNetWorth))} / ${formatBerries(5_000_000)} net worth`,
+      );
+    case "whale_position":
+      return progress(
+        value(metrics.largestPositionValue),
+        250_000,
+        `${formatBerries(value(metrics.largestPositionValue))} / ${formatBerries(250_000)} largest position`,
+      );
+    case "seven_day_sail":
+      return progress(value(metrics.loginStreak), 7, `${value(metrics.loginStreak)} / 7 days`);
+    case "seasoned_sailor":
+      return progress(
+        value(metrics.daysActive),
+        100,
+        `${value(metrics.daysActive)} / 100 active days`,
+      );
+    case "unbroken_voyage":
+      return progress(value(metrics.loginStreak), 100, `${value(metrics.loginStreak)} / 100 days`);
+    case "king_of_exchange":
+      return rankProgress(metrics.currentRank, 1);
+    case "first_sight":
+      return progress(value(metrics.glgWins), 1, `${value(metrics.glgWins)} / 1 puzzle solved`);
+    case "observation_haki":
+      return progress(
+        value(metrics.glgOneShotWins),
+        1,
+        `${value(metrics.glgOneShotWins)} / 1 first-guess solve`,
+      );
+    case "clue_free_navigator":
+      return booleanProgress(!!metrics.glgHintsFreeSolved, "Solve a puzzle without using a hint");
+    case "winning_route":
+      return progress(
+        value(metrics.glgBestStreak),
+        10,
+        `${value(metrics.glgBestStreak)} / 10 puzzle win streak`,
+      );
+    case "grand_line_oracle":
+      return progress(value(metrics.glgWins), 50, `${value(metrics.glgWins)} / 50 puzzles solved`);
+    case "first_command":
+      return progress(
+        value(metrics.dailyCrewSubmissionCount),
+        1,
+        `${value(metrics.dailyCrewSubmissionCount)} / 1 Daily Crew mission submitted`,
+      );
+    case "a_rank_captain": {
+      const rank = metrics.dailyCrewBestRank;
+      const done = rank === "a" || rank === "s";
+      return booleanProgress(
+        done,
+        rank ? `Best Daily Crew rank: ${rank.toUpperCase()}` : "Earn A or S rank",
+      );
+    }
+    case "s_rank_commander":
+      return booleanProgress(
+        metrics.dailyCrewBestRank === "s",
+        metrics.dailyCrewBestRank
+          ? `Best Daily Crew rank: ${metrics.dailyCrewBestRank.toUpperCase()}`
+          : "Earn S rank",
+      );
+    case "perfect_crew":
+      return progress(
+        value(metrics.dailyCrewBestScore),
+        100,
+        metrics.dailyCrewPerfectEligible
+          ? "Perfect Daily Crew score achieved"
+          : `${value(metrics.dailyCrewBestScore)} / 100 Daily Crew score`,
+      );
+    case "mission_log":
+      return progress(
+        value(metrics.dailyCrewSubmissionCount),
+        5,
+        `${value(metrics.dailyCrewSubmissionCount)} / 5 Daily Crew missions submitted`,
+      );
+    case "crew_scholar":
+      return progress(
+        value(metrics.dailyCrewHighRankCount),
+        10,
+        `${value(metrics.dailyCrewHighRankCount)} / 10 Daily Crew A/S ranks`,
+      );
+    case "grand_fleet_archivist":
+      return progress(
+        value(metrics.dailyCrewPerfectCount),
+        5,
+        `${value(metrics.dailyCrewPerfectCount)} / 5 perfect Daily Crew missions`,
       );
     default:
       return {

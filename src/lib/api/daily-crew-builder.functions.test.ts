@@ -130,8 +130,9 @@ test("submit preview rejects missing roles, duplicate characters, and unknown ch
   );
 });
 
-test("Daily Crew Builder server functions read missions from DB and use only approved RPCs for save and payout", () => {
+test("Daily Crew Builder server functions read missions from DB and use only approved RPCs for save, payout, and progression", () => {
   const payoutCall = source.match(/\.rpc\("award_daily_crew_builder_reward"[\s\S]*?\}\);/);
+  const progressionCall = source.match(/\.rpc\("refresh_user_progression"[\s\S]*?\}\);/);
 
   assert.match(
     source,
@@ -173,6 +174,8 @@ test("Daily Crew Builder server functions read missions from DB and use only app
   assert.match(source, /_user_id: args\.userId/);
   assert.ok(payoutCall, "payout RPC call should be present");
   assert.doesNotMatch(payoutCall[0], /_reward_amount|rewardAmount|score|rank/);
+  assert.ok(progressionCall, "progression refresh RPC call should be present");
+  assert.match(progressionCall[0], /_user_id: userId/);
 
   assert.doesNotMatch(source, /DAILY_CREW_SAMPLE_FIXTURES/);
   assert.doesNotMatch(source, /user_wallets|wallet mutation|transactions/);
@@ -334,4 +337,32 @@ test("Daily Crew Builder saved-result load uses stored submission data and exist
   assert.match(source, /function parseSavedSubmissionResult\(row: DailyCrewSubmissionRow\)/);
   assert.match(source, /previewResultSchema\.parse\(savedSubmission\.score_breakdown\)/);
   assert.match(source, /alreadySubmitted: true/);
+});
+
+test("Daily Crew Builder refreshes progression after a newly saved submission without blocking payout state", () => {
+  const refreshHelper = source.match(
+    /async function refreshDailyCrewProgressionSafely[\s\S]*?async function admin/,
+  )?.[0];
+  const submitFunction = source.match(
+    /export const submitDailyCrewBuilderPreview[\s\S]*?return payoutAttempt\.ok/,
+  )?.[0];
+
+  assert.ok(refreshHelper, "best-effort progression refresh helper should be present");
+  assert.ok(submitFunction, "submit server function should be present");
+  assert.match(refreshHelper, /\.rpc\("refresh_user_progression", \{ _user_id: userId \}\)/);
+  assert.match(
+    refreshHelper,
+    /logDailyCrewPayoutSupabaseError\("Daily Crew Builder progression refresh failed", error\)/,
+  );
+  assert.doesNotMatch(refreshHelper, /throw new DailyCrewPayoutError|throw error/);
+  assert.match(
+    submitFunction,
+    /const persistedResult = parsePersistedResult\(rpcResult, computedResult\);\s+if \(!persistedResult\.alreadySubmitted\) \{[\s\S]*await refreshDailyCrewProgressionSafely\(db, context\.userId\);[\s\S]*\}/,
+  );
+  assert.match(submitFunction, /if \(persistedResult\.rewardPaid\) return persistedResult/);
+  assert.match(submitFunction, /awardDailyCrewBuilderRewardSafely\(db, \{/);
+  assert.doesNotMatch(
+    submitFunction,
+    /refreshDailyCrewProgressionSafely\(db, context\.userId\);[\s\S]*throw/,
+  );
 });

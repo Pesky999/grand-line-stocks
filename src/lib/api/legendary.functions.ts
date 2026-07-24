@@ -224,6 +224,9 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       { data: legacyRecords, error: legacyError },
       { data: holdings, error: holdingsError },
       { data: firstEvent, error: firstEventError },
+      { data: glgStats, error: glgStatsError },
+      { count: glgHintsFreeCount, error: glgHintsFreeError },
+      { data: dailyCrewSubmissions, error: dailyCrewError },
     ] = await Promise.all([
       db.from("user_stats").select("*").eq("user_id", userId).maybeSingle(),
       db
@@ -249,7 +252,7 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
         .order("achieved_at", { ascending: false }),
       db
         .from("user_holdings")
-        .select("character_id,shares,created_at,characters(slug,name,current_price)")
+        .select("character_id,shares,created_at,characters(slug,name,current_price,category)")
         .eq("user_id", userId)
         .gt("shares", 0),
       profile?.created_at
@@ -262,6 +265,21 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
             .lte("published_at", new Date().toISOString())
             .limit(1)
         : Promise.resolve({ data: [], error: null }),
+      db
+        .from("grand_line_guess_stats")
+        .select("games_won,one_shot_wins,best_streak")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      db
+        .from("grand_line_guess_results")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("solved", true)
+        .eq("hints_used", 0),
+      db
+        .from("daily_crew_submissions")
+        .select("score,rank,daily_crew_missions(max_score)")
+        .eq("user_id", userId),
     ]);
 
     for (const error of [
@@ -272,6 +290,9 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       legacyError,
       holdingsError,
       firstEventError,
+      glgStatsError,
+      glgHintsFreeError,
+      dailyCrewError,
     ]) {
       if (error) throw error;
     }
@@ -280,8 +301,16 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       character_id: string;
       shares: number | string;
       created_at: string;
+      characters: {
+        category: string;
+      } | null;
     }[];
     const characterIds = [...new Set(positiveHoldings.map((holding) => holding.character_id))];
+    const heldCategories = new Set(
+      positiveHoldings
+        .map((holding) => holding.characters?.category)
+        .filter((category): category is string => !!category),
+    );
     let largestHolderEligible = false;
 
     if (characterIds.length > 0) {
@@ -303,6 +332,34 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
         return userShares > 0 && userShares >= maxShares;
       });
     }
+
+    const dailyCrewRows = (dailyCrewSubmissions ?? []) as {
+      score: number | string;
+      rank: string;
+      daily_crew_missions: { max_score: number | string } | null;
+    }[];
+    const dailyCrewBestScore = dailyCrewRows.reduce(
+      (max, submission) => Math.max(max, Number(submission.score)),
+      0,
+    );
+    const dailyCrewBestRank =
+      dailyCrewRows.find((submission) => submission.rank === "s")?.rank ??
+      dailyCrewRows.find((submission) => submission.rank === "a")?.rank ??
+      dailyCrewRows.find((submission) => submission.rank === "b")?.rank ??
+      dailyCrewRows.find((submission) => submission.rank === "c")?.rank ??
+      dailyCrewRows.find((submission) => submission.rank === "fail")?.rank ??
+      null;
+    const dailyCrewPerfectEligible = dailyCrewRows.some(
+      (submission) =>
+        Number(submission.score) >= Number(submission.daily_crew_missions?.max_score ?? 100),
+    );
+    const dailyCrewHighRankCount = dailyCrewRows.filter((submission) =>
+      ["a", "s"].includes(submission.rank),
+    ).length;
+    const dailyCrewPerfectCount = dailyCrewRows.filter(
+      (submission) =>
+        Number(submission.score) === Number(submission.daily_crew_missions?.max_score ?? 100),
+    ).length;
 
     const now = Date.now();
     const maxOpenHoldingAgeDays = positiveHoldings.reduce((max, holding) => {
@@ -333,12 +390,30 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       legacyRecords: legacyRecords ?? [],
       metrics: {
         totalTrades: Number(stats?.total_trades ?? 0),
+        totalBuys: Number(stats?.total_buys ?? 0),
+        totalSells: Number(stats?.total_sells ?? 0),
+        totalVolume: Number(stats?.total_volume ?? 0),
+        bestTradePnl: Number(stats?.best_trade_pnl ?? 0),
         realizedPnl: Number(stats?.realized_pnl ?? 0),
         loginStreak: Number(stats?.login_streak ?? 0),
+        daysActive: Number(stats?.days_active ?? 0),
         currentNetWorth: Number(stats?.current_net_worth ?? 0),
         currentRank: rank?.rank ?? stats?.current_rank ?? null,
         wins: Number(stats?.wins ?? 0),
         losses: Number(stats?.losses ?? 0),
+        largestPositionValue: Number(stats?.largest_position_value ?? 0),
+        holdingCharacterCount: positiveHoldings.length,
+        holdingCategoryCount: heldCategories.size,
+        glgWins: Number(glgStats?.games_won ?? 0),
+        glgOneShotWins: Number(glgStats?.one_shot_wins ?? 0),
+        glgBestStreak: Number(glgStats?.best_streak ?? 0),
+        glgHintsFreeSolved: Number(glgHintsFreeCount ?? 0) > 0,
+        dailyCrewSubmissionCount: dailyCrewRows.length,
+        dailyCrewBestScore,
+        dailyCrewBestRank,
+        dailyCrewPerfectEligible,
+        dailyCrewHighRankCount,
+        dailyCrewPerfectCount,
         maxOpenHoldingAgeDays,
         largestHolderEligible,
         firstEventEligible: (firstEvent ?? []).length > 0,
