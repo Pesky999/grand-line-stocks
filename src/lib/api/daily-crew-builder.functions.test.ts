@@ -33,15 +33,21 @@ test("mission endpoint returns only public-safe mission data", () => {
   assert.equal(simplifiedMission.roles.length, 3);
   assert.deepEqual(
     simplifiedMission.roles.map((role) => role.name),
-    ["Operation Lead", "Scout / Lookout", "Emergency Support"],
+    ["Captain", "Navigator", "Support"],
   );
   assert.equal(Object.hasOwn(mission, "roleScores"), false);
   assert.equal(Object.hasOwn(mission, "roleRequirements"), false);
   assert.equal(Object.hasOwn(mission, "synergyRules"), false);
   assert.equal(Object.hasOwn(mission, "perfectSolution"), false);
+  for (const character of [...mission.pool, ...simplifiedMission.pool]) {
+    assert.equal(Object.hasOwn(character, "displayOrder"), false);
+    assert.equal(Object.hasOwn(character, "visibleTags"), false);
+    assert.equal(Object.hasOwn(character, "primaryRole"), false);
+    assert.equal(Object.hasOwn(character, "isStrawHat"), false);
+  }
   assert.doesNotMatch(
     json,
-    /roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/i,
+    /displayOrder|visibleTags|primaryRole|isStrawHat|roleScores|roleRequirements|subtypeKey|subtypeLabel|synergyRules|perfectSolution/i,
   );
   assert.doesNotMatch(json, /Hidden command profile|Hidden combat profile|Hidden route profile/i);
 });

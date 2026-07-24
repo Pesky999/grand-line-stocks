@@ -31,8 +31,14 @@ function perfectAssignments(fixture: DailyCrewMissionFixture): DailyCrewSubmissi
   }));
 }
 
-function roleScoreFor(fixture: DailyCrewMissionFixture, characterId: string, role: DailyCrewRole): number {
-  const score = fixture.roleScores.find((entry) => entry.characterId === characterId && entry.role === role);
+function roleScoreFor(
+  fixture: DailyCrewMissionFixture,
+  characterId: string,
+  role: DailyCrewRole,
+): number {
+  const score = fixture.roleScores.find(
+    (entry) => entry.characterId === characterId && entry.role === role,
+  );
   assert.ok(score, `expected score for ${characterId} ${role}`);
   return score.score;
 }
@@ -57,13 +63,12 @@ test("sample fixtures validate with complete hidden score coverage", () => {
       [DAILY_CREW_SIMPLIFIED_POOL_SIZE, DAILY_CREW_LEGACY_POOL_SIZE].includes(fixture.pool.length),
     );
     assert.equal(fixture.roleScores.length, fixture.pool.length * fixture.roleRequirements.length);
+    assert.equal(fixture.pool.filter((character) => character.isStrawHat).length <= 5, true);
     assert.equal(
-      fixture.pool.filter((character) => character.isStrawHat).length <= 5,
-      true,
-    );
-    assert.equal(
-      fixture.perfectSolution.filter((solution) => fixture.pool.find((character) => character.id === solution.characterId)?.isStrawHat).length <=
-        3,
+      fixture.perfectSolution.filter(
+        (solution) =>
+          fixture.pool.find((character) => character.id === solution.characterId)?.isStrawHat,
+      ).length <= 3,
       true,
     );
   }
@@ -71,7 +76,10 @@ test("sample fixtures validate with complete hidden score coverage", () => {
 
 test("sample fixtures use mission-defined role candidates with one max-score perfect fit", () => {
   for (const fixture of DAILY_CREW_SAMPLE_FIXTURES) {
-    assert.equal(fixture.pool.every((character) => character.primaryRole != null), true);
+    assert.equal(
+      fixture.pool.every((character) => character.primaryRole != null),
+      true,
+    );
 
     for (const requirement of fixture.roleRequirements) {
       const role = requirement.role;
@@ -93,11 +101,13 @@ test("sample fixtures use mission-defined role candidates with one max-score per
 
       const strongPrimaryAlternatives = primaryCandidates.filter(
         (character) =>
-          character.id !== fixture.perfectSolution.find((solution) => solution.role === role)?.characterId &&
+          character.id !==
+            fixture.perfectSolution.find((solution) => solution.role === role)?.characterId &&
           roleScoreFor(fixture, character.id, role) >= Math.floor(requirement.maxPoints * 0.8),
       );
       assert.equal(
-        fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE || strongPrimaryAlternatives.length >= 1,
+        fixture.pool.length === DAILY_CREW_SIMPLIFIED_POOL_SIZE ||
+          strongPrimaryAlternatives.length >= 1,
         true,
         `${fixture.slug} should have at least one strong ${role} primary alternative`,
       );
@@ -118,7 +128,9 @@ test("perfect solution scores exactly 100 with 90 role-fit points and a 10-point
 });
 
 test("Covert Harbor fixture uses only current market characters after substitution", () => {
-  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-infiltration");
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find(
+    (mission) => mission.slug === "covert-harbor-infiltration",
+  );
   assert.ok(fixture);
 
   const characterIds = fixture.pool.map((character) => character.id);
@@ -129,10 +141,19 @@ test("Covert Harbor fixture uses only current market characters after substituti
   assert.equal(new Set(characterIds).size, DAILY_CREW_LEGACY_POOL_SIZE);
   assert.equal(fixture.pool.length, DAILY_CREW_LEGACY_POOL_SIZE);
   assert.equal(characterIds.includes("char-jinbe"), true);
-  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
-  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
+  assert.equal(
+    fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId,
+    "char-usopp",
+  );
+  assert.equal(
+    fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId,
+    "char-chopper",
+  );
   assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), roleMaxFor(fixture, "navigator"));
-  assert.equal(roleScoreFor(fixture, "char-koby", "navigator") < roleMaxFor(fixture, "navigator"), true);
+  assert.equal(
+    roleScoreFor(fixture, "char-koby", "navigator") < roleMaxFor(fixture, "navigator"),
+    true,
+  );
 
   const result = scoreDailyCrewSubmission(fixture, perfectAssignments(fixture));
   assert.equal(result.score, 100);
@@ -141,26 +162,43 @@ test("Covert Harbor fixture uses only current market characters after substituti
 });
 
 test("simplified Covert Harbor mission uses three public jobs and a nine-character pool", () => {
-  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction");
+  const fixture = DAILY_CREW_SAMPLE_FIXTURES.find(
+    (mission) => mission.slug === "covert-harbor-extraction",
+  );
   assert.ok(fixture);
 
   const publicMission = toPublicDailyCrewMission(fixture);
   assert.equal(fixture.pool.length, DAILY_CREW_SIMPLIFIED_POOL_SIZE);
   assert.equal(fixture.roleRequirements.length, 3);
   assert.equal(fixture.pool.filter((character) => character.isStrawHat).length, 5);
-  assert.equal(fixture.pool.some((character) => character.id === "char-law"), true);
-  assert.equal(fixture.pool.some((character) => character.id === "char-jinbe"), false);
+  assert.equal(
+    fixture.pool.some((character) => character.id === "char-law"),
+    true,
+  );
+  assert.equal(
+    fixture.pool.some((character) => character.id === "char-jinbe"),
+    false,
+  );
   assert.deepEqual(
     publicMission.roles.map((role) => role.name),
-    ["Operation Lead", "Scout / Lookout", "Emergency Support"],
+    ["Captain", "Navigator", "Support"],
   );
   assert.deepEqual(
     publicMission.roles.map((role) => role.role),
     ["captain", "navigator", "support"],
   );
-  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "captain")?.characterId, "char-shanks");
-  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId, "char-usopp");
-  assert.equal(fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId, "char-chopper");
+  assert.equal(
+    fixture.perfectSolution.find((solution) => solution.role === "captain")?.characterId,
+    "char-shanks",
+  );
+  assert.equal(
+    fixture.perfectSolution.find((solution) => solution.role === "navigator")?.characterId,
+    "char-usopp",
+  );
+  assert.equal(
+    fixture.perfectSolution.find((solution) => solution.role === "support")?.characterId,
+    "char-chopper",
+  );
   assert.equal(roleScoreFor(fixture, "char-law", "captain"), 22);
   assert.equal(roleScoreFor(fixture, "char-law", "support"), 18);
   assert.equal(roleScoreFor(fixture, "char-usopp", "navigator"), 30);
@@ -174,6 +212,38 @@ test("simplified Covert Harbor mission uses three public jobs and a nine-charact
     result.roles.map((role) => role.roleName),
     ["Operation Lead", "Scout / Lookout", "Emergency Support"],
   );
+});
+
+test("public mission projection deterministically shuffles the pool without changing membership", () => {
+  for (const fixture of DAILY_CREW_SAMPLE_FIXTURES) {
+    const firstProjection = toPublicDailyCrewMission(fixture);
+    const secondProjection = toPublicDailyCrewMission(fixture);
+    const publicIds = firstProjection.pool.map((character) => character.id);
+    const repeatedPublicIds = secondProjection.pool.map((character) => character.id);
+    const authoredIds = [...fixture.pool]
+      .sort((left, right) => left.displayOrder - right.displayOrder)
+      .map((character) => character.id);
+    const perfectIds = new Set(fixture.perfectSolution.map((solution) => solution.characterId));
+    const activeRoleCount = fixture.roleRequirements.length;
+
+    assert.deepEqual(repeatedPublicIds, publicIds, `${fixture.slug} public order should be stable`);
+    assert.equal(publicIds.length, fixture.pool.length);
+    assert.equal(new Set(publicIds).size, fixture.pool.length);
+    assert.deepEqual([...publicIds].sort(), [...authoredIds].sort());
+    assert.ok(
+      [DAILY_CREW_SIMPLIFIED_POOL_SIZE, DAILY_CREW_LEGACY_POOL_SIZE].includes(publicIds.length),
+    );
+    assert.notDeepEqual(
+      publicIds,
+      authoredIds,
+      `${fixture.slug} public order should hide authored order`,
+    );
+    assert.equal(
+      publicIds.slice(0, activeRoleCount).every((characterId) => perfectIds.has(characterId)),
+      false,
+      `${fixture.slug} first ${activeRoleCount} public characters should not all be perfect picks`,
+    );
+  }
 });
 
 test("sample fixtures include clear weak and bad role fits", () => {
@@ -192,7 +262,9 @@ test("sample fixtures include clear weak and bad role fits", () => {
 test("near-perfect submission can score below 100 without leaking the perfect solution", () => {
   const fixture = DAILY_CREW_SAMPLE_FIXTURES[0];
   const assignments = perfectAssignments(fixture).map((assignment) =>
-    assignment.role === "strategist" ? { role: "strategist" as const, characterId: "char-robin" } : assignment,
+    assignment.role === "strategist"
+      ? { role: "strategist" as const, characterId: "char-robin" }
+      : assignment,
   );
 
   const result = scoreDailyCrewSubmission(fixture, assignments);
@@ -236,7 +308,15 @@ test("submission validation rejects duplicate characters, missing roles, duplica
   );
 
   assert.throws(
-    () => scoreDailyCrewSubmission(fixture, valid.map((assignment) => (assignment.role === "support" ? { ...assignment, characterId: "char-unknown" } : assignment))),
+    () =>
+      scoreDailyCrewSubmission(
+        fixture,
+        valid.map((assignment) =>
+          assignment.role === "support"
+            ? { ...assignment, characterId: "char-unknown" }
+            : assignment,
+        ),
+      ),
     /outside the mission pool/,
   );
 
@@ -244,7 +324,11 @@ test("submission validation rejects duplicate characters, missing roles, duplica
     () =>
       scoreDailyCrewSubmission(
         fixture,
-        valid.map((assignment) => (assignment.role === "support" ? { ...assignment, role: "cook" as DailyCrewRole } : assignment)),
+        valid.map((assignment) =>
+          assignment.role === "support"
+            ? { ...assignment, role: "cook" as DailyCrewRole }
+            : assignment,
+        ),
       ),
     /every required role/,
   );
@@ -308,19 +392,29 @@ test("fixture validation rejects excessive Straw Hat counts", () => {
   const simplifiedTooManyPoolStrawHats = cloneFixture(
     DAILY_CREW_SAMPLE_FIXTURES.find((mission) => mission.slug === "covert-harbor-extraction")!,
   );
-  simplifiedTooManyPoolStrawHats.pool.find((character) => character.id === "char-law")!.isStrawHat = true;
-  assertInvalidFixture(simplifiedTooManyPoolStrawHats, /pool cannot include more than 5 Straw Hats/);
+  simplifiedTooManyPoolStrawHats.pool.find((character) => character.id === "char-law")!.isStrawHat =
+    true;
+  assertInvalidFixture(
+    simplifiedTooManyPoolStrawHats,
+    /pool cannot include more than 5 Straw Hats/,
+  );
 
   const tooManyPerfectStrawHats = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
-  tooManyPerfectStrawHats.perfectSolution = tooManyPerfectStrawHats.perfectSolution.map((solution) =>
-    solution.role === "support" ? { role: "support", characterId: "char-sanji" } : solution,
+  tooManyPerfectStrawHats.perfectSolution = tooManyPerfectStrawHats.perfectSolution.map(
+    (solution) =>
+      solution.role === "support" ? { role: "support", characterId: "char-sanji" } : solution,
   );
-  assertInvalidFixture(tooManyPerfectStrawHats, /perfect solution cannot include more than 3 Straw Hats/);
+  assertInvalidFixture(
+    tooManyPerfectStrawHats,
+    /perfect solution cannot include more than 3 Straw Hats/,
+  );
 });
 
 test("fixture validation rejects missing role scores, duplicate role scores, and imperfect max-score setup", () => {
   const missingRoleScore = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
-  missingRoleScore.roleScores = missingRoleScore.roleScores.filter((score) => !(score.characterId === "char-luffy" && score.role === "captain"));
+  missingRoleScore.roleScores = missingRoleScore.roleScores.filter(
+    (score) => !(score.characterId === "char-luffy" && score.role === "captain"),
+  );
   assertInvalidFixture(missingRoleScore, /missing role score for char-luffy captain/);
 
   const duplicateRoleScore = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
@@ -329,7 +423,9 @@ test("fixture validation rejects missing role scores, duplicate role scores, and
 
   const lowPerfectBase = cloneFixture(DAILY_CREW_SAMPLE_FIXTURES[0]);
   lowPerfectBase.roleScores = lowPerfectBase.roleScores.map((score) =>
-    score.characterId === "char-luffy" && score.role === "captain" ? { ...score, score: 17 } : score,
+    score.characterId === "char-luffy" && score.role === "captain"
+      ? { ...score, score: 17 }
+      : score,
   );
   assertInvalidFixture(lowPerfectBase, /perfect solution base role score must be exactly 90/);
 
@@ -351,11 +447,21 @@ test("public mission projection exposes only public-safe mission, role, and pool
   assert.equal(Object.hasOwn(publicMission, "perfectSolution"), false);
   assert.equal(Object.hasOwn(publicMission, "roleRequirements"), false);
   assert.equal(Object.hasOwn(publicMission, "synergyRules"), false);
-  assert.equal(Object.hasOwn(publicMission.pool[0], "primaryRole"), false);
-  assert.equal(Object.hasOwn(publicMission.pool[0], "isStrawHat"), false);
-  assert.equal(Object.hasOwn(publicMission.pool[0], "score"), false);
-  assert.doesNotMatch(publicJson, /subtypeKey|subtypeLabel|Hidden command profile|Hidden combat profile/i);
-  assert.doesNotMatch(publicJson, /roleScores|perfectSolution|synergyRules/i);
+  for (const character of publicMission.pool) {
+    assert.equal(Object.hasOwn(character, "displayOrder"), false);
+    assert.equal(Object.hasOwn(character, "visibleTags"), false);
+    assert.equal(Object.hasOwn(character, "primaryRole"), false);
+    assert.equal(Object.hasOwn(character, "isStrawHat"), false);
+    assert.equal(Object.hasOwn(character, "score"), false);
+  }
+  assert.doesNotMatch(
+    publicJson,
+    /subtypeKey|subtypeLabel|Hidden command profile|Hidden combat profile/i,
+  );
+  assert.doesNotMatch(
+    publicJson,
+    /displayOrder|visibleTags|primaryRole|isStrawHat|roleScores|perfectSolution|synergyRules/i,
+  );
 });
 
 test("scoring does not mutate fixtures or assignments", () => {
@@ -373,14 +479,22 @@ test("scoring does not mutate fixtures or assignments", () => {
 test("Daily Crew Builder Phase 2 code does not introduce wallet mutation or payout behavior", () => {
   const implementationFiles = ["scoring.ts", "fixtures.ts"];
   const implementationSource = implementationFiles
-    .map((file) => readFileSync(join(process.cwd(), "src", "lib", "daily-crew-builder", file), "utf8"))
+    .map((file) =>
+      readFileSync(join(process.cwd(), "src", "lib", "daily-crew-builder", file), "utf8"),
+    )
     .join("\n");
 
   assert.doesNotMatch(implementationSource, /\buser_wallets\b/i);
   assert.doesNotMatch(implementationSource, /\bwallet\s+balance\b/i);
   assert.doesNotMatch(implementationSource, /\btransactions\b/i);
   assert.doesNotMatch(implementationSource, /\baward_daily_crew\b/i);
-  assert.doesNotMatch(implementationSource, /\b(?:supabase|db|client|context\.supabase)\.rpc\s*\(/i);
-  assert.doesNotMatch(implementationSource, /\b(?:supabase|db|client|context\.supabase)\.from\s*\(/i);
+  assert.doesNotMatch(
+    implementationSource,
+    /\b(?:supabase|db|client|context\.supabase)\.rpc\s*\(/i,
+  );
+  assert.doesNotMatch(
+    implementationSource,
+    /\b(?:supabase|db|client|context\.supabase)\.from\s*\(/i,
+  );
   assert.doesNotMatch(implementationSource, /supabase/i);
 });
