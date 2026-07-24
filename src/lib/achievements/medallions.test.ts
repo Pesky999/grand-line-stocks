@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { ACHIEVEMENT_MEDALLION_PATHS, getAchievementMedallionPath } from "./medallions.ts";
 
-const achievementCodes = [
+const originalAchievementCodes = [
   "first_trade",
   "first_profit",
   "first_event",
@@ -23,11 +23,46 @@ const achievementCodes = [
   "diamond_hands",
 ] as const;
 
+const expansionAchievementCodes = [
+  "deckhand_dealer",
+  "balanced_ledger",
+  "million_berry_mover",
+  "big_score",
+  "treasure_haul",
+  "storm_trader",
+  "first_crew",
+  "crew_builder",
+  "grand_fleet",
+  "four_seas_investor",
+  "rising_bounty",
+  "supernova_fortune",
+  "emperors_treasury",
+  "whale_position",
+  "seven_day_sail",
+  "seasoned_sailor",
+  "unbroken_voyage",
+  "king_of_exchange",
+  "first_sight",
+  "observation_haki",
+  "clue_free_navigator",
+  "winning_route",
+  "grand_line_oracle",
+  "first_command",
+  "a_rank_captain",
+  "s_rank_commander",
+  "perfect_crew",
+  "first_lesson",
+  "sea_scholar",
+  "ohara_archivist",
+] as const;
+
+const achievementCodes = [...originalAchievementCodes, ...expansionAchievementCodes] as const;
+
 function read(workspacePath: string) {
   return readFileSync(join(process.cwd(), workspacePath), "utf8");
 }
 
-test("achievement medallion map covers the existing 14 achievement codes", () => {
+test("achievement medallion map covers the full 44-code catalog", () => {
   assert.deepEqual(Object.keys(ACHIEVEMENT_MEDALLION_PATHS), [...achievementCodes]);
 
   for (const code of achievementCodes) {
@@ -36,12 +71,31 @@ test("achievement medallion map covers the existing 14 achievement codes", () =>
   assert.equal(getAchievementMedallionPath("future_unknown"), null);
 });
 
+test("original 14 achievement medallion mappings remain unchanged", () => {
+  assert.deepEqual(
+    Object.fromEntries(
+      originalAchievementCodes.map((code) => [code, ACHIEVEMENT_MEDALLION_PATHS[code]]),
+    ),
+    Object.fromEntries(
+      originalAchievementCodes.map((code) => [code, `/achievements/medallions/${code}.webp`]),
+    ),
+  );
+});
+
+test("all 30 achievement expansion medallions are mapped to their approved public assets", () => {
+  assert.equal(expansionAchievementCodes.length, 30);
+  for (const code of expansionAchievementCodes) {
+    assert.equal(getAchievementMedallionPath(code), `/achievements/medallions/${code}.webp`);
+  }
+});
+
 test("all mapped achievement medallion assets exist under public", () => {
   const directory = join(process.cwd(), "public/achievements/medallions");
   const files = readdirSync(directory)
     .filter((file) => file.endsWith(".webp"))
     .sort();
 
+  assert.equal(files.length, 44);
   assert.deepEqual(files, [...achievementCodes].map((code) => `${code}.webp`).sort());
 
   for (const path of Object.values(ACHIEVEMENT_MEDALLION_PATHS)) {

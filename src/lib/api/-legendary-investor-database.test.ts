@@ -10,6 +10,13 @@ const migrationPath = join(
   "supabase/migrations/20260721030000_complete_legendary_investor_progression.sql",
 );
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+const expansionMigrationPath = join(
+  process.cwd(),
+  "supabase/migrations/20260723010000_add_achievement_expansion_30.sql",
+);
+const expansionMigration = existsSync(expansionMigrationPath)
+  ? readFileSync(expansionMigrationPath, "utf8")
+  : "";
 
 function between(source: string, start: string, end: string) {
   const startIndex = source.indexOf(start);
@@ -40,6 +47,39 @@ const achievementCodes = [
   "diamond_hands",
 ];
 
+const expansionAchievementCodes = [
+  "deckhand_dealer",
+  "balanced_ledger",
+  "million_berry_mover",
+  "big_score",
+  "treasure_haul",
+  "storm_trader",
+  "first_crew",
+  "crew_builder",
+  "grand_fleet",
+  "four_seas_investor",
+  "rising_bounty",
+  "supernova_fortune",
+  "emperors_treasury",
+  "whale_position",
+  "seven_day_sail",
+  "seasoned_sailor",
+  "unbroken_voyage",
+  "king_of_exchange",
+  "first_sight",
+  "observation_haki",
+  "clue_free_navigator",
+  "winning_route",
+  "grand_line_oracle",
+  "first_command",
+  "a_rank_captain",
+  "s_rank_commander",
+  "perfect_crew",
+  "first_lesson",
+  "sea_scholar",
+  "ohara_archivist",
+];
+
 test("legendary progression migration is transactional and scoped", () => {
   assert.equal(existsSync(migrationPath), true);
   assert.match(migration, /^BEGIN;\s/i);
@@ -47,6 +87,55 @@ test("legendary progression migration is transactional and scoped", () => {
   assert.doesNotMatch(migration, /\bCASCADE\b/i);
   assert.doesNotMatch(migration, /\bEXECUTE\s+format\b|\bEXECUTE\s+v_|\bEXECUTE\s+'\s*/i);
   assert.doesNotMatch(migration, /INSERT INTO public\.achievements/i);
+});
+
+test("achievement expansion migration is transactional and inserts exactly 30 approved catalog records", () => {
+  assert.equal(existsSync(expansionMigrationPath), true);
+  assert.match(expansionMigration, /^BEGIN;\s/i);
+  assert.match(expansionMigration, /COMMIT;\s+NOTIFY pgrst, 'reload schema';\s*$/i);
+  assert.doesNotMatch(expansionMigration, /\bCASCADE\b/i);
+  assert.doesNotMatch(expansionMigration, /\bEXECUTE\s+format\b|\bEXECUTE\s+v_|\bEXECUTE\s+'\s*/i);
+
+  const catalogInsert = between(
+    expansionMigration,
+    "INSERT INTO public.achievements",
+    "ON CONFLICT (code) DO UPDATE",
+  );
+  const insertedCodes = [...catalogInsert.matchAll(/\(\s*'([a-z0-9_]+)',\s*'/g)].map(
+    (match) => match[1],
+  );
+
+  assert.equal(insertedCodes.length, 30);
+  assert.deepEqual(insertedCodes, expansionAchievementCodes);
+  for (const code of achievementCodes) {
+    assert.doesNotMatch(catalogInsert, new RegExp(`'${code}'`));
+  }
+});
+
+test("achievement expansion catalog upsert is idempotent and reputation-only", () => {
+  const catalogInsert = between(
+    expansionMigration,
+    "INSERT INTO public.achievements",
+    "CREATE OR REPLACE FUNCTION public.check_achievements(_user_id uuid)",
+  );
+
+  assert.match(catalogInsert, /ON CONFLICT \(code\) DO UPDATE/i);
+  assert.match(catalogInsert, /reputation_reward = EXCLUDED\.reputation_reward/);
+  for (const [tier, reward] of [
+    ["beginner", 5],
+    ["intermediate", 10],
+    ["advanced", 20],
+    ["legendary", 40],
+  ] as const) {
+    assert.match(
+      catalogInsert,
+      new RegExp(`'${tier}'::public\\.achievement_tier,[\\s\\S]*?${reward}`),
+    );
+  }
+  assert.doesNotMatch(
+    catalogInsert,
+    /user_wallets|wallet_ledger_entries|transactions|reward_paid/i,
+  );
 });
 
 test("check_achievements counts new grants for exactly the existing achievement catalog", () => {
@@ -62,6 +151,129 @@ test("check_achievements counts new grants for exactly the existing achievement 
   }
   assert.equal((checker.match(/v_count := v_count \+ 1;/g) ?? []).length, achievementCodes.length);
   assert.doesNotMatch(checker, /PERFORM grant_achievement/);
+});
+
+test("achievement expansion checker grants exactly the full 44-code catalog", () => {
+  const checker = between(
+    expansionMigration,
+    "CREATE OR REPLACE FUNCTION public.check_achievements(_user_id uuid)",
+    "REVOKE EXECUTE ON FUNCTION public.check_achievements(uuid)",
+  );
+  const allCodes = [...achievementCodes, ...expansionAchievementCodes];
+
+  assert.match(checker, /RETURNS integer/i);
+  for (const code of allCodes) {
+    assert.match(checker, new RegExp(`public\\.grant_achievement\\(_user_id, '${code}'\\)`));
+  }
+  assert.equal((checker.match(/v_count := v_count \+ 1;/g) ?? []).length, allCodes.length);
+  assert.doesNotMatch(checker, /PERFORM grant_achievement/);
+});
+
+test("achievement expansion checker uses the approved market and game data sources", () => {
+  const checker = between(
+    expansionMigration,
+    "CREATE OR REPLACE FUNCTION public.check_achievements(_user_id uuid)",
+    "REVOKE EXECUTE ON FUNCTION public.check_achievements(uuid)",
+  );
+
+  assert.match(checker, /FROM public\.user_stats/);
+  assert.match(checker, /FROM public\.leaderboard_cache[\s\S]*board_key = 'net_worth_all_time'/);
+  assert.match(checker, /COUNT\(DISTINCT h\.character_id\), COUNT\(DISTINCT c\.category\)/);
+  assert.match(checker, /FROM public\.user_holdings AS h[\s\S]*JOIN public\.characters AS c/);
+  assert.match(checker, /FROM public\.grand_line_guess_stats AS stats/);
+  assert.match(checker, /FROM public\.grand_line_guess_results AS results/);
+  assert.match(
+    checker,
+    /FROM public\.daily_crew_submissions AS submissions[\s\S]*JOIN public\.daily_crew_missions AS missions/,
+  );
+  assert.match(checker, /FROM public\.trivia_attempts AS attempts/);
+});
+
+test("achievement expansion unlock thresholds match the approved manifest", () => {
+  const checker = between(
+    expansionMigration,
+    "CREATE OR REPLACE FUNCTION public.check_achievements(_user_id uuid)",
+    "REVOKE EXECUTE ON FUNCTION public.check_achievements(uuid)",
+  );
+
+  for (const [condition, code] of [
+    ["s\\.total_trades >= 10", "deckhand_dealer"],
+    ["s\\.total_buys >= 25[\\s\\S]*s\\.total_sells >= 25", "balanced_ledger"],
+    ["s\\.total_volume >= 1000000", "million_berry_mover"],
+    ["s\\.best_trade_pnl >= 10000", "big_score"],
+    ["s\\.best_trade_pnl >= 50000", "treasure_haul"],
+    ["s\\.total_trades >= 500", "storm_trader"],
+    ["v_holding_count >= 3", "first_crew"],
+    ["v_holding_count >= 10", "crew_builder"],
+    ["v_holding_count >= 25", "grand_fleet"],
+    ["v_holding_category_count = 4", "four_seas_investor"],
+    ["s\\.current_net_worth >= 50000", "rising_bounty"],
+    ["s\\.current_net_worth >= 250000", "supernova_fortune"],
+    ["s\\.current_net_worth >= 5000000", "emperors_treasury"],
+    ["s\\.largest_position_value >= 250000", "whale_position"],
+    ["s\\.login_streak >= 7", "seven_day_sail"],
+    ["s\\.days_active >= 100", "seasoned_sailor"],
+    ["s\\.login_streak >= 100", "unbroken_voyage"],
+    ["v_rank = 1", "king_of_exchange"],
+    ["v_glg_games_won >= 1", "first_sight"],
+    ["v_glg_one_shot_wins >= 1", "observation_haki"],
+    ["v_glg_hints_free", "clue_free_navigator"],
+    ["v_glg_best_streak >= 10", "winning_route"],
+    ["v_glg_games_won >= 50", "grand_line_oracle"],
+    ["v_daily_crew_submission_count >= 1", "first_command"],
+    ["v_daily_crew_a_or_s", "a_rank_captain"],
+    ["v_daily_crew_s", "s_rank_commander"],
+    ["v_daily_crew_perfect", "perfect_crew"],
+    ["v_trivia_correct_count >= 1", "first_lesson"],
+    ["v_trivia_correct_count >= 25", "sea_scholar"],
+    ["v_trivia_correct_count >= 100", "ohara_archivist"],
+  ] as const) {
+    assert.match(checker, new RegExp(`${condition}[\\s\\S]*'${code}'`), code);
+  }
+});
+
+test("achievement expansion backfills through the existing progression refresh system", () => {
+  const backfillIndex = expansionMigration.lastIndexOf(
+    "SELECT public.refresh_all_user_progression() AS achievement_expansion_30_backfill;",
+  );
+
+  assert.notEqual(backfillIndex, -1, "expansion should refresh eligible existing users once");
+  assert.doesNotMatch(
+    expansionMigration.slice(backfillIndex),
+    /record_user_daily_activity|record_my_daily_activity/,
+  );
+});
+
+test("achievement expansion checker remains service-role only with fixed search path", () => {
+  const checkerHeader = between(
+    expansionMigration,
+    "CREATE OR REPLACE FUNCTION public.check_achievements(_user_id uuid)",
+    "AS $$",
+  );
+
+  assert.match(checkerHeader, /RETURNS integer/i);
+  assert.match(checkerHeader, /LANGUAGE plpgsql/i);
+  assert.match(checkerHeader, /SECURITY DEFINER/i);
+  assert.match(checkerHeader, /SET search_path = pg_catalog, public, pg_temp/i);
+  assert.match(
+    expansionMigration,
+    /REVOKE EXECUTE ON FUNCTION public\.check_achievements\(uuid\) FROM PUBLIC, anon, authenticated;/,
+  );
+  assert.match(
+    expansionMigration,
+    /GRANT EXECUTE ON FUNCTION public\.check_achievements\(uuid\) TO service_role;/,
+  );
+});
+
+test("achievement expansion migration does not mutate wallets, gameplay rewards, prices, or holdings", () => {
+  assert.doesNotMatch(
+    expansionMigration,
+    /\b(?:UPDATE|INSERT INTO|DELETE FROM|ALTER TABLE)\s+public\.(?:user_wallets|wallet_ledger_entries|transactions|price_history|character_price_history|user_holdings|daily_crew_submissions|daily_crew_missions|grand_line_guess|trivia_attempts|market_rumors|market_events)/i,
+  );
+  assert.doesNotMatch(
+    expansionMigration,
+    /reward_paid|balance_after|current_price|execute_trade|award_daily_crew|award_grand_line_guess|record_daily_crew_builder_submission/i,
+  );
 });
 
 test("achievement conditions use current MVP rules", () => {
