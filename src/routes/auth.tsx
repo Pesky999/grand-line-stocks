@@ -5,6 +5,7 @@ import { lovable } from "@/integrations/lovable";
 import { TerminalShell } from "@/components/TerminalShell";
 import { checkPublicUsernameAvailability } from "@/lib/api/identity-moderation.functions";
 import { validateUsernameFormat } from "@/lib/moderation/public-identity";
+import { ACCOUNT_DELETION_SUCCESS_KEY } from "@/lib/account-deletion/security";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -28,6 +29,17 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(ACCOUNT_DELETION_SUCCESS_KEY) === "1") {
+        window.sessionStorage.removeItem(ACCOUNT_DELETION_SUCCESS_KEY);
+        toast.success("Account deleted successfully.");
+      }
+    } catch {
+      // Session storage is optional; normal auth behavior should continue.
+    }
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
