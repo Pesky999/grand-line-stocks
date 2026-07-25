@@ -6,36 +6,20 @@ import type { Database } from "@/integrations/supabase/types";
 import {
   ACCOUNT_DELETION_CONFIRMATION_PHRASE,
   accountDeletionMessageForCode,
-  getAccountDeletionReauthenticationState,
-  type AccountDeletionProviderCategory,
   type AccountDeletionReasonCode,
 } from "@/lib/account-deletion/security";
 
 type AccountDeletionReadiness = {
   canDelete: boolean;
-  requiresReauthentication: boolean;
-  providerCategory: AccountDeletionProviderCategory;
   isAdmin: boolean;
   isLastAdmin: boolean;
-  storageBlocked: boolean;
-  storageCheckFailed: boolean;
   reasonCode: AccountDeletionReasonCode | null;
 };
 
-type SupabaseErrorLike = {
-  code?: string;
-  message?: string;
-};
-
-type StorageOwnershipCheck =
-  | { status: "checked"; ownsObjects: boolean }
-  | { status: "failed"; error: SupabaseErrorLike | null };
-
-type AccountStorageOwnershipRpcClient = {
-  rpc(functionName: "my_account_owns_storage_objects"): Promise<{
-    data: boolean | null;
-    error: SupabaseErrorLike | null;
-  }>;
+type AuthDeletionErrorLike = {
+  code?: unknown;
+  message?: unknown;
+  status?: unknown;
 };
 
 const deleteMyAccountInputSchema = z
@@ -58,6 +42,31 @@ class AccountDeletionError extends Error {
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function safeErrorField(value: unknown) {
+  if (typeof value === "string") return value.toLowerCase();
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function isStorageOwnershipDeletionError(error: unknown) {
+  if (!isRecord(error)) return false;
+  const candidate = error as AuthDeletionErrorLike;
+  const haystack = [
+    safeErrorField(candidate.code),
+    safeErrorField(candidate.message),
+    safeErrorField(candidate.status),
+  ].join(" ");
+
+  return (
+    haystack.includes("storage") &&
+    (haystack.includes("object") || haystack.includes("owner") || haystack.includes("ownership"))
+  );
 }
 
 function logAccountDeletionFailure(stage: string, code: AccountDeletionReasonCode) {
@@ -108,53 +117,19 @@ async function getAdminDeletionState(db: SupabaseClient<Database>, userId: strin
   return { isAdmin: true, isLastAdmin: activeAdminCount <= 1 };
 }
 
-async function checkAccountStorageOwnership(
-  db: SupabaseClient<Database>,
-): Promise<StorageOwnershipCheck> {
-  const { data, error } = await (db as unknown as AccountStorageOwnershipRpcClient).rpc(
-    "my_account_owns_storage_objects",
-  );
-
-  if (error || typeof data !== "boolean") {
-    return { status: "failed", error };
-  }
-
-  return { status: "checked", ownsObjects: data === true };
-}
-
 async function getReadinessForUser(
   db: SupabaseClient<Database>,
-  authenticatedDb: SupabaseClient<Database>,
   userId: string,
-  claims: unknown,
 ): Promise<AccountDeletionReadiness> {
-  const reauth = getAccountDeletionReauthenticationState(claims);
   const adminState = await getAdminDeletionState(db, userId);
-  let storageBlocked = false;
-  let storageCheckFailed = false;
-
-  const storageCheck = await checkAccountStorageOwnership(authenticatedDb);
-  if (storageCheck.status === "failed") storageCheckFailed = true;
-  if (storageCheck.status === "checked") storageBlocked = storageCheck.ownsObjects;
-
   const reasonCode: AccountDeletionReasonCode | null = adminState.isLastAdmin
     ? "LAST_ADMIN_ACCOUNT"
-    : storageCheckFailed
-      ? "ACCOUNT_STORAGE_CHECK_FAILED"
-      : storageBlocked
-        ? "ACCOUNT_STORAGE_BLOCKED"
-        : reauth.requiresReauthentication
-          ? "REAUTHENTICATION_REQUIRED"
-          : null;
+    : null;
 
   return {
     canDelete: reasonCode === null,
-    requiresReauthentication: reauth.requiresReauthentication,
-    providerCategory: reauth.providerCategory,
     isAdmin: adminState.isAdmin,
     isLastAdmin: adminState.isLastAdmin,
-    storageBlocked,
-    storageCheckFailed,
     reasonCode,
   };
 }
@@ -163,7 +138,7 @@ export const getMyAccountDeletionReadiness = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const db = await admin();
-    return getReadinessForUser(db, context.supabase, context.userId, context.claims);
+    return getReadinessForUser(db, context.userId);
   });
 
 export const deleteMyAccount = createServerFn({ method: "POST" })
@@ -180,28 +155,18 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
       throw new AccountDeletionError("ACCOUNT_CONFIRMATION_MISMATCH");
     }
 
-    const reauth = getAccountDeletionReauthenticationState(context.claims);
-    if (reauth.requiresReauthentication) {
-      throw new AccountDeletionError("REAUTHENTICATION_REQUIRED");
-    }
-
     const adminState = await getAdminDeletionState(db, context.userId);
     if (adminState.isLastAdmin) {
       throw new AccountDeletionError("LAST_ADMIN_ACCOUNT");
     }
 
-    const storageCheck = await checkAccountStorageOwnership(context.supabase);
-    if (storageCheck.status === "failed") {
-      throw new AccountDeletionError("ACCOUNT_STORAGE_CHECK_FAILED");
-    }
-    if (storageCheck.ownsObjects) {
-      throw new AccountDeletionError("ACCOUNT_STORAGE_BLOCKED");
-    }
-
     const { error } = await db.auth.admin.deleteUser(context.userId, false);
     if (error) {
-      logAccountDeletionFailure("auth_delete", "ACCOUNT_DELETION_FAILED");
-      throw new AccountDeletionError("ACCOUNT_DELETION_FAILED");
+      const code: AccountDeletionReasonCode = isStorageOwnershipDeletionError(error)
+        ? "ACCOUNT_STORAGE_BLOCKED"
+        : "ACCOUNT_DELETION_FAILED";
+      logAccountDeletionFailure("auth_delete", code);
+      throw new AccountDeletionError(code);
     }
 
     return { deleted: true } as const;
