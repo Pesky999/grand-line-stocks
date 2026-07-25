@@ -25,7 +25,6 @@ import { TITLE_LABEL, TITLE_TONE, SPEC_LABEL } from "@/lib/legendary";
 import { validateDisplayNameFormat } from "@/lib/moderation/public-identity";
 import { formatShares } from "@/lib/trading/fractional-shares";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_PHRASE,
   ACCOUNT_DELETION_SUCCESS_KEY,
   accountDeletionMessageForCode,
   extractAccountDeletionReasonCode,
@@ -119,7 +118,7 @@ function Profile() {
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteUsername, setDeleteUsername] = useState("");
-  const [deletePhrase, setDeletePhrase] = useState("");
+  const [deleteConfirmationUsername, setDeleteConfirmationUsername] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
   const handleSignOut = useSignOut();
@@ -159,7 +158,8 @@ function Profile() {
   const finalDeletionEnabled =
     !!username &&
     deleteUsername === username &&
-    deletePhrase === ACCOUNT_DELETION_CONFIRMATION_PHRASE &&
+    deleteConfirmationUsername === username &&
+    deleteUsername === deleteConfirmationUsername &&
     readiness?.canDelete === true &&
     !deletingAccount;
 
@@ -193,7 +193,7 @@ function Profile() {
     if (deletingAccount) return;
     setDeleteOpen(false);
     setDeleteUsername("");
-    setDeletePhrase("");
+    setDeleteConfirmationUsername("");
     setDeletionError(null);
   }
 
@@ -203,7 +203,7 @@ function Profile() {
     setDeletionError(null);
     try {
       const result = await deleteMyAccount({
-        data: { username: deleteUsername, confirmationPhrase: deletePhrase },
+        data: { username: deleteUsername, confirmationUsername: deleteConfirmationUsername },
       });
       if (result.deleted) {
         await cleanupAfterConfirmedAccountDeletion(queryClient);
@@ -460,7 +460,7 @@ function Profile() {
                 </div>
                 <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
                   <li>Enter your exact username.</li>
-                  <li>Type DELETE MY ACCOUNT.</li>
+                  <li>Enter the same username again to confirm.</li>
                 </ol>
               </div>
 
@@ -476,6 +476,9 @@ function Profile() {
               )}
 
               <div className="space-y-3">
+                <div className="rounded border border-border bg-background/60 px-3 py-2 text-muted-foreground">
+                  Current username: <span className="font-bold text-foreground">@{username}</span>
+                </div>
                 <Field label="Exact current username">
                   <input
                     value={deleteUsername}
@@ -484,10 +487,10 @@ function Profile() {
                     className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
                   />
                 </Field>
-                <Field label="Confirmation phrase">
+                <Field label="Retype current username">
                   <input
-                    value={deletePhrase}
-                    onChange={(e) => setDeletePhrase(e.target.value)}
+                    value={deleteConfirmationUsername}
+                    onChange={(e) => setDeleteConfirmationUsername(e.target.value)}
                     autoComplete="off"
                     className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
                   />

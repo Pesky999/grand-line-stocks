@@ -1,4 +1,3 @@
-export const ACCOUNT_DELETION_CONFIRMATION_PHRASE = "DELETE MY ACCOUNT";
 export const ACCOUNT_DELETION_SUCCESS_KEY = "berry-street:account-deletion:success";
 
 export const ACCOUNT_DELETION_REASON_CODES = [
@@ -14,10 +13,12 @@ export type AccountDeletionReasonCode = (typeof ACCOUNT_DELETION_REASON_CODES)[n
 export function isExactAccountDeletionConfirmation(
   currentUsername: string,
   usernameInput: string,
-  confirmationPhrase: string,
+  confirmationUsernameInput: string,
 ) {
   return (
-    usernameInput === currentUsername && confirmationPhrase === ACCOUNT_DELETION_CONFIRMATION_PHRASE
+    usernameInput === currentUsername &&
+    confirmationUsernameInput === currentUsername &&
+    usernameInput === confirmationUsernameInput
   );
 }
 
@@ -33,7 +34,7 @@ export function accountDeletionMessageForCode(code: AccountDeletionReasonCode | 
     case "ACCOUNT_STORAGE_BLOCKED":
       return "This account owns uploaded files that must be removed before deletion. Contact an administrator.";
     case "ACCOUNT_CONFIRMATION_MISMATCH":
-      return "Enter your exact username and type DELETE MY ACCOUNT exactly.";
+      return "Enter your exact username in both confirmation fields.";
     case "ACCOUNT_PROFILE_NOT_FOUND":
       return "Could not confirm this account profile. Please refresh and try again.";
     case "ACCOUNT_DELETION_FAILED":

@@ -8,11 +8,15 @@ Profile. It is for true account deletion, not an account reset.
 Profile includes a `DELETE ACCOUNT` danger zone near the bottom of the page. The confirmation dialog
 requires both of the following:
 
-- the exact current username, matched case-sensitively
-- the exact phrase `DELETE MY ACCOUNT`
+- the exact current username in the first confirmation field
+- the same exact current username in the second confirmation field
 
-The final button remains disabled until deletion readiness is clear and both text confirmations
-match exactly. Leading or trailing spaces are not accepted.
+Both entries must match the authenticated profile username and each other. Matching is
+case-sensitive. Leading or trailing spaces are not trimmed or accepted. No separate confirmation
+phrase is required.
+
+The final button remains disabled until deletion readiness is clear and both username confirmations
+match exactly.
 
 Berry Street no longer asks the player to explicitly reauthenticate inside the deletion dialog.
 Supabase still requires an active authenticated session before either deletion-readiness or final
@@ -20,11 +24,11 @@ deletion server functions can run.
 
 ## Server Deletion Sequence
 
-`deleteMyAccount` accepts only `{ username, confirmationPhrase }`.
+`deleteMyAccount` accepts only `{ username, confirmationUsername }`.
 
 1. Authenticate the request.
 2. Read the current profile username for the authenticated user.
-3. Verify the username and confirmation phrase exactly.
+3. Verify both username fields exactly match the current profile username.
 4. Reject deletion if this is the final active administrator account.
 5. Call the service-role Auth Admin API with `deleteUser(authenticatedUserId, false)`.
 6. If the Auth Admin deletion error clearly indicates Supabase Storage object ownership, return
@@ -131,6 +135,8 @@ insert, update, delete, or backfill rows.
 The migrations are not executed by implementation work. Apply database changes only through the
 normal reviewed database deployment path.
 
+The double-username confirmation change is application-only and requires no new migration.
+
 ## Why There Is No Reset
 
 Resetting an account would need to clear wallet, holdings, trades, cost basis, snapshots,
@@ -157,6 +163,11 @@ systems. Hard deletion plus fresh signup is simpler and safer.
 9. Confirm the last admin cannot delete itself.
 10. Confirm a non-final admin can delete itself.
 11. Confirm cancellation makes no changes.
-12. Confirm wrong username and confirmation phrase are rejected.
-13. Confirm a signed-out request cannot delete an account.
-14. Confirm a Storage-ownership Auth deletion failure shows the uploaded-files warning.
+12. Confirm the correct username entered twice succeeds.
+13. Confirm an incorrect first username fails.
+14. Confirm an incorrect second username fails.
+15. Confirm different capitalization fails.
+16. Confirm leading or trailing spaces fail.
+17. Confirm two matching usernames that do not match the actual account fail.
+18. Confirm a signed-out request cannot delete an account.
+19. Confirm a Storage-ownership Auth deletion failure shows the uploaded-files warning.

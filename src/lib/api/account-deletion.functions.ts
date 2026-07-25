@@ -4,7 +4,6 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_PHRASE,
   accountDeletionMessageForCode,
   type AccountDeletionReasonCode,
 } from "@/lib/account-deletion/security";
@@ -25,7 +24,7 @@ type AuthDeletionErrorLike = {
 const deleteMyAccountInputSchema = z
   .object({
     username: z.string().min(1),
-    confirmationPhrase: z.string().min(1),
+    confirmationUsername: z.string().min(1),
   })
   .strict();
 
@@ -150,7 +149,8 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
 
     if (
       data.username !== currentUsername ||
-      data.confirmationPhrase !== ACCOUNT_DELETION_CONFIRMATION_PHRASE
+      data.confirmationUsername !== currentUsername ||
+      data.username !== data.confirmationUsername
     ) {
       throw new AccountDeletionError("ACCOUNT_CONFIRMATION_MISMATCH");
     }

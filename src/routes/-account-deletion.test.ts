@@ -55,13 +55,22 @@ test("account deletion dialog is accessible and requires exact confirmations", (
     /<DialogDescription>[\s\S]*This action cannot be undone\.[\s\S]*permanently removed\./,
   );
   assert.match(profileSource, /Enter your exact username\./);
-  assert.match(profileSource, /Type DELETE MY ACCOUNT\./);
+  assert.match(profileSource, /Enter the same username again to confirm\./);
+  assert.match(profileSource, /Current username:/);
+  assert.match(profileSource, /Exact current username/);
+  assert.match(profileSource, /Retype current username/);
+  assert.match(profileSource, /Matching is case-sensitive\./);
   assert.doesNotMatch(profileSource, /Reauthenticate your account\./);
   assert.match(profileSource, /deleteUsername === username/);
-  assert.match(profileSource, /deletePhrase === ACCOUNT_DELETION_CONFIRMATION_PHRASE/);
+  assert.match(profileSource, /deleteConfirmationUsername === username/);
+  assert.match(profileSource, /deleteUsername === deleteConfirmationUsername/);
   assert.match(profileSource, /readiness\?\.canDelete === true/);
   assert.match(profileSource, /disabled=\{!finalDeletionEnabled\}/);
   assert.match(profileSource, /PERMANENTLY DELETE ACCOUNT/);
+  assert.doesNotMatch(profileSource, /DELETE MY\s+ACCOUNT/);
+  assert.doesNotMatch(profileSource, /ACCOUNT_DELETION_CONFIRMATION_PHRASE/);
+  assert.doesNotMatch(profileSource, /deletePhrase/);
+  assert.doesNotMatch(profileSource, /Confirmation phrase/);
   assert.doesNotMatch(profileSource, /autoFocus/);
   assert.doesNotMatch(profileSource, /<form|onSubmit/);
 });
@@ -77,7 +86,7 @@ test("account deletion UI no longer performs explicit reauthentication", () => {
   assert.doesNotMatch(profileSource, /reauthenticating|requiresReauthentication|providerCategory/);
 });
 
-test("delete call sends only the exact username and confirmation phrase", () => {
+test("delete call sends only the exact username twice", () => {
   const deleteAccount = sourceBetween(
     profileSource,
     "async function handleDeleteAccount",
@@ -85,7 +94,7 @@ test("delete call sends only the exact username and confirmation phrase", () => 
   );
 
   assert.match(deleteAccount, /deleteMyAccount\(\{[\s\S]*username: deleteUsername/);
-  assert.match(deleteAccount, /confirmationPhrase: deletePhrase/);
+  assert.match(deleteAccount, /confirmationUsername: deleteConfirmationUsername/);
   assert.doesNotMatch(deleteAccount, /currentPassword|password|email|provider|timestamp|userId/);
 });
 
