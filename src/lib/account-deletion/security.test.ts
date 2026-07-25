@@ -3,31 +3,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_PHRASE,
   ACCOUNT_DELETION_REASON_CODES,
   accountDeletionMessageForCode,
   extractAccountDeletionReasonCode,
   isExactAccountDeletionConfirmation,
 } from "./security.ts";
 
-test("account deletion confirmation is exact and case-sensitive", () => {
-  assert.equal(
-    isExactAccountDeletionConfirmation("luffy", "luffy", ACCOUNT_DELETION_CONFIRMATION_PHRASE),
-    true,
-  );
-  assert.equal(
-    isExactAccountDeletionConfirmation("luffy", " Luffy ", ACCOUNT_DELETION_CONFIRMATION_PHRASE),
-    false,
-  );
-  assert.equal(isExactAccountDeletionConfirmation("luffy", "luffy", "delete my account"), false);
-  assert.equal(
-    isExactAccountDeletionConfirmation(
-      "luffy",
-      "luffy",
-      `${ACCOUNT_DELETION_CONFIRMATION_PHRASE} `,
-    ),
-    false,
-  );
+test("account deletion confirmation requires the exact current username twice", () => {
+  assert.equal(isExactAccountDeletionConfirmation("luffy", "luffy", "luffy"), true);
+
+  for (const [usernameInput, confirmationInput] of [
+    ["zoro", "luffy"],
+    ["luffy", "zoro"],
+    ["zoro", "zoro"],
+    ["Luffy", "Luffy"],
+    [" luffy", "luffy"],
+    ["luffy", "luffy "],
+    ["", "luffy"],
+    ["luffy", ""],
+  ] as const) {
+    assert.equal(
+      isExactAccountDeletionConfirmation("luffy", usernameInput, confirmationInput),
+      false,
+      `${JSON.stringify([usernameInput, confirmationInput])} should not confirm deletion`,
+    );
+  }
 });
 
 test("account deletion reason codes no longer include reauth or storage preflight failures", () => {
@@ -56,7 +56,7 @@ test("account deletion error messages stay safe and user-facing", () => {
   );
   assert.equal(
     accountDeletionMessageForCode("ACCOUNT_CONFIRMATION_MISMATCH"),
-    "Enter your exact username and type DELETE MY ACCOUNT exactly.",
+    "Enter your exact username in both confirmation fields.",
   );
   assert.equal(
     accountDeletionMessageForCode("ACCOUNT_PROFILE_NOT_FOUND"),

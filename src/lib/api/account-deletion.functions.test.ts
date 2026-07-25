@@ -63,7 +63,7 @@ test("readiness reports only final-admin deletion blocking state", () => {
   assert.doesNotMatch(handler, /context\.supabase|context\.claims/);
 });
 
-test("deleteMyAccount accepts only exact username and confirmation phrase input", () => {
+test("deleteMyAccount accepts only exact double-username confirmation input", () => {
   const schema = sourceBetween(
     source,
     "const deleteMyAccountInputSchema",
@@ -76,14 +76,21 @@ test("deleteMyAccount accepts only exact username and confirmation phrase input"
   );
 
   assert.match(schema, /username: z\.string\(\)\.min\(1\)/);
-  assert.match(schema, /confirmationPhrase: z\.string\(\)\.min\(1\)/);
+  assert.match(schema, /confirmationUsername: z\.string\(\)\.min\(1\)/);
   assert.match(schema, /\.strict\(\)/);
-  assert.doesNotMatch(schema, /userId|email|password|provider|timestamp|force|admin/);
+  assert.doesNotMatch(
+    schema,
+    /confirmationPhrase|userId|email|password|provider|timestamp|force|admin/,
+  );
   assert.match(deleteFunction, /readCurrentProfileUsername\(db, context\.userId\)/);
   assert.match(deleteFunction, /data\.username !== currentUsername/);
-  assert.match(deleteFunction, /data\.confirmationPhrase !== ACCOUNT_DELETION_CONFIRMATION_PHRASE/);
+  assert.match(deleteFunction, /data\.confirmationUsername !== currentUsername/);
+  assert.match(deleteFunction, /data\.username !== data\.confirmationUsername/);
   assert.match(deleteFunction, /ACCOUNT_CONFIRMATION_MISMATCH/);
-  assert.doesNotMatch(deleteFunction, /trim\(\)|toLowerCase\(\)/);
+  assert.doesNotMatch(
+    deleteFunction,
+    /ACCOUNT_DELETION_CONFIRMATION_PHRASE|confirmationPhrase|trim\(\)|toLowerCase\(\)/,
+  );
 });
 
 test("deleteMyAccount checks final admin immediately before hard auth deletion", () => {
@@ -202,6 +209,6 @@ test("bounded server logs avoid personal data and raw Auth errors", () => {
   assert.doesNotMatch(logger, /userId|email|username|password|token|confirmation|storage/);
   assert.doesNotMatch(
     source,
-    /console\.(?:log|info|warn|error)\([^)]*(?:currentUsername|data\.username|data\.confirmationPhrase|context\.userId|data\.email|password|error)/,
+    /console\.(?:log|info|warn|error)\([^)]*(?:currentUsername|data\.username|data\.confirmationUsername|data\.confirmationPhrase|context\.userId|data\.email|password|error)/,
   );
 });
