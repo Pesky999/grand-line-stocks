@@ -54,11 +54,21 @@ this because the final deletion function repeats the check.
 ## Storage Preflight
 
 Berry Street does not currently expose a public user upload workflow, but deletion still performs a
-trusted server-side preflight against Supabase Storage ownership. If owned objects exist, deletion is
-blocked with `ACCOUNT_STORAGE_BLOCKED`. The client receives no bucket names or object paths.
+trusted server-side preflight against Supabase Storage ownership. The first version queried
+`storage.objects` directly through PostgREST and treated infrastructure or schema-exposure failures
+as `ACCOUNT_STORAGE_BLOCKED`, which could falsely tell players they owned uploaded files.
 
-Storage rows are not deleted by this feature because there is no existing app-level upload ownership
-model to safely coordinate generic bucket cleanup.
+The corrected flow uses the authenticated no-argument RPC
+`public.my_account_owns_storage_objects()`. The RPC reads `auth.uid()`, checks only whether a matching
+`storage.objects.owner_id` row exists, and returns a boolean. It does not return bucket IDs, object
+names, paths, metadata, owner IDs, counts, or user IDs.
+
+- `true` blocks deletion with `ACCOUNT_STORAGE_BLOCKED`.
+- `false` allows the deletion flow to continue.
+- RPC or infrastructure failure returns `ACCOUNT_STORAGE_CHECK_FAILED` and asks the player to refresh.
+
+Storage rows are never deleted through SQL by this feature. Actual file deletion must continue to use
+the Storage API so object data and metadata are removed through the storage system's own lifecycle.
 
 ## Session Cleanup
 
@@ -133,6 +143,10 @@ table-specific exception if any are found.
 The migration is not executed by implementation work. Apply it only through the normal reviewed
 database deployment path before enabling real self-service deletion.
 
+`20260725010000_fix_account_deletion_storage_preflight.sql` adds only the read-only authenticated
+Storage ownership RPC and its execute permissions. It does not grant direct access to
+`storage.objects`, alter Storage tables, or insert, update, delete, or backfill rows.
+
 ## Why There Is No Reset
 
 Resetting an account would need to clear wallet, holdings, trades, cost basis, snapshots,
@@ -141,10 +155,11 @@ systems. Hard deletion plus fresh signup is simpler and safer.
 
 ## Deployment Order
 
-1. Merge the application and migration.
-2. Apply the migration through the normal reviewed database path.
-3. Smoke-test deletion with test accounts only.
-4. Keep service-role deletion server-only.
+1. Merge the application and migrations.
+2. Apply the Storage preflight RPC migration before publishing the matching frontend/server code.
+3. Apply migrations through the normal reviewed database path.
+4. Smoke-test deletion with test accounts only.
+5. Keep service-role deletion server-only.
 
 ## Manual Smoke-Test Checklist
 

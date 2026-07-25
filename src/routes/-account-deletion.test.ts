@@ -105,7 +105,9 @@ test("readiness warnings and safe errors are visible", () => {
   assert.match(profileSource, /getMyAccountDeletionReadiness/);
   assert.match(profileSource, /readiness\?\.isLastAdmin/);
   assert.match(profileSource, /readiness\?\.storageBlocked/);
+  assert.match(profileSource, /readiness\?\.storageCheckFailed/);
   assert.match(profileSource, /readiness\?\.requiresReauthentication/);
+  assert.match(profileSource, /readiness\?\.canDelete === true/);
   assert.match(
     profileSource,
     /This is the final administrator account\.[\s\S]*Assign another administrator before[\s\S]*deleting it\./,
@@ -114,6 +116,11 @@ test("readiness warnings and safe errors are visible", () => {
     profileSource,
     /This account owns uploaded files that must be removed before deletion\.[\s\S]*Contact an[\s\S]*administrator\./,
   );
+  assert.match(
+    profileSource,
+    /Could not verify uploaded-file ownership\. Please refresh and try again\./,
+  );
+  assert.match(profileSource, /!readiness\?\.storageBlocked && readiness\?\.storageCheckFailed/);
   assert.match(profileSource, /extractAccountDeletionReasonCode/);
   assert.match(profileSource, /accountDeletionMessageForCode/);
 });

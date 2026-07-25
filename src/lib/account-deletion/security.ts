@@ -7,6 +7,7 @@ export const ACCOUNT_DELETION_REASON_CODES = [
   "REAUTHENTICATION_REQUIRED",
   "LAST_ADMIN_ACCOUNT",
   "ACCOUNT_STORAGE_BLOCKED",
+  "ACCOUNT_STORAGE_CHECK_FAILED",
   "ACCOUNT_CONFIRMATION_MISMATCH",
   "ACCOUNT_PROFILE_NOT_FOUND",
   "ACCOUNT_DELETION_FAILED",
@@ -151,6 +152,8 @@ export function accountDeletionMessageForCode(code: AccountDeletionReasonCode | 
       return "This is the final administrator account. Assign another administrator before deleting it.";
     case "ACCOUNT_STORAGE_BLOCKED":
       return "This account owns uploaded files that must be removed before deletion. Contact an administrator.";
+    case "ACCOUNT_STORAGE_CHECK_FAILED":
+      return "Could not verify uploaded-file ownership. Please refresh and try again.";
     case "ACCOUNT_CONFIRMATION_MISMATCH":
       return "Enter your exact username and type DELETE MY ACCOUNT exactly.";
     case "ACCOUNT_PROFILE_NOT_FOUND":
