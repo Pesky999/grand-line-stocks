@@ -32,8 +32,12 @@ test("mission endpoint returns only public-safe mission data", () => {
   assert.equal(simplifiedMission.pool.length, 9);
   assert.equal(simplifiedMission.roles.length, 3);
   assert.deepEqual(
+    mission.roles.map((role) => role.name),
+    ["Leadership", "Execution", "Awareness", "Planning", "Stability"],
+  );
+  assert.deepEqual(
     simplifiedMission.roles.map((role) => role.name),
-    ["Captain", "Navigator", "Support"],
+    ["Leadership", "Awareness", "Stability"],
   );
   assert.equal(Object.hasOwn(mission, "roleScores"), false);
   assert.equal(Object.hasOwn(mission, "roleRequirements"), false);

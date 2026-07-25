@@ -7,6 +7,7 @@ import test from "node:test";
 import { DAILY_CREW_SAMPLE_FIXTURES } from "./fixtures.ts";
 import {
   DAILY_CREW_LEGACY_POOL_SIZE,
+  DAILY_CREW_ROLE_LABELS,
   DAILY_CREW_SIMPLIFIED_POOL_SIZE,
   DAILY_CREW_ROLES,
   type DailyCrewMissionFixture,
@@ -72,6 +73,24 @@ test("sample fixtures validate with complete hidden score coverage", () => {
       true,
     );
   }
+});
+
+test("public role labels use broad competency names without changing internal identifiers", () => {
+  assert.deepEqual(DAILY_CREW_ROLES, ["captain", "fighter", "navigator", "strategist", "support"]);
+  assert.deepEqual(DAILY_CREW_ROLE_LABELS, {
+    captain: "Leadership",
+    fighter: "Execution",
+    navigator: "Awareness",
+    strategist: "Planning",
+    support: "Stability",
+  });
+
+  const fiveRoleMission = toPublicDailyCrewMission(DAILY_CREW_SAMPLE_FIXTURES[0]);
+
+  assert.deepEqual(
+    fiveRoleMission.roles.map((role) => role.name),
+    ["Leadership", "Execution", "Awareness", "Planning", "Stability"],
+  );
 });
 
 test("sample fixtures use mission-defined role candidates with one max-score perfect fit", () => {
@@ -181,7 +200,7 @@ test("simplified Covert Harbor mission uses three public jobs and a nine-charact
   );
   assert.deepEqual(
     publicMission.roles.map((role) => role.name),
-    ["Captain", "Navigator", "Support"],
+    ["Leadership", "Awareness", "Stability"],
   );
   assert.deepEqual(
     publicMission.roles.map((role) => role.role),
