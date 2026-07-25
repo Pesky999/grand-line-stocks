@@ -39,6 +39,7 @@ import {
   skipMyStockTutorial,
   startMyStockTutorial,
 } from "@/lib/api/onboarding.functions";
+import { clearOnboardingSessionBypass } from "@/lib/onboarding/session-bypass";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({ meta: [{ title: "Profile — Berry Street" }] }),
@@ -243,7 +244,8 @@ function Profile() {
   async function openTutorial(restart = false) {
     setTutorialBusy(true);
     try {
-      await startMyStockTutorial({ data: { restart } });
+      clearOnboardingSessionBypass();
+      await startMyStockTutorial({ data: { restart, source: "profile" } });
       await refreshOnboarding();
       await navigate({ to: "/onboarding" });
     } catch (error) {
@@ -256,6 +258,7 @@ function Profile() {
   async function replayTutorial() {
     setTutorialBusy(true);
     try {
+      clearOnboardingSessionBypass();
       await startMyStockTutorial({ data: { replay: true } });
       await navigate({ to: "/onboarding", search: { replay: true } });
     } catch (error) {
@@ -268,6 +271,7 @@ function Profile() {
   async function skipTutorialFromProfile() {
     setTutorialBusy(true);
     try {
+      clearOnboardingSessionBypass();
       await skipMyStockTutorial();
       await refreshOnboarding();
       toast.success("Tutorial skipped.");
@@ -581,25 +585,24 @@ function Profile() {
                         ? "Page tips are skipped."
                         : "Page tips are available while you explore."}
                     </span>
-                    {onboardingQ.data.pageTipsDisabled ? (
-                      <button
-                        type="button"
-                        onClick={() => void resetTipsFromProfile()}
-                        disabled={tutorialBusy}
-                        className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary disabled:opacity-50"
-                      >
-                        Replay page tips
-                      </button>
-                    ) : (
+                    {!onboardingQ.data.pageTipsDisabled && (
                       <button
                         type="button"
                         onClick={() => void skipTipsFromProfile()}
                         disabled={tutorialBusy}
                         className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-bear disabled:opacity-50"
                       >
-                        Skip page tips
+                        SKIP REMAINING PAGE TIPS
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void resetTipsFromProfile()}
+                      disabled={tutorialBusy}
+                      className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary disabled:opacity-50"
+                    >
+                      REPLAY PAGE TIPS
+                    </button>
                   </div>
                 </div>
               </>

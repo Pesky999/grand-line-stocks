@@ -73,13 +73,20 @@ test("onboarding writes use the trusted server client and strict state transitio
 test("analytics schema is bounded and best-effort", () => {
   const schema = sourceBetween(
     apiSource,
-    "const recordOnboardingEventInputSchema",
+    "const emptyMetadataSchema",
     "const startTutorialInputSchema",
   );
-  assert.match(schema, /z\.enum\(onboardingEventNames\)/);
-  assert.match(schema, /z\.string\(\)\.max\(120\)/);
-  assert.match(schema, /z\.string\(\)\.max\(160\)/);
-  assert.match(schema, /z\.record\(z\.string\(\)\.max\(60\), eventMetadataValueSchema\)/);
+  assert.match(schema, /z\.discriminatedUnion\("eventName"/);
+  assert.match(schema, /eventName: z\.literal\("onboarding_offer_seen"\)/);
+  assert.match(schema, /offer: z\.enum\(\["first_login", "soft"\]\)/);
+  assert.match(schema, /eventName: z\.literal\("stock_tutorial_started"\)/);
+  assert.match(schema, /restart: z\.boolean\(\)/);
+  assert.match(schema, /tutorialStartSourceSchema/);
+  assert.match(schema, /eventName: z\.literal\("stock_tutorial_replayed"\)/);
+  assert.match(schema, /tutorialReplaySourceSchema/);
+  assert.match(schema, /side: z\.enum\(\["buy", "sell"\]\)/);
+  assert.match(schema, /metadata: emptyMetadataSchema\.optional\(\)/);
+  assert.doesNotMatch(schema, /z\.record/);
 
   const bestEffort = sourceBetween(
     apiSource,
@@ -92,6 +99,33 @@ test("analytics schema is bounded and best-effort", () => {
   assert.doesNotMatch(bestEffort, /throw error|throw new Error/);
 });
 
+test("analytics metadata rejects arbitrary personal and trade fields", () => {
+  const schema = sourceBetween(
+    apiSource,
+    "const recordOnboardingEventInputSchema",
+    "const startTutorialInputSchema",
+  );
+
+  for (const forbidden of [
+    "email",
+    "username",
+    "display_name",
+    "user_id",
+    "slug",
+    "character",
+    "shares",
+    "quantity",
+    "price",
+    "total",
+    "balance",
+    "storage",
+    "account_deletion",
+  ]) {
+    assert.doesNotMatch(schema, new RegExp(`${forbidden}:`));
+  }
+  assert.match(schema, /\.strict\(\)/);
+});
+
 test("tutorial replay records an event without rewriting completed progress", () => {
   const start = exportedFunction(apiSource, "startMyStockTutorial");
   const complete = exportedFunction(apiSource, "completeMyStockTutorial");
@@ -100,7 +134,7 @@ test("tutorial replay records an event without rewriting completed progress", ()
   assert.match(start, /eventName: "stock_tutorial_replayed"/);
   assert.match(start, /return current/);
   assert.match(complete, /if \(input\.replay\)/);
-  assert.match(complete, /eventName: "stock_tutorial_replayed"/);
+  assert.doesNotMatch(sourceBetween(complete, "if (input.replay)", "const updated"), /eventName/);
   assert.doesNotMatch(
     sourceBetween(complete, "if (input.replay)", "const updated"),
     /updateOnboardingProgress/,

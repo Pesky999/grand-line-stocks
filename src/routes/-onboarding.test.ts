@@ -30,17 +30,59 @@ test("authenticated onboarding route is registered and uses a simulated stock pr
   assert.match(onboardingRoute, /createFileRoute\("\/_authenticated\/onboarding"\)/);
   assert.match(onboardingRoute, /validateSearch/);
   assert.match(onboardingRoute, /replay: raw\.replay === true \|\| raw\.replay === "true"/);
-  assert.match(onboardingRoute, /Practice a stock trade without risking Berries\./);
-  assert.match(onboardingRoute, /Practice Mode/);
+  assert.match(onboardingRoute, /WELCOME TO BERRY STREET/);
+  assert.match(onboardingRoute, /Build a portfolio by trading One Piece character stocks/);
+  assert.match(onboardingRoute, /START PRACTICE TRADE/);
+  assert.match(onboardingRoute, /About 90 seconds/);
+  assert.match(onboardingRoute, /EXPLORE ON MY OWN/);
+  assert.match(onboardingRoute, /You can replay the tutorial later from your Profile\./);
+  assert.match(
+    onboardingRoute,
+    /PRACTICE MODE — No real Berries, holdings, statistics, or rewards will change\./,
+  );
   assert.match(onboardingRoute, /stepTitleRef\.current\?\.focus\(\)/);
   assert.match(onboardingRoute, /Practice Listing/);
   assert.match(onboardingRoute, /No real order is\s+placed/);
-  assert.match(onboardingRoute, /does not change your wallet, holdings, or stats/);
   assert.doesNotMatch(
     onboardingRoute,
     /buyShares|sellShares|executeTrade|execute_trade_authenticated/,
   );
   assert.doesNotMatch(onboardingRoute, /user_wallets|transactions|wallet_ledger_entries/);
+});
+
+test("tutorial route uses exact resume and completion screens", () => {
+  assert.match(onboardingRoute, /PRACTICE TRADE IN PROGRESS/);
+  assert.match(onboardingRoute, /Your practice progress was saved\./);
+  assert.match(onboardingRoute, /RESUME PRACTICE/);
+  assert.match(onboardingRoute, /START OVER/);
+  assert.match(onboardingRoute, /SKIP TUTORIAL/);
+  assert.match(onboardingRoute, /PRACTICE TRADE COMPLETE/);
+  assert.match(onboardingRoute, /You bought 10 shares for/);
+  assert.match(onboardingRoute, /Realized practice profit:/);
+  assert.match(
+    onboardingRoute,
+    /No real Berries, holdings, statistics, achievements, or leaderboard values were changed\./,
+  );
+  assert.match(onboardingRoute, /ENTER THE MARKET/);
+  assert.doesNotMatch(onboardingRoute, /You practiced the full buy-and-sell loop/);
+  assert.doesNotMatch(onboardingRoute, /Browse market|Practice again|Finish practice/);
+});
+
+test("tutorial route gates every practice step behind the required control", () => {
+  assert.match(onboardingRoute, /type: "select_listing"/);
+  assert.match(onboardingRoute, /Select the practice stock to open its trade panel\./);
+  assert.match(onboardingRoute, /type: "enter_berry_amount"/);
+  assert.match(onboardingRoute, /type: "apply_berry_amount"/);
+  assert.match(onboardingRoute, /For this practice trade, invest/);
+  assert.match(onboardingRoute, /Enter exactly 1000 for this practice trade\./);
+  assert.match(onboardingRoute, /type: "confirm_practice_buy"/);
+  assert.match(onboardingRoute, /CONFIRM PRACTICE BUY/);
+  assert.match(onboardingRoute, /type: "acknowledge_price_movement"/);
+  assert.match(onboardingRoute, /type: "select_all_shares"/);
+  assert.match(onboardingRoute, /type: "confirm_practice_sale"/);
+  assert.match(onboardingRoute, /CONFIRM PRACTICE SALE/);
+  assert.match(onboardingRoute, /disabled=\{busy \|\| interaction\.selectedSellShares !== 10\}/);
+  assert.doesNotMatch(onboardingRoute, /nextStep\(/);
 });
 
 test("tutorial route saves progress, supports skip, and replays without rewriting completion", () => {
@@ -51,8 +93,18 @@ test("tutorial route saves progress, supports skip, and replays without rewritin
   assert.match(onboardingRoute, /setOnboardingSessionBypass/);
   assert.match(onboardingRoute, /clearOnboardingSessionBypass/);
   assert.match(onboardingRoute, /isReplay/);
-  assert.match(onboardingRoute, /completeMyStockTutorial\(\{[\s\S]*replay: true/);
-  assert.match(onboardingRoute, /completedStepKey: currentStep\.key/);
+  assert.match(
+    onboardingRoute,
+    /if \(isReplay\) \{\s*setInteraction\(next\);\s*setFinishedPractice\(true\);\s*return;\s*\}/,
+  );
+  assert.match(onboardingRoute, /completedStepKey: "step_5"/);
+  assert.doesNotMatch(onboardingRoute, /completeMyStockTutorial\(\{[\s\S]*replay: true/);
+  assert.match(
+    onboardingRoute,
+    /await completeMyStockTutorial\(\{ data: \{ completedStepKey: "step_5" \} \}\);\s*clearOnboardingSessionBypass\(\)/,
+  );
+  assert.match(onboardingRoute, /if \(isReplay\) \{\s*clearOnboardingSessionBypass\(\)/);
+  assert.match(onboardingRoute, /if \(!isReplay\) setOnboardingSessionBypass\(\)/);
 });
 
 test("TerminalShell installs optional onboarding without changing navigation", () => {
@@ -70,6 +122,10 @@ test("TerminalShell installs optional onboarding without changing navigation", (
 
 test("page coach is accessible and can be dismissed or skipped", () => {
   assert.match(pageCoachSource, /aria-labelledby="page-coach-title"/);
+  assert.match(pageCoachSource, /useRef/);
+  assert.match(pageCoachSource, /headingRef\.current\?\.focus\(\)/);
+  assert.match(pageCoachSource, /tabIndex=\{-1\}/);
+  assert.match(pageCoachSource, /\[tip\.id, tip\.version\]/);
   assert.match(pageCoachSource, /Close/);
   assert.match(pageCoachSource, /Skip tips/);
   assert.match(pageCoachSource, /Got it/);
@@ -81,11 +137,12 @@ test("page coach is accessible and can be dismissed or skipped", () => {
   assert.match(onboardingExperienceSource, /dismissMyPageTip/);
   assert.match(onboardingExperienceSource, /skipMyPageTips/);
   assert.match(onboardingExperienceSource, /recordMyOnboardingEvent/);
-  assert.match(onboardingExperienceSource, /eventName: "onboarding_offer_seen"/);
+  assert.match(onboardingExperienceSource, /onClose=\{\(\) => void dismissCurrentTip\(false\)\}/);
   assert.match(
     onboardingExperienceSource,
-    /onboarding_offer_seen:\$\{state\.stockTutorialOffer\}:v/,
+    /setHiddenTipIds\(\(current\) => new Set\(current\)\.add\(currentTip\.id\)\)/,
   );
+  assert.doesNotMatch(onboardingExperienceSource, /eventName: "onboarding_offer_seen"/);
   assert.match(
     onboardingExperienceSource,
     /catch\(\(\) => logOnboardingUiFailure\("page_tip_seen"\)\)/,
@@ -104,12 +161,19 @@ test("page coach is accessible and can be dismissed or skipped", () => {
 test("Profile exposes tutorial replay and page-tip controls without disturbing deletion", () => {
   assert.match(profileSource, /Help & Tutorials/);
   assert.match(profileSource, /Replay practice trade/);
-  assert.match(profileSource, /Replay page tips/);
-  assert.match(profileSource, /Skip page tips/);
+  assert.match(profileSource, /REPLAY PAGE TIPS/);
+  assert.match(profileSource, /SKIP REMAINING PAGE TIPS/);
   assert.match(profileSource, /startMyStockTutorial/);
   assert.match(profileSource, /skipMyStockTutorial/);
   assert.match(profileSource, /resetMyPageTips/);
   assert.match(profileSource, /skipMyPageTips/);
+  assert.match(profileSource, /clearOnboardingSessionBypass/);
+  assert.match(
+    profileSource,
+    /startMyStockTutorial\(\{ data: \{ restart, source: "profile" \} \}\)/,
+  );
+  assert.match(profileSource, /startMyStockTutorial\(\{ data: \{ replay: true \} \}\)/);
+  assert.match(profileSource, /!onboardingQ\.data\.pageTipsDisabled &&/);
 
   const deleteBlock = sourceBetween(
     profileSource,
@@ -133,6 +197,13 @@ test("Portfolio soft prompt is optional and does not modify trading behavior", (
   );
   assert.match(portfolioSource, /showTutorialCard/);
   assert.match(portfolioSource, /stockTutorialOffer === "soft"/);
+  assert.match(portfolioSource, /eventName: "onboarding_offer_seen"/);
+  assert.match(portfolioSource, /metadata: \{ offer: "soft" \}/);
+  assert.match(portfolioSource, /clearOnboardingSessionBypass/);
+  assert.match(
+    portfolioSource,
+    /startMyStockTutorial\(\{ data: \{ restart, source: "portfolio" \} \}\)/,
+  );
   assert.match(
     portfolioSource,
     /sellShares\(\{ data: \{ slug, shares: sellSharesQuantity, requestId \} \}\)/,

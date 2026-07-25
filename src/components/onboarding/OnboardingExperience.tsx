@@ -29,7 +29,6 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
   const [busy, setBusy] = useState(false);
   const [hiddenTipIds, setHiddenTipIds] = useState<Set<string>>(() => new Set());
   const seenTipKeyRef = useRef<string | null>(null);
-  const seenOfferKeyRef = useRef<string | null>(null);
   const onboardingQ = useQuery({
     queryKey: ONBOARDING_QUERY_KEY,
     queryFn: () => getMyOnboardingState(),
@@ -51,19 +50,6 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
 
   useEffect(() => {
     if (!signedIn || !state) return;
-    if (state.stockTutorialStatus === "not_started" && state.stockTutorialOffer !== "none") {
-      const dedupeKey = `onboarding_offer_seen:${state.stockTutorialOffer}:v${state.stockTutorialVersion}`;
-      if (seenOfferKeyRef.current !== dedupeKey) {
-        seenOfferKeyRef.current = dedupeKey;
-        void recordMyOnboardingEvent({
-          data: {
-            eventName: "onboarding_offer_seen",
-            metadata: { offer: state.stockTutorialOffer },
-            dedupeKey,
-          },
-        }).catch(() => logOnboardingUiFailure("onboarding_offer_seen"));
-      }
-    }
     if (
       !shouldAutoOpenOnboarding(state, {
         pathname,
@@ -101,6 +87,7 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
     try {
       await dismissMyPageTip({ data: { tipId: currentTip.id, version: currentTip.version } });
       await invalidateOnboarding();
+      setHiddenTipIds((current) => new Set(current).add(currentTip.id));
       if (advance && tipIndex < tips.length - 1) setTipIndex((current) => current + 1);
     } catch {
       setHiddenTipIds((current) => new Set(current).add(currentTip.id));
@@ -131,7 +118,7 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
       busy={busy}
       onNext={() => void dismissCurrentTip(true)}
       onGotIt={() => void dismissCurrentTip(false)}
-      onClose={() => setHiddenTipIds((current) => new Set(current).add(currentTip.id))}
+      onClose={() => void dismissCurrentTip(false)}
       onSkipTips={() => void skipTips()}
     />
   );

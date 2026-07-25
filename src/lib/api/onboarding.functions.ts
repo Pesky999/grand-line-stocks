@@ -51,27 +51,86 @@ const onboardingProgressRowSchema = z
   })
   .strict();
 
-const eventMetadataValueSchema = z.union([
-  z.string().max(120),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
+const emptyMetadataSchema = z.object({}).strict();
+const tutorialStartSourceSchema = z.enum(["welcome", "portfolio", "profile", "resume"]);
+const tutorialReplaySourceSchema = z.enum(["profile"]);
 
-const recordOnboardingEventInputSchema = z
-  .object({
-    eventName: z.enum(onboardingEventNames),
-    stepKey: z.string().max(80).nullable().optional(),
-    pageKey: z.string().max(120).nullable().optional(),
-    metadata: z.record(z.string().max(60), eventMetadataValueSchema).optional(),
-    dedupeKey: z.string().max(160).nullable().optional(),
-  })
-  .strict();
+const eventCommonSchema = {
+  stepKey: z.string().max(80).nullable().optional(),
+  pageKey: z.string().max(120).nullable().optional(),
+  dedupeKey: z.string().max(160).nullable().optional(),
+};
+
+function tradeEventSchema(eventName: "first_live_trade_started" | "first_live_trade_completed") {
+  return z
+    .object({
+      eventName: z.literal(eventName),
+      ...eventCommonSchema,
+      metadata: z.object({ side: z.enum(["buy", "sell"]) }).strict(),
+    })
+    .strict();
+}
+
+function noMetadataEventSchema(
+  eventName:
+    | "stock_tutorial_step_completed"
+    | "stock_tutorial_skipped"
+    | "stock_tutorial_completed"
+    | "page_tip_seen"
+    | "page_tip_completed"
+    | "page_tips_skipped",
+) {
+  return z
+    .object({
+      eventName: z.literal(eventName),
+      ...eventCommonSchema,
+      metadata: emptyMetadataSchema.optional(),
+    })
+    .strict();
+}
+
+const recordOnboardingEventInputSchema = z.discriminatedUnion("eventName", [
+  z
+    .object({
+      eventName: z.literal("onboarding_offer_seen"),
+      ...eventCommonSchema,
+      metadata: z.object({ offer: z.enum(["first_login", "soft"]) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      eventName: z.literal("stock_tutorial_started"),
+      ...eventCommonSchema,
+      metadata: z
+        .object({
+          restart: z.boolean(),
+          source: tutorialStartSourceSchema.optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      eventName: z.literal("stock_tutorial_replayed"),
+      ...eventCommonSchema,
+      metadata: z.object({ source: tutorialReplaySourceSchema }).strict(),
+    })
+    .strict(),
+  tradeEventSchema("first_live_trade_started"),
+  tradeEventSchema("first_live_trade_completed"),
+  noMetadataEventSchema("stock_tutorial_step_completed"),
+  noMetadataEventSchema("stock_tutorial_skipped"),
+  noMetadataEventSchema("stock_tutorial_completed"),
+  noMetadataEventSchema("page_tip_seen"),
+  noMetadataEventSchema("page_tip_completed"),
+  noMetadataEventSchema("page_tips_skipped"),
+]);
 
 const startTutorialInputSchema = z
   .object({
     restart: z.boolean().optional(),
     replay: z.boolean().optional(),
+    source: tutorialStartSourceSchema.optional(),
   })
   .strict()
   .optional();
@@ -290,9 +349,9 @@ export const startMyStockTutorial = createServerFn({ method: "POST" })
       : startStockTutorial(current, nowIso());
     const updated = await updateOnboardingProgress(db, context.userId, next);
     await insertEventBestEffort(db, context.userId, {
-      eventName: input.restart ? "stock_tutorial_replayed" : "stock_tutorial_started",
+      eventName: "stock_tutorial_started",
       dedupeKey: input.restart ? null : `stock_tutorial_started:v${STOCK_TUTORIAL_VERSION}`,
-      metadata: { restart: Boolean(input.restart) },
+      metadata: { restart: Boolean(input.restart), source: input.source ?? "welcome" },
     });
     return updated;
   });
@@ -320,11 +379,6 @@ export const completeMyStockTutorial = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const input = data ?? {};
     if (input.replay) {
-      await recordOnboardingEventBestEffort(context.userId, {
-        eventName: "stock_tutorial_replayed",
-        stepKey: input.completedStepKey ?? null,
-        metadata: { source: "completion" },
-      });
       const db = await admin();
       return ensureOnboardingProgress(db, context.userId);
     }

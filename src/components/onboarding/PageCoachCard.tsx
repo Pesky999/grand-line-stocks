@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { PageTip } from "@/lib/onboarding/page-tips";
 
 type PageCoachCardProps = {
@@ -22,6 +23,11 @@ export function PageCoachCard({
   onSkipTips,
 }: PageCoachCardProps) {
   const isLast = currentIndex >= total - 1;
+  const headingRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [tip.id, tip.version]);
 
   return (
     <aside
@@ -42,7 +48,12 @@ export function PageCoachCard({
         </button>
       </div>
       <div className="space-y-3 p-4 text-sm">
-        <div id="page-coach-title" className="font-bold uppercase tracking-widest text-foreground">
+        <div
+          ref={headingRef}
+          id="page-coach-title"
+          tabIndex={-1}
+          className="font-bold uppercase tracking-widest text-foreground outline-none"
+        >
           {tip.title}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">{tip.body}</p>

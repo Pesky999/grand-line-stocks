@@ -25,6 +25,28 @@ export type PracticeState = {
   realizedPnl: number;
 };
 
+export type PracticeInteractionState = {
+  currentStep: PracticeStep;
+  listingSelected: boolean;
+  berryAmountText: string;
+  berryAmountApplied: boolean;
+  practiceBuyConfirmed: boolean;
+  movementAcknowledged: boolean;
+  selectedSellShares: number | null;
+  practiceSaleConfirmed: boolean;
+};
+
+export type PracticeInteractionAction =
+  | { type: "select_listing" }
+  | { type: "enter_berry_amount"; value: string }
+  | { type: "apply_berry_amount" }
+  | { type: "confirm_practice_buy" }
+  | { type: "acknowledge_price_movement" }
+  | { type: "select_all_shares" }
+  | { type: "select_sell_shares"; shares: number }
+  | { type: "confirm_practice_sale" }
+  | { type: "restart" };
+
 export const PRACTICE_STEPS = [
   {
     step: 1,
@@ -62,6 +84,72 @@ export const PRACTICE_STEPS = [
     action: "Confirm practice sale",
   },
 ] as const;
+
+export function createInitialPracticeInteractionState(): PracticeInteractionState {
+  return {
+    currentStep: 1,
+    listingSelected: false,
+    berryAmountText: "",
+    berryAmountApplied: false,
+    practiceBuyConfirmed: false,
+    movementAcknowledged: false,
+    selectedSellShares: null,
+    practiceSaleConfirmed: false,
+  };
+}
+
+export function reconstructPracticeInteractionState(savedStep: number): PracticeInteractionState {
+  const currentStep = Math.min(5, Math.max(1, Math.trunc(savedStep))) as PracticeStep;
+
+  return {
+    currentStep,
+    listingSelected: currentStep >= 2,
+    berryAmountText: currentStep >= 3 ? String(STOCK_TUTORIAL_PRACTICE.investment) : "",
+    berryAmountApplied: currentStep >= 3,
+    practiceBuyConfirmed: currentStep >= 4,
+    movementAcknowledged: currentStep >= 5,
+    selectedSellShares: null,
+    practiceSaleConfirmed: false,
+  };
+}
+
+export function applyPracticeInteraction(
+  state: PracticeInteractionState,
+  action: PracticeInteractionAction,
+): PracticeInteractionState {
+  switch (action.type) {
+    case "restart":
+      return createInitialPracticeInteractionState();
+    case "select_listing":
+      if (state.currentStep !== 1) return state;
+      return { ...state, currentStep: 2, listingSelected: true };
+    case "enter_berry_amount":
+      if (state.currentStep !== 2) return state;
+      return { ...state, berryAmountText: action.value, berryAmountApplied: false };
+    case "apply_berry_amount":
+      if (state.currentStep !== 2) return state;
+      if (Number(state.berryAmountText.trim()) !== STOCK_TUTORIAL_PRACTICE.investment) {
+        return state;
+      }
+      return { ...state, currentStep: 3, berryAmountApplied: true };
+    case "confirm_practice_buy":
+      if (state.currentStep !== 3 || !state.berryAmountApplied) return state;
+      return { ...state, currentStep: 4, practiceBuyConfirmed: true };
+    case "acknowledge_price_movement":
+      if (state.currentStep !== 4 || !state.practiceBuyConfirmed) return state;
+      return { ...state, currentStep: 5, movementAcknowledged: true };
+    case "select_all_shares":
+      if (state.currentStep !== 5 || !state.movementAcknowledged) return state;
+      return { ...state, selectedSellShares: STOCK_TUTORIAL_PRACTICE.shares };
+    case "select_sell_shares":
+      if (state.currentStep !== 5 || !state.movementAcknowledged) return state;
+      return { ...state, selectedSellShares: action.shares, practiceSaleConfirmed: false };
+    case "confirm_practice_sale":
+      if (state.currentStep !== 5) return state;
+      if (state.selectedSellShares !== STOCK_TUTORIAL_PRACTICE.shares) return state;
+      return { ...state, practiceSaleConfirmed: true };
+  }
+}
 
 export function formatPracticeBerries(value: number) {
   return `${BERRY_SYMBOL}${value.toLocaleString(undefined, {

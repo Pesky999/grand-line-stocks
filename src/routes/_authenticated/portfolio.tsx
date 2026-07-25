@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import {
   TRADE_HISTORY_QUERY_KEY,
@@ -12,9 +12,11 @@ import {
 import {
   ONBOARDING_QUERY_KEY,
   getMyOnboardingState,
+  recordMyOnboardingEvent,
   skipMyStockTutorial,
   startMyStockTutorial,
 } from "@/lib/api/onboarding.functions";
+import { clearOnboardingSessionBypass } from "@/lib/onboarding/session-bypass";
 import {
   TRADE_HISTORY_DEFAULT_PAGE_SIZE,
   type TradeHistoryCursor,
@@ -47,6 +49,7 @@ function Portfolio() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [busySellRequests, setBusySellRequests] = useState<Record<string, boolean>>({});
+  const seenSoftOfferRef = useRef(false);
   const walletLedgerQ = useQuery({
     queryKey: ["wallet-ledger-entries"],
     queryFn: () => listMyWalletLedgerEntries(),
@@ -82,6 +85,34 @@ function Portfolio() {
       return true;
     });
   }, [tradeHistoryQ.data]);
+  const onboarding = onboardingQ.data ?? null;
+  const showTutorialCard =
+    onboarding?.stockTutorialStatus === "in_progress" ||
+    (onboarding?.stockTutorialStatus === "not_started" && onboarding.stockTutorialOffer === "soft");
+
+  useEffect(() => {
+    if (!showTutorialCard || !onboarding) return;
+    if (
+      onboarding.stockTutorialStatus !== "not_started" ||
+      onboarding.stockTutorialOffer !== "soft"
+    ) {
+      return;
+    }
+    if (seenSoftOfferRef.current) return;
+    seenSoftOfferRef.current = true;
+    void recordMyOnboardingEvent({
+      data: {
+        eventName: "onboarding_offer_seen",
+        metadata: { offer: "soft" },
+        dedupeKey: `onboarding_offer_seen:soft:v${onboarding.stockTutorialVersion}`,
+      },
+    }).catch(() =>
+      console.warn("[Onboarding]", {
+        stage: "portfolio_offer_seen",
+        code: "ONBOARDING_UI_OPTIONAL_FAILURE",
+      }),
+    );
+  }, [onboarding, showTutorialCard]);
 
   if (isLoading || !data) {
     return (
@@ -150,7 +181,8 @@ function Portfolio() {
 
   async function handleStartTutorial(restart = false) {
     try {
-      await startMyStockTutorial({ data: { restart } });
+      clearOnboardingSessionBypass();
+      await startMyStockTutorial({ data: { restart, source: "portfolio" } });
       await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
       return true;
     } catch (error) {
@@ -166,6 +198,7 @@ function Portfolio() {
 
   async function handleSkipTutorial() {
     try {
+      clearOnboardingSessionBypass();
       await skipMyStockTutorial();
       await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
       toast.success("Tutorial skipped.");
@@ -173,11 +206,6 @@ function Portfolio() {
       toast.error(error instanceof Error ? error.message : "Could not skip the tutorial.");
     }
   }
-
-  const onboarding = onboardingQ.data ?? null;
-  const showTutorialCard =
-    onboarding?.stockTutorialStatus === "in_progress" ||
-    (onboarding?.stockTutorialStatus === "not_started" && onboarding.stockTutorialOffer === "soft");
 
   return (
     <TerminalShell>
