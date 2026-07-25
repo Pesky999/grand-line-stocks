@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
@@ -9,6 +9,12 @@ import {
   sellShares,
   type WalletLedgerEntry,
 } from "@/lib/api/wallet.functions";
+import {
+  ONBOARDING_QUERY_KEY,
+  getMyOnboardingState,
+  skipMyStockTutorial,
+  startMyStockTutorial,
+} from "@/lib/api/onboarding.functions";
 import {
   TRADE_HISTORY_DEFAULT_PAGE_SIZE,
   type TradeHistoryCursor,
@@ -39,12 +45,20 @@ function Portfolio() {
   const { data, isLoading, user } = useMe();
   const invalidate = useInvalidateMe();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [busySellRequests, setBusySellRequests] = useState<Record<string, boolean>>({});
   const walletLedgerQ = useQuery({
     queryKey: ["wallet-ledger-entries"],
     queryFn: () => listMyWalletLedgerEntries(),
     enabled: Boolean(data),
     staleTime: 10_000,
+  });
+  const onboardingQ = useQuery({
+    queryKey: ONBOARDING_QUERY_KEY,
+    queryFn: () => getMyOnboardingState(),
+    enabled: Boolean(data),
+    retry: false,
+    staleTime: 30_000,
   });
   const tradeHistoryQ = useInfiniteQuery({
     queryKey: TRADE_HISTORY_QUERY_KEY,
@@ -134,6 +148,37 @@ function Portfolio() {
     await tradeHistoryQ.fetchNextPage();
   }
 
+  async function handleStartTutorial(restart = false) {
+    try {
+      await startMyStockTutorial({ data: { restart } });
+      await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not start the tutorial.");
+      return false;
+    }
+  }
+
+  async function openTutorialFromPortfolio(restart = false) {
+    const started = await handleStartTutorial(restart);
+    if (started) await navigate({ to: "/onboarding" });
+  }
+
+  async function handleSkipTutorial() {
+    try {
+      await skipMyStockTutorial();
+      await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
+      toast.success("Tutorial skipped.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not skip the tutorial.");
+    }
+  }
+
+  const onboarding = onboardingQ.data ?? null;
+  const showTutorialCard =
+    onboarding?.stockTutorialStatus === "in_progress" ||
+    (onboarding?.stockTutorialStatus === "not_started" && onboarding.stockTutorialOffer === "soft");
+
   return (
     <TerminalShell>
       <div className="grid gap-px border-b border-border bg-border md:grid-cols-4">
@@ -148,6 +193,51 @@ function Portfolio() {
       </div>
 
       <div className="p-4">
+        {showTutorialCard && (
+          <div className="terminal-panel mb-4 overflow-hidden border-primary/40">
+            <div className="terminal-header">
+              <span>Practice Trading</span>
+            </div>
+            <div className="space-y-3 p-4 text-sm">
+              <p className="max-w-2xl text-muted-foreground">
+                Try a simulated buy and sell before placing a real order. It does not change your
+                wallet, holdings, stats, prices, or trade history.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onboarding.stockTutorialStatus === "in_progress"
+                      ? void navigate({ to: "/onboarding" })
+                      : void openTutorialFromPortfolio(false)
+                  }
+                  className="border border-primary bg-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary-foreground"
+                >
+                  {onboarding.stockTutorialStatus === "in_progress"
+                    ? "Resume practice trade"
+                    : "Start practice trade"}
+                </button>
+                {onboarding.stockTutorialStatus === "in_progress" && (
+                  <button
+                    type="button"
+                    onClick={() => void openTutorialFromPortfolio(true)}
+                    className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+                  >
+                    Start over
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleSkipTutorial()}
+                  className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-bear"
+                >
+                  Skip tutorial
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="terminal-panel mb-4 overflow-hidden">
           <div className="terminal-header">
             <span>Realized Performance</span>

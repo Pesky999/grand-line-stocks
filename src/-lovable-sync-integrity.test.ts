@@ -6,13 +6,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-const BASELINE_COMMIT = "b030af39fd1edcb30878cef37a672d2fcb6a2e95";
+const CANONICAL_REVISION = "stock-onboarding-v1";
 
 const GUARDED_FILES = {
   "package.json": "c7a324f719903681bc875637c24da478c578f4e80552ffee2acc897339c99280",
   "src/integrations/supabase/types.ts":
-    "89a09393a834b4a8520ea5b4095607e70c3977c5ef1d29dbe92c945f87921fda",
-  "src/routeTree.gen.ts": "86a1cb7987ee6b0563167bb2172e7483a3b4fc40dbd7d3edf84bd50be89f3285",
+    "be50b0f005dfc3deb1cdee8c54b23bf6a352f0313cab311436b011b40940d7a3",
+  "src/routeTree.gen.ts": "7b4184d7680d9721b7dec277a8d17f8278bcbbad0a1e47a78361f7ceecb392cb",
 } as const;
 
 function readProjectFile(path: string) {
@@ -40,7 +40,11 @@ function sourceBetween(source: string, startMarker: string, endMarker: string) {
 test("Lovable sync guard preserves canonical file hashes", () => {
   // Expected hashes should only change with an intentional, reviewed update to the guarded file.
   for (const [path, expectedHash] of Object.entries(GUARDED_FILES)) {
-    assert.equal(normalizedSha256(path), expectedHash, `${path} drifted from ${BASELINE_COMMIT}`);
+    assert.equal(
+      normalizedSha256(path),
+      expectedHash,
+      `${path} drifted from ${CANONICAL_REVISION}`,
+    );
   }
 });
 
@@ -57,6 +61,26 @@ test("Lovable sync guard preserves canonical dependency and route-tree contracts
   assert.match(routeTreeSource, /ssr: true/);
   assert.match(routeTreeSource, /router: Awaited<ReturnType<typeof getRouter>>/);
   assert.match(routeTreeSource, /config: Awaited<ReturnType<typeof startInstance\.getOptions>>/);
+});
+
+test("Lovable sync guard preserves stock onboarding schema and route additions", () => {
+  const typesSource = readProjectFile("src/integrations/supabase/types.ts");
+  const routeTreeSource = readProjectFile("src/routeTree.gen.ts");
+
+  assert.match(typesSource, /user_onboarding_progress:\s*\{/);
+  assert.match(typesSource, /stock_tutorial_status: string/);
+  assert.match(typesSource, /stock_tutorial_offer: string/);
+  assert.match(typesSource, /page_tip_versions: Json/);
+  assert.match(typesSource, /user_onboarding_events:\s*\{/);
+  assert.match(typesSource, /event_name: string/);
+  assert.match(typesSource, /dedupe_key: string \| null/);
+  assert.match(typesSource, /metadata: Json/);
+  assert.match(routeTreeSource, /AuthenticatedOnboardingRouteImport/);
+  assert.match(routeTreeSource, /'\/onboarding': typeof AuthenticatedOnboardingRoute/);
+  assert.match(
+    routeTreeSource,
+    /'\/_authenticated\/onboarding': typeof AuthenticatedOnboardingRoute/,
+  );
 });
 
 test("Lovable sync guard preserves canonical Supabase function signatures", () => {

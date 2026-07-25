@@ -2062,6 +2062,87 @@ export type Database = {
           },
         ]
       }
+      user_onboarding_events: {
+        Row: {
+          created_at: string
+          dedupe_key: string | null
+          event_name: string
+          id: string
+          metadata: Json
+          page_key: string | null
+          step_key: string | null
+          tutorial_version: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key?: string | null
+          event_name: string
+          id?: string
+          metadata?: Json
+          page_key?: string | null
+          step_key?: string | null
+          tutorial_version?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string | null
+          event_name?: string
+          id?: string
+          metadata?: Json
+          page_key?: string | null
+          step_key?: string | null
+          tutorial_version?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_onboarding_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          page_tip_versions: Json
+          page_tips_disabled: boolean
+          skipped_at: string | null
+          started_at: string | null
+          stock_tutorial_last_step: number
+          stock_tutorial_offer: string
+          stock_tutorial_status: string
+          stock_tutorial_version: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          page_tip_versions?: Json
+          page_tips_disabled?: boolean
+          skipped_at?: string | null
+          started_at?: string | null
+          stock_tutorial_last_step?: number
+          stock_tutorial_offer?: string
+          stock_tutorial_status?: string
+          stock_tutorial_version?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          page_tip_versions?: Json
+          page_tips_disabled?: boolean
+          skipped_at?: string | null
+          started_at?: string | null
+          stock_tutorial_last_step?: number
+          stock_tutorial_offer?: string
+          stock_tutorial_status?: string
+          stock_tutorial_version?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

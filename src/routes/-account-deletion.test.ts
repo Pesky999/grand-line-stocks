@@ -147,6 +147,8 @@ test("Auth page consumes the one-time account deleted success marker", () => {
 });
 
 test("existing Profile functionality remains present", () => {
+  assert.match(profileSource, /Help & Tutorials/);
+  assert.match(profileSource, /Replay practice trade/);
   assert.match(profileSource, /validateDisplayNameFormat/);
   assert.match(profileSource, /updateProfile/);
   assert.match(profileSource, /Prestige/);
