@@ -505,6 +505,11 @@ function Profile() {
                 administrator.
               </p>
             )}
+            {!readiness?.storageBlocked && readiness?.storageCheckFailed && (
+              <p className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
+                Could not verify uploaded-file ownership. Please refresh and try again.
+              </p>
+            )}
             <button
               type="button"
               onClick={openDeleteDialog}
@@ -603,6 +608,12 @@ function Profile() {
                 <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
                   This account owns uploaded files that must be removed before deletion. Contact an
                   administrator.
+                </div>
+              )}
+
+              {!readiness?.storageBlocked && readiness?.storageCheckFailed && (
+                <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
+                  Could not verify uploaded-file ownership. Please refresh and try again.
                 </div>
               )}
 

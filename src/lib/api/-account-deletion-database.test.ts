@@ -1,12 +1,17 @@
 /// <reference types="node" />
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 function read(workspacePath: string) {
   return readFileSync(join(process.cwd(), workspacePath), "utf8");
+}
+
+function normalizedSha256(source: string) {
+  return createHash("sha256").update(source.replace(/\r\n/g, "\n")).digest("hex");
 }
 
 function sourceBetween(source: string, start: string, end: string) {
@@ -19,11 +24,14 @@ function sourceBetween(source: string, start: string, end: string) {
 
 const migrationPath = "supabase/migrations/20260724050000_harden_self_service_account_deletion.sql";
 const migration = read(migrationPath);
+const storagePreflightMigrationPath =
+  "supabase/migrations/20260725010000_fix_account_deletion_storage_preflight.sql";
+const storagePreflightMigration = read(storagePreflightMigrationPath);
 const migrationFiles = readdirSync(join(process.cwd(), "supabase/migrations")).filter((file) =>
   file.endsWith(".sql"),
 );
 
-test("self-service deletion adds exactly one forward migration", () => {
+test("self-service deletion keeps the original hardening migration unchanged", () => {
   assert.equal(
     migrationFiles.filter((file) => file.includes("harden_self_service_account_deletion")).length,
     1,
@@ -34,6 +42,23 @@ test("self-service deletion adds exactly one forward migration", () => {
   );
   assert.match(migration, /^BEGIN;/);
   assert.match(migration, /COMMIT;\s*$/);
+  assert.equal(
+    normalizedSha256(migration),
+    "1ed53d5ca09f6b1c3f3a261d01733cf83b6dab52b127581e0f877b057958473c",
+  );
+});
+
+test("storage preflight fix adds exactly one forward migration", () => {
+  assert.equal(
+    migrationFiles.filter((file) => file.includes("fix_account_deletion_storage_preflight")).length,
+    1,
+  );
+  assert.equal(
+    migrationFiles.includes("20260725010000_fix_account_deletion_storage_preflight.sql"),
+    true,
+  );
+  assert.match(storagePreflightMigration, /^BEGIN;/);
+  assert.match(storagePreflightMigration, /COMMIT;\s*$/);
 });
 
 test("migration contains no data deletion, backfill, tombstone, or public deletion RPC", () => {
@@ -43,6 +68,60 @@ test("migration contains no data deletion, backfill, tombstone, or public deleti
   assert.doesNotMatch(executable, /deleted_user|tombstone|soft_delete/i);
   assert.doesNotMatch(executable, /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\..*delete/i);
   assert.doesNotMatch(executable, /GRANT\s+(?:DELETE|ALL).*TO\s+(?:anon|authenticated|PUBLIC)/i);
+});
+
+test("storage ownership RPC is a no-argument boolean auth.uid existence check", () => {
+  const functionBlock = sourceBetween(
+    storagePreflightMigration,
+    "CREATE OR REPLACE FUNCTION public.my_account_owns_storage_objects()",
+    "COMMENT ON FUNCTION public.my_account_owns_storage_objects()",
+  );
+
+  assert.match(functionBlock, /RETURNS boolean/i);
+  assert.match(functionBlock, /LANGUAGE sql/i);
+  assert.match(functionBlock, /STABLE/i);
+  assert.match(functionBlock, /SECURITY DEFINER/i);
+  assert.match(functionBlock, /SET search_path = pg_catalog, public, storage, pg_temp/i);
+  assert.match(functionBlock, /WHEN auth\.uid\(\) IS NULL THEN false/i);
+  assert.match(functionBlock, /EXISTS \(/i);
+  assert.match(functionBlock, /FROM storage\.objects/i);
+  assert.match(functionBlock, /storage\.objects\.owner_id = auth\.uid\(\)::text/i);
+  assert.doesNotMatch(functionBlock, /my_account_owns_storage_objects\([^)]*(?:uuid|user_id)/i);
+  assert.doesNotMatch(functionBlock, /SELECT\s+(?:bucket_id|name|path|metadata|owner_id)\b/i);
+});
+
+test("storage ownership RPC permissions expose only execute on the boolean function", () => {
+  assert.match(
+    storagePreflightMigration,
+    /COMMENT ON FUNCTION public\.my_account_owns_storage_objects\(\)[\s\S]*read-only ownership existence check/i,
+  );
+  assert.match(
+    storagePreflightMigration,
+    /REVOKE EXECUTE ON FUNCTION public\.my_account_owns_storage_objects\(\) FROM PUBLIC;/i,
+  );
+  assert.match(
+    storagePreflightMigration,
+    /REVOKE EXECUTE ON FUNCTION public\.my_account_owns_storage_objects\(\) FROM anon;/i,
+  );
+  assert.match(
+    storagePreflightMigration,
+    /GRANT EXECUTE ON FUNCTION public\.my_account_owns_storage_objects\(\) TO authenticated;/i,
+  );
+  assert.doesNotMatch(
+    storagePreflightMigration,
+    /GRANT\s+(?:SELECT|INSERT|UPDATE|DELETE|ALL)[\s\S]*storage\.objects/i,
+  );
+  assert.match(storagePreflightMigration, /NOTIFY pgrst, 'reload schema';/);
+});
+
+test("storage preflight migration does not mutate storage rows or accept client identity", () => {
+  const executable = storagePreflightMigration.replace(/--.*$/gm, "");
+
+  assert.doesNotMatch(executable, /\bINSERT\s+INTO\s+storage\./i);
+  assert.doesNotMatch(executable, /\bUPDATE\s+storage\./i);
+  assert.doesNotMatch(executable, /\bDELETE\s+FROM\s+storage\./i);
+  assert.doesNotMatch(executable, /\bALTER\s+TABLE\s+storage\./i);
+  assert.doesNotMatch(executable, /my_account_owns_storage_objects\([^)]*(?:uuid|user_id)/i);
 });
 
 test("account-owned legacy and moderation profile records cascade", () => {

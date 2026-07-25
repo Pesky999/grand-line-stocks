@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   ACCOUNT_DELETION_CONFIRMATION_PHRASE,
   ACCOUNT_DELETION_RECENT_AUTH_MS,
+  accountDeletionMessageForCode,
   getAccountDeletionReauthenticationState,
   isExactAccountDeletionConfirmation,
 } from "./security.ts";
@@ -170,5 +171,12 @@ test("account deletion confirmation is exact and case-sensitive", () => {
       `${ACCOUNT_DELETION_CONFIRMATION_PHRASE} `,
     ),
     false,
+  );
+});
+
+test("storage ownership check failure has a safe user-facing message", () => {
+  assert.equal(
+    accountDeletionMessageForCode("ACCOUNT_STORAGE_CHECK_FAILED"),
+    "Could not verify uploaded-file ownership. Please refresh and try again.",
   );
 });

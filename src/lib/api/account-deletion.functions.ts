@@ -18,6 +18,7 @@ type AccountDeletionReadiness = {
   isAdmin: boolean;
   isLastAdmin: boolean;
   storageBlocked: boolean;
+  storageCheckFailed: boolean;
   reasonCode: AccountDeletionReasonCode | null;
 };
 
@@ -26,24 +27,15 @@ type SupabaseErrorLike = {
   message?: string;
 };
 
-type StorageObjectsQuery = {
-  eq(
-    column: string,
-    value: string,
-  ): Promise<{
-    count: number | null;
+type StorageOwnershipCheck =
+  | { status: "checked"; ownsObjects: boolean }
+  | { status: "failed"; error: SupabaseErrorLike | null };
+
+type AccountStorageOwnershipRpcClient = {
+  rpc(functionName: "my_account_owns_storage_objects"): Promise<{
+    data: boolean | null;
     error: SupabaseErrorLike | null;
   }>;
-};
-
-type StorageObjectsTable = {
-  select(columns: "id", options: { head: true; count: "exact" }): StorageObjectsQuery;
-};
-
-type StorageSchemaClient = {
-  schema(schema: "storage"): {
-    from(table: "objects"): StorageObjectsTable;
-  };
 };
 
 const deleteMyAccountInputSchema = z
@@ -116,52 +108,44 @@ async function getAdminDeletionState(db: SupabaseClient<Database>, userId: strin
   return { isAdmin: true, isLastAdmin: activeAdminCount <= 1 };
 }
 
-async function accountOwnsStorageObjects(db: SupabaseClient<Database>, userId: string) {
-  const storageDb = (db as unknown as StorageSchemaClient).schema("storage");
-  const ownerIdCheck = await storageDb
-    .from("objects")
-    .select("id", { head: true, count: "exact" })
-    .eq("owner_id", userId);
+async function checkAccountStorageOwnership(
+  db: SupabaseClient<Database>,
+): Promise<StorageOwnershipCheck> {
+  const { data, error } = await (db as unknown as AccountStorageOwnershipRpcClient).rpc(
+    "my_account_owns_storage_objects",
+  );
 
-  if (!ownerIdCheck.error) return Number(ownerIdCheck.count ?? 0) > 0;
-  if (ownerIdCheck.error.code !== "42703")
-    throw new AccountDeletionError("ACCOUNT_STORAGE_BLOCKED");
+  if (error || typeof data !== "boolean") {
+    return { status: "failed", error };
+  }
 
-  const ownerCheck = await storageDb
-    .from("objects")
-    .select("id", { head: true, count: "exact" })
-    .eq("owner", userId);
-
-  if (ownerCheck.error) throw new AccountDeletionError("ACCOUNT_STORAGE_BLOCKED");
-  return Number(ownerCheck.count ?? 0) > 0;
+  return { status: "checked", ownsObjects: data === true };
 }
 
 async function getReadinessForUser(
   db: SupabaseClient<Database>,
+  authenticatedDb: SupabaseClient<Database>,
   userId: string,
   claims: unknown,
 ): Promise<AccountDeletionReadiness> {
   const reauth = getAccountDeletionReauthenticationState(claims);
   const adminState = await getAdminDeletionState(db, userId);
   let storageBlocked = false;
+  let storageCheckFailed = false;
 
-  try {
-    storageBlocked = await accountOwnsStorageObjects(db, userId);
-  } catch (error) {
-    if (error instanceof AccountDeletionError && error.code === "ACCOUNT_STORAGE_BLOCKED") {
-      storageBlocked = true;
-    } else {
-      throw error;
-    }
-  }
+  const storageCheck = await checkAccountStorageOwnership(authenticatedDb);
+  if (storageCheck.status === "failed") storageCheckFailed = true;
+  if (storageCheck.status === "checked") storageBlocked = storageCheck.ownsObjects;
 
   const reasonCode: AccountDeletionReasonCode | null = adminState.isLastAdmin
     ? "LAST_ADMIN_ACCOUNT"
-    : storageBlocked
-      ? "ACCOUNT_STORAGE_BLOCKED"
-      : reauth.requiresReauthentication
-        ? "REAUTHENTICATION_REQUIRED"
-        : null;
+    : storageCheckFailed
+      ? "ACCOUNT_STORAGE_CHECK_FAILED"
+      : storageBlocked
+        ? "ACCOUNT_STORAGE_BLOCKED"
+        : reauth.requiresReauthentication
+          ? "REAUTHENTICATION_REQUIRED"
+          : null;
 
   return {
     canDelete: reasonCode === null,
@@ -170,6 +154,7 @@ async function getReadinessForUser(
     isAdmin: adminState.isAdmin,
     isLastAdmin: adminState.isLastAdmin,
     storageBlocked,
+    storageCheckFailed,
     reasonCode,
   };
 }
@@ -178,7 +163,7 @@ export const getMyAccountDeletionReadiness = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const db = await admin();
-    return getReadinessForUser(db, context.userId, context.claims);
+    return getReadinessForUser(db, context.supabase, context.userId, context.claims);
   });
 
 export const deleteMyAccount = createServerFn({ method: "POST" })
@@ -205,7 +190,11 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
       throw new AccountDeletionError("LAST_ADMIN_ACCOUNT");
     }
 
-    if (await accountOwnsStorageObjects(db, context.userId)) {
+    const storageCheck = await checkAccountStorageOwnership(context.supabase);
+    if (storageCheck.status === "failed") {
+      throw new AccountDeletionError("ACCOUNT_STORAGE_CHECK_FAILED");
+    }
+    if (storageCheck.ownsObjects) {
       throw new AccountDeletionError("ACCOUNT_STORAGE_BLOCKED");
     }
 
