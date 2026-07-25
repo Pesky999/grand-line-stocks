@@ -56,73 +56,55 @@ test("account deletion dialog is accessible and requires exact confirmations", (
   );
   assert.match(profileSource, /Enter your exact username\./);
   assert.match(profileSource, /Type DELETE MY ACCOUNT\./);
+  assert.doesNotMatch(profileSource, /Reauthenticate your account\./);
   assert.match(profileSource, /deleteUsername === username/);
   assert.match(profileSource, /deletePhrase === ACCOUNT_DELETION_CONFIRMATION_PHRASE/);
+  assert.match(profileSource, /readiness\?\.canDelete === true/);
   assert.match(profileSource, /disabled=\{!finalDeletionEnabled\}/);
   assert.match(profileSource, /PERMANENTLY DELETE ACCOUNT/);
   assert.doesNotMatch(profileSource, /autoFocus/);
   assert.doesNotMatch(profileSource, /<form|onSubmit/);
 });
 
-test("password reauthentication stays browser-side and is never sent to the server function", () => {
-  const passwordReauth = sourceBetween(
-    profileSource,
-    "async function handlePasswordReauthentication",
-    "async function handleOAuthReauthentication",
-  );
+test("account deletion UI no longer performs explicit reauthentication", () => {
+  assert.doesNotMatch(profileSource, /Current Password/);
+  assert.doesNotMatch(profileSource, /signInWithPassword/);
+  assert.doesNotMatch(profileSource, /signInWithOAuth/);
+  assert.doesNotMatch(profileSource, /lovable\.auth/);
+  assert.doesNotMatch(profileSource, /ACCOUNT_DELETION_INTENT_KEY/);
+  assert.doesNotMatch(profileSource, /handlePasswordReauthentication/);
+  assert.doesNotMatch(profileSource, /handleOAuthReauthentication/);
+  assert.doesNotMatch(profileSource, /reauthenticating|requiresReauthentication|providerCategory/);
+});
+
+test("delete call sends only the exact username and confirmation phrase", () => {
   const deleteAccount = sourceBetween(
     profileSource,
     "async function handleDeleteAccount",
     "return (",
   );
 
-  assert.match(passwordReauth, /supabase\.auth\.signInWithPassword/);
-  assert.match(passwordReauth, /email: accountEmail/);
-  assert.match(passwordReauth, /password: currentPassword/);
-  assert.match(passwordReauth, /Could not reauthenticate\. Check your password and try again\./);
-  assert.doesNotMatch(deleteAccount, /currentPassword|password|email|provider|timestamp|userId/);
   assert.match(deleteAccount, /deleteMyAccount\(\{[\s\S]*username: deleteUsername/);
   assert.match(deleteAccount, /confirmationPhrase: deletePhrase/);
+  assert.doesNotMatch(deleteAccount, /currentPassword|password|email|provider|timestamp|userId/);
 });
 
-test("OAuth reauthentication restores intent but never auto-deletes", () => {
-  const oauthReauth = sourceBetween(
-    profileSource,
-    "async function handleOAuthReauthentication",
-    "async function handleDeleteAccount",
-  );
-  const intentEffect = sourceBetween(profileSource, "useEffect(() => {", "if (isLoading || !data)");
-
-  assert.match(oauthReauth, /safeSessionSet\(ACCOUNT_DELETION_INTENT_KEY, "1"\)/);
-  assert.match(oauthReauth, /lovable\.auth\.signInWithOAuth\("google"/);
-  assert.match(oauthReauth, /redirect_uri: `\$\{window\.location\.origin\}\/profile`/);
-  assert.match(intentEffect, /safeSessionHas\(ACCOUNT_DELETION_INTENT_KEY\)/);
-  assert.match(intentEffect, /setDeleteOpen\(true\)/);
-  assert.doesNotMatch(intentEffect, /deleteMyAccount|handleDeleteAccount/);
-});
-
-test("readiness warnings and safe errors are visible", () => {
+test("readiness and safe errors remain visible without preemptive storage warnings", () => {
   assert.match(profileSource, /getMyAccountDeletionReadiness/);
   assert.match(profileSource, /readiness\?\.isLastAdmin/);
-  assert.match(profileSource, /readiness\?\.storageBlocked/);
-  assert.match(profileSource, /readiness\?\.storageCheckFailed/);
-  assert.match(profileSource, /readiness\?\.requiresReauthentication/);
   assert.match(profileSource, /readiness\?\.canDelete === true/);
   assert.match(
     profileSource,
     /This is the final administrator account\.[\s\S]*Assign another administrator before[\s\S]*deleting it\./,
   );
-  assert.match(
-    profileSource,
-    /This account owns uploaded files that must be removed before deletion\.[\s\S]*Contact an[\s\S]*administrator\./,
-  );
-  assert.match(
+  assert.match(profileSource, /extractAccountDeletionReasonCode/);
+  assert.match(profileSource, /accountDeletionMessageForCode/);
+  assert.match(profileSource, /deletionError/);
+  assert.doesNotMatch(profileSource, /storageBlocked|storageCheckFailed/);
+  assert.doesNotMatch(
     profileSource,
     /Could not verify uploaded-file ownership\. Please refresh and try again\./,
   );
-  assert.match(profileSource, /!readiness\?\.storageBlocked && readiness\?\.storageCheckFailed/);
-  assert.match(profileSource, /extractAccountDeletionReasonCode/);
-  assert.match(profileSource, /accountDeletionMessageForCode/);
 });
 
 test("successful deletion clears local account state and performs full auth navigation", () => {
@@ -135,7 +117,7 @@ test("successful deletion clears local account state and performs full auth navi
   assert.match(cleanup, /queryClient\.cancelQueries\(\)/);
   assert.match(cleanup, /queryClient\.clear\(\)/);
   assert.match(cleanup, /supabase\.auth\.signOut\(\{ scope: "local" \}\)/);
-  assert.match(cleanup, /safeSessionRemove\(ACCOUNT_DELETION_INTENT_KEY\)/);
+  assert.doesNotMatch(cleanup, /ACCOUNT_DELETION_INTENT_KEY/);
   assert.match(cleanup, /TRADE_REQUEST_STORAGE_PREFIX/);
   assert.match(cleanup, /safeSessionSet\(ACCOUNT_DELETION_SUCCESS_KEY, "1"\)/);
   assert.match(cleanup, /window\.location\.assign\("\/auth"\)/);

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { updateProfile } from "@/lib/api/wallet.functions";
@@ -9,7 +9,6 @@ import {
   getMyAccountDeletionReadiness,
 } from "@/lib/api/account-deletion.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useSignOut } from "@/hooks/useSignOut";
 
 import { TerminalShell } from "@/components/TerminalShell";
@@ -27,7 +26,6 @@ import { validateDisplayNameFormat } from "@/lib/moderation/public-identity";
 import { formatShares } from "@/lib/trading/fractional-shares";
 import {
   ACCOUNT_DELETION_CONFIRMATION_PHRASE,
-  ACCOUNT_DELETION_INTENT_KEY,
   ACCOUNT_DELETION_SUCCESS_KEY,
   accountDeletionMessageForCode,
   extractAccountDeletionReasonCode,
@@ -82,22 +80,6 @@ function safeSessionSet(key: string, value: string) {
   }
 }
 
-function safeSessionRemove(key: string) {
-  try {
-    window.sessionStorage.removeItem(key);
-  } catch {
-    // Session storage is optional; failing to clear it must not change deletion state.
-  }
-}
-
-function safeSessionHas(key: string) {
-  try {
-    return window.sessionStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
 function clearStoragePrefix(storage: Storage | null, prefix: string) {
   if (!storage) return;
   try {
@@ -115,7 +97,6 @@ async function cleanupAfterConfirmedAccountDeletion(
 ) {
   await queryClient.cancelQueries();
   queryClient.clear();
-  safeSessionRemove(ACCOUNT_DELETION_INTENT_KEY);
   clearStoragePrefix(window.sessionStorage, TRADE_REQUEST_STORAGE_PREFIX);
   clearStoragePrefix(window.localStorage, TRADE_REQUEST_STORAGE_PREFIX);
 
@@ -139,8 +120,6 @@ function Profile() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteUsername, setDeleteUsername] = useState("");
   const [deletePhrase, setDeletePhrase] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [reauthenticating, setReauthenticating] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
   const handleSignOut = useSignOut();
@@ -161,14 +140,6 @@ function Profile() {
     staleTime: 0,
   });
 
-  useEffect(() => {
-    if (!username || typeof window === "undefined") return;
-    if (safeSessionHas(ACCOUNT_DELETION_INTENT_KEY)) {
-      safeSessionRemove(ACCOUNT_DELETION_INTENT_KEY);
-      setDeleteOpen(true);
-    }
-  }, [username]);
-
   if (isLoading || !data) {
     return (
       <TerminalShell>
@@ -177,7 +148,6 @@ function Profile() {
     );
   }
 
-  const accountEmail = data.email;
   const marketValue = data.holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const netWorth = data.berries + marketValue;
   const joined = profile?.created_at ? new Date(profile.created_at) : null;
@@ -191,8 +161,7 @@ function Profile() {
     deleteUsername === username &&
     deletePhrase === ACCOUNT_DELETION_CONFIRMATION_PHRASE &&
     readiness?.canDelete === true &&
-    !deletingAccount &&
-    !reauthenticating;
+    !deletingAccount;
 
   async function handleSave() {
     const validation = validateDisplayNameFormat(displayName);
@@ -216,64 +185,16 @@ function Profile() {
 
   function openDeleteDialog() {
     setDeletionError(null);
-    setCurrentPassword("");
     void deletionReadiness.refetch();
     setDeleteOpen(true);
   }
 
   function closeDeleteDialog() {
-    if (deletingAccount || reauthenticating) return;
+    if (deletingAccount) return;
     setDeleteOpen(false);
     setDeleteUsername("");
     setDeletePhrase("");
-    setCurrentPassword("");
     setDeletionError(null);
-    safeSessionRemove(ACCOUNT_DELETION_INTENT_KEY);
-  }
-
-  async function handlePasswordReauthentication() {
-    if (!accountEmail) {
-      toast.error("Could not reauthenticate this account. Try signing in again.");
-      return;
-    }
-
-    setReauthenticating(true);
-    setDeletionError(null);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: accountEmail,
-        password: currentPassword,
-      });
-      if (error) throw error;
-      setCurrentPassword("");
-      await deletionReadiness.refetch();
-      toast.success("Reauthenticated. Confirm deletion when ready.");
-    } catch {
-      toast.error("Could not reauthenticate. Check your password and try again.");
-    } finally {
-      setReauthenticating(false);
-    }
-  }
-
-  async function handleOAuthReauthentication() {
-    setReauthenticating(true);
-    setDeletionError(null);
-    try {
-      safeSessionSet(ACCOUNT_DELETION_INTENT_KEY, "1");
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: `${window.location.origin}/profile`,
-      });
-      if ("error" in result && result.error) throw result.error;
-      if (!("redirected" in result && result.redirected)) {
-        safeSessionRemove(ACCOUNT_DELETION_INTENT_KEY);
-        await deletionReadiness.refetch();
-        setReauthenticating(false);
-      }
-    } catch {
-      safeSessionRemove(ACCOUNT_DELETION_INTENT_KEY);
-      toast.error("Could not reauthenticate. Try signing in again.");
-      setReauthenticating(false);
-    }
   }
 
   async function handleDeleteAccount() {
@@ -499,17 +420,6 @@ function Profile() {
                 deleting it.
               </p>
             )}
-            {readiness?.storageBlocked && (
-              <p className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
-                This account owns uploaded files that must be removed before deletion. Contact an
-                administrator.
-              </p>
-            )}
-            {!readiness?.storageBlocked && readiness?.storageCheckFailed && (
-              <p className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
-                Could not verify uploaded-file ownership. Please refresh and try again.
-              </p>
-            )}
             <button
               type="button"
               onClick={openDeleteDialog}
@@ -549,7 +459,6 @@ function Profile() {
                   To continue:
                 </div>
                 <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
-                  <li>Reauthenticate your account.</li>
                   <li>Enter your exact username.</li>
                   <li>Type DELETE MY ACCOUNT.</li>
                 </ol>
@@ -557,63 +466,12 @@ function Profile() {
 
               {deletionReadiness.isLoading ? (
                 <div className="text-muted-foreground">Checking deletion readiness...</div>
-              ) : readiness?.requiresReauthentication ? (
-                <div className="space-y-3 rounded border border-border bg-background/60 p-3">
-                  <div className="font-bold uppercase tracking-widest text-bear">
-                    Reauthentication required
-                  </div>
-                  <p className="text-muted-foreground">
-                    Reauthenticate your account before deleting it.
-                  </p>
-                  {readiness.providerCategory === "password" ? (
-                    <div className="space-y-2">
-                      <Field label="Current Password">
-                        <input
-                          type="password"
-                          value={currentPassword}
-                          onChange={(e) => setCurrentPassword(e.target.value)}
-                          className="w-full border border-border bg-input px-3 py-2 tabular outline-none focus:border-primary"
-                        />
-                      </Field>
-                      <button
-                        type="button"
-                        onClick={handlePasswordReauthentication}
-                        disabled={reauthenticating || currentPassword.length === 0}
-                        className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
-                      >
-                        {reauthenticating ? "Reauthenticating..." : "Reauthenticate"}
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleOAuthReauthentication}
-                      disabled={reauthenticating}
-                      className="border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary disabled:opacity-40"
-                    >
-                      {reauthenticating ? "Redirecting..." : "Reauthenticate with Google"}
-                    </button>
-                  )}
-                </div>
               ) : null}
 
               {readiness?.isLastAdmin && (
                 <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
                   This is the final administrator account. Assign another administrator before
                   deleting it.
-                </div>
-              )}
-
-              {readiness?.storageBlocked && (
-                <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
-                  This account owns uploaded files that must be removed before deletion. Contact an
-                  administrator.
-                </div>
-              )}
-
-              {!readiness?.storageBlocked && readiness?.storageCheckFailed && (
-                <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
-                  Could not verify uploaded-file ownership. Please refresh and try again.
                 </div>
               )}
 
@@ -650,7 +508,7 @@ function Profile() {
               <button
                 type="button"
                 onClick={closeDeleteDialog}
-                disabled={deletingAccount || reauthenticating}
+                disabled={deletingAccount}
                 className="border border-border px-4 py-2 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground disabled:opacity-40"
               >
                 Cancel

@@ -48,10 +48,14 @@ test("self-service deletion keeps the original hardening migration unchanged", (
   );
 });
 
-test("storage preflight fix adds exactly one forward migration", () => {
+test("historical storage preflight migration remains present but this branch adds no migration", () => {
   assert.equal(
     migrationFiles.filter((file) => file.includes("fix_account_deletion_storage_preflight")).length,
     1,
+  );
+  assert.equal(
+    migrationFiles.filter((file) => file.includes("simplify_account_deletion")).length,
+    0,
   );
   assert.equal(
     migrationFiles.includes("20260725010000_fix_account_deletion_storage_preflight.sql"),

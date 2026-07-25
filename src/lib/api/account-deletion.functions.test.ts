@@ -31,6 +31,38 @@ test("account deletion server functions require auth and use the trusted admin c
   assert.doesNotMatch(source, /from "@\/integrations\/supabase\/client\.server"/);
 });
 
+test("readiness reports only final-admin deletion blocking state", () => {
+  const readinessType = sourceBetween(
+    source,
+    "type AccountDeletionReadiness",
+    "type AuthDeletionErrorLike",
+  );
+  const readiness = sourceBetween(
+    source,
+    "async function getReadinessForUser",
+    "export const getMyAccountDeletionReadiness",
+  );
+  const handler = sourceBetween(
+    source,
+    "export const getMyAccountDeletionReadiness",
+    "export const deleteMyAccount",
+  );
+
+  assert.match(readinessType, /canDelete: boolean/);
+  assert.match(readinessType, /isAdmin: boolean/);
+  assert.match(readinessType, /isLastAdmin: boolean/);
+  assert.match(readinessType, /reasonCode: AccountDeletionReasonCode \| null/);
+  assert.doesNotMatch(
+    readinessType,
+    /requiresReauthentication|providerCategory|storageBlocked|storageCheckFailed/,
+  );
+  assert.match(readiness, /const adminState = await getAdminDeletionState\(db, userId\)/);
+  assert.match(readiness, /adminState\.isLastAdmin[\s\S]*\? "LAST_ADMIN_ACCOUNT"[\s\S]*: null/);
+  assert.match(readiness, /canDelete: reasonCode === null/);
+  assert.match(handler, /return getReadinessForUser\(db, context\.userId\)/);
+  assert.doesNotMatch(handler, /context\.supabase|context\.claims/);
+});
+
 test("deleteMyAccount accepts only exact username and confirmation phrase input", () => {
   const schema = sourceBetween(
     source,
@@ -54,27 +86,29 @@ test("deleteMyAccount accepts only exact username and confirmation phrase input"
   assert.doesNotMatch(deleteFunction, /trim\(\)|toLowerCase\(\)/);
 });
 
-test("deleteMyAccount checks freshness, final admin, and storage before hard auth deletion", () => {
+test("deleteMyAccount checks final admin immediately before hard auth deletion", () => {
   const deleteFunction = sourceBetween(
     source,
     "export const deleteMyAccount",
     "return { deleted: true } as const;",
   );
 
-  const freshnessIndex = deleteFunction.indexOf("getAccountDeletionReauthenticationState");
+  const usernameIndex = deleteFunction.indexOf("readCurrentProfileUsername(db, context.userId)");
+  const confirmationIndex = deleteFunction.indexOf("ACCOUNT_CONFIRMATION_MISMATCH");
   const adminIndex = deleteFunction.indexOf("getAdminDeletionState(db, context.userId)");
-  const storageIndex = deleteFunction.indexOf("checkAccountStorageOwnership(context.supabase)");
   const authDeleteIndex = deleteFunction.indexOf("db.auth.admin.deleteUser(context.userId, false)");
 
-  assert.ok(freshnessIndex > -1, "fresh AMR check should exist");
-  assert.ok(adminIndex > freshnessIndex, "admin check should follow freshness");
-  assert.ok(storageIndex > adminIndex, "storage preflight should follow final-admin check");
-  assert.ok(authDeleteIndex > storageIndex, "Auth deletion should happen only after all checks");
-  assert.match(deleteFunction, /REAUTHENTICATION_REQUIRED/);
+  assert.ok(usernameIndex > -1, "current username should be read server-side");
+  assert.ok(confirmationIndex > usernameIndex, "exact confirmation should follow profile lookup");
+  assert.ok(adminIndex > confirmationIndex, "final-admin check should follow confirmation");
+  assert.ok(
+    authDeleteIndex > adminIndex,
+    "Auth deletion should happen only after final-admin check",
+  );
   assert.match(deleteFunction, /LAST_ADMIN_ACCOUNT/);
-  assert.match(deleteFunction, /ACCOUNT_STORAGE_BLOCKED/);
-  assert.match(deleteFunction, /ACCOUNT_STORAGE_CHECK_FAILED/);
   assert.match(deleteFunction, /deleteUser\(context\.userId, false\)/);
+  assert.doesNotMatch(deleteFunction, /REAUTHENTICATION_REQUIRED/);
+  assert.doesNotMatch(deleteFunction, /checkAccountStorageOwnership|ACCOUNT_STORAGE_CHECK_FAILED/);
   assert.doesNotMatch(
     deleteFunction,
     /shouldSoftDelete:\s*true|deleteUser\(context\.userId, true\)/,
@@ -100,7 +134,7 @@ test("last-admin readiness counts only active Auth users and repeats in delete p
   const adminState = sourceBetween(
     source,
     "async function getAdminDeletionState",
-    "async function checkAccountStorageOwnership",
+    "async function getReadinessForUser",
   );
   const readiness = sourceBetween(
     source,
@@ -121,16 +155,19 @@ test("last-admin readiness counts only active Auth users and repeats in delete p
   assert.match(deleteFunction, /if \(adminState\.isLastAdmin\)/);
 });
 
-test("storage ownership uses the authenticated boolean RPC without direct storage queries", () => {
-  const storage = sourceBetween(
+test("runtime code no longer performs custom storage ownership preflight", () => {
+  assert.doesNotMatch(source, /my_account_owns_storage_objects/);
+  assert.doesNotMatch(source, /checkAccountStorageOwnership/);
+  assert.doesNotMatch(source, /\.schema\("storage"\)\.from\("objects"\)/);
+  assert.doesNotMatch(source, /\.from\("objects"\)[\s\S]*owner_id/);
+  assert.doesNotMatch(source, /storageBlocked|storageCheckFailed|ACCOUNT_STORAGE_CHECK_FAILED/);
+});
+
+test("Auth deletion storage ownership errors are mapped conservatively after deleteUser fails", () => {
+  const mapper = sourceBetween(
     source,
-    "async function checkAccountStorageOwnership",
-    "async function getReadinessForUser",
-  );
-  const readiness = sourceBetween(
-    source,
-    "async function getReadinessForUser",
-    "export const getMyAccountDeletionReadiness",
+    "function isStorageOwnershipDeletionError",
+    "function logAccountDeletionFailure",
   );
   const deleteFunction = sourceBetween(
     source,
@@ -138,36 +175,22 @@ test("storage ownership uses the authenticated boolean RPC without direct storag
     "return { deleted: true } as const;",
   );
 
-  assert.match(storage, /\.rpc\(\s*"my_account_owns_storage_objects",?\s*\)/);
-  assert.match(storage, /typeof data !== "boolean"/);
-  assert.match(storage, /status: "failed"/);
-  assert.match(storage, /status: "checked", ownsObjects: data === true/);
-  assert.doesNotMatch(source, /\.schema\("storage"\)\.from\("objects"\)/);
-  assert.doesNotMatch(source, /\.from\("objects"\)[\s\S]*owner_id/);
-  assert.doesNotMatch(storage, /userId|bucket_id|name|path|metadata|\*/);
-  assert.match(readiness, /checkAccountStorageOwnership\(authenticatedDb\)/);
-  assert.match(readiness, /storageCheckFailed = true/);
-  assert.match(readiness, /storageBlocked = storageCheck\.ownsObjects/);
-  assert.match(readiness, /ACCOUNT_STORAGE_CHECK_FAILED/);
-  assert.match(deleteFunction, /checkAccountStorageOwnership\(context\.supabase\)/);
-  assert.match(deleteFunction, /if \(storageCheck\.status === "failed"\)/);
-  assert.match(deleteFunction, /throw new AccountDeletionError\("ACCOUNT_STORAGE_CHECK_FAILED"\)/);
-  assert.match(deleteFunction, /if \(storageCheck\.ownsObjects\)/);
-  assert.match(deleteFunction, /throw new AccountDeletionError\("ACCOUNT_STORAGE_BLOCKED"\)/);
-  assert.ok(
-    deleteFunction.indexOf('throw new AccountDeletionError("ACCOUNT_STORAGE_CHECK_FAILED")') <
-      deleteFunction.indexOf("db.auth.admin.deleteUser(context.userId, false)"),
-    "Auth deletion should not run after an ownership-check failure",
-  );
-  assert.ok(
-    deleteFunction.indexOf('throw new AccountDeletionError("ACCOUNT_STORAGE_BLOCKED")') <
-      deleteFunction.indexOf("db.auth.admin.deleteUser(context.userId, false)"),
-    "Auth deletion should not run when owned objects exist",
-  );
-  assert.doesNotMatch(deleteFunction, /my_account_owns_storage_objects",\s*\{/);
+  assert.match(mapper, /candidate\.code/);
+  assert.match(mapper, /candidate\.message/);
+  assert.match(mapper, /candidate\.status/);
+  assert.match(mapper, /haystack\.includes\("storage"\)/);
+  assert.match(mapper, /haystack\.includes\("object"\)/);
+  assert.match(mapper, /haystack\.includes\("owner"\)/);
+  assert.match(mapper, /haystack\.includes\("ownership"\)/);
+  assert.doesNotMatch(mapper, /bucket|name|path|metadata|userId|email|username/);
+  assert.match(deleteFunction, /const \{ error \} = await db\.auth\.admin\.deleteUser/);
+  assert.match(deleteFunction, /isStorageOwnershipDeletionError\(error\)/);
+  assert.match(deleteFunction, /\? "ACCOUNT_STORAGE_BLOCKED"[\s\S]*: "ACCOUNT_DELETION_FAILED"/);
+  assert.match(deleteFunction, /logAccountDeletionFailure\("auth_delete", code\)/);
+  assert.match(deleteFunction, /throw new AccountDeletionError\(code\)/);
 });
 
-test("bounded server logs avoid personal data", () => {
+test("bounded server logs avoid personal data and raw Auth errors", () => {
   const logger = sourceBetween(
     source,
     "function logAccountDeletionFailure",
@@ -176,9 +199,9 @@ test("bounded server logs avoid personal data", () => {
 
   assert.match(logger, /console\.error/);
   assert.match(logger, /\{ stage, code \}/);
-  assert.doesNotMatch(logger, /userId|email|username|password|token|confirmation|storage|berries/);
+  assert.doesNotMatch(logger, /userId|email|username|password|token|confirmation|storage/);
   assert.doesNotMatch(
     source,
-    /console\.(?:log|info|warn|error)\([^)]*(?:currentUsername|data\.username|data\.confirmationPhrase|context\.userId|data\.email|password)/,
+    /console\.(?:log|info|warn|error)\([^)]*(?:currentUsername|data\.username|data\.confirmationPhrase|context\.userId|data\.email|password|error)/,
   );
 });
