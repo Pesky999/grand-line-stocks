@@ -86,6 +86,14 @@ function categoryFromAmrRecord(record: AmrRecord): AccountDeletionProviderCatego
   return providerCategoryFromName(record.provider);
 }
 
+function primaryAuthenticationCategoryFromAmrMethod(
+  method: unknown,
+): AccountDeletionProviderCategory {
+  if (method === "password") return "password";
+  if (method === "oauth") return "oauth";
+  return "unknown";
+}
+
 export function getAccountDeletionReauthenticationState(
   claims: unknown,
   nowMs = Date.now(),
@@ -100,6 +108,10 @@ export function getAccountDeletionReauthenticationState(
       const record = entry as AmrRecord;
       const entryCategory = categoryFromAmrRecord(record);
       if (entryCategory !== "unknown") providerCategory = entryCategory;
+      const primaryAuthenticationCategory = primaryAuthenticationCategoryFromAmrMethod(
+        record.method,
+      );
+      if (primaryAuthenticationCategory === "unknown") continue;
       const timestampMs = timestampToMilliseconds(record.timestamp);
       if (timestampMs === null) continue;
       const ageMs = nowMs - timestampMs;

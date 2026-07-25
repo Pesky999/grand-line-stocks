@@ -12,6 +12,7 @@ import {
 const nowMs = Date.UTC(2026, 6, 24, 12, 0, 0);
 const recentTimestampSeconds = Math.floor((nowMs - ACCOUNT_DELETION_RECENT_AUTH_MS + 1_000) / 1000);
 const staleTimestampSeconds = Math.floor((nowMs - ACCOUNT_DELETION_RECENT_AUTH_MS - 1_000) / 1000);
+const excessiveFutureTimestampSeconds = Math.floor((nowMs + 120_000) / 1000);
 
 test("recent password AMR allows account deletion reauthentication", () => {
   const result = getAccountDeletionReauthenticationState(
@@ -39,13 +40,99 @@ test("recent OAuth AMR allows account deletion reauthentication", () => {
   assert.equal(result.requiresReauthentication, false);
 });
 
-test("stale, missing, or timestamp-free AMR fails safely", () => {
-  for (const claims of [
+const nonPrimaryAuthenticationMethods = [
+  "token_refresh",
+  "email/signup",
+  "recovery",
+  "magiclink",
+  "invite",
+  "otp",
+  "totp",
+  "email_change",
+  "anonymous",
+  "some_future_method",
+] as const;
+
+for (const method of nonPrimaryAuthenticationMethods) {
+  test(`recent ${method} AMR does not authorize account deletion`, () => {
+    const result = getAccountDeletionReauthenticationState(
+      {
+        amr: [{ method, timestamp: recentTimestampSeconds }],
+        app_metadata: { provider: "email" },
+      },
+      nowMs,
+    );
+
+    assert.equal(result.requiresReauthentication, true);
+  });
+}
+
+test("stale password plus recent token_refresh still requires reauthentication", () => {
+  const result = getAccountDeletionReauthenticationState(
+    {
+      amr: [
+        { method: "password", timestamp: staleTimestampSeconds },
+        { method: "token_refresh", timestamp: recentTimestampSeconds },
+      ],
+    },
+    nowMs,
+  );
+
+  assert.equal(result.requiresReauthentication, true);
+});
+
+test("stale OAuth plus recent token_refresh still requires reauthentication", () => {
+  const result = getAccountDeletionReauthenticationState(
+    {
+      amr: [
+        { method: "oauth", provider: "google", timestamp: staleTimestampSeconds },
+        { method: "token_refresh", provider: "google", timestamp: recentTimestampSeconds },
+      ],
+    },
+    nowMs,
+  );
+
+  assert.equal(result.requiresReauthentication, true);
+});
+
+test("recent password plus recent token_refresh allows account deletion", () => {
+  const result = getAccountDeletionReauthenticationState(
+    {
+      amr: [
+        { method: "password", timestamp: recentTimestampSeconds },
+        { method: "token_refresh", timestamp: recentTimestampSeconds },
+      ],
+    },
+    nowMs,
+  );
+
+  assert.equal(result.requiresReauthentication, false);
+});
+
+test("recent OAuth plus recent token_refresh allows account deletion", () => {
+  const result = getAccountDeletionReauthenticationState(
+    {
+      amr: [
+        { method: "oauth", provider: "google", timestamp: recentTimestampSeconds },
+        { method: "token_refresh", provider: "google", timestamp: recentTimestampSeconds },
+      ],
+    },
+    nowMs,
+  );
+
+  assert.equal(result.requiresReauthentication, false);
+});
+
+test("stale, missing, timestamp-free, or excessively future-dated AMR fails safely", () => {
+  const invalidClaims = [
     { amr: [{ method: "password", timestamp: staleTimestampSeconds }] },
     { amr: [{ method: "oauth" }] },
     { app_metadata: { provider: "email" } },
+    { amr: [{ method: "password", timestamp: excessiveFutureTimestampSeconds }] },
     null,
-  ]) {
+  ];
+
+  for (const claims of invalidClaims) {
     assert.equal(
       getAccountDeletionReauthenticationState(claims, nowMs).requiresReauthentication,
       true,

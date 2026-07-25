@@ -8,7 +8,7 @@ Profile. It is for true account deletion, not an account reset.
 Profile includes a `DELETE ACCOUNT` danger zone near the bottom of the page. The confirmation dialog
 requires all of the following:
 
-- a recent reauthentication event from the current provider
+- a recent password or OAuth reauthentication event from the current provider
 - the exact current username, matched case-sensitively
 - the exact phrase `DELETE MY ACCOUNT`
 
@@ -23,9 +23,11 @@ The browser can help the player reauthenticate, but the server is authoritative.
   sent to a Berry Street server function.
 - Google/OAuth accounts use the existing Lovable OAuth integration and redirect back to Profile.
   Session storage stores only a non-sensitive boolean intent so the dialog can reopen after return.
-- The server inspects verified JWT `amr` claims and requires an authentication timestamp no older
-  than ten minutes. Client timestamps, provider names, local storage, session storage, and user
-  metadata are not authorization inputs.
+- The server inspects verified JWT `amr` claims and requires a `password` or `oauth`
+  authentication timestamp no older than ten minutes. Other AMR methods, including token refreshes,
+  magic links, recovery, invite, OTP/TOTP, email-change, anonymous, or unknown methods, do not
+  independently authorize deletion. Client timestamps, provider names, local storage, session
+  storage, and user metadata are not authorization inputs.
 
 ## Server Deletion Sequence
 
@@ -34,7 +36,7 @@ The browser can help the player reauthenticate, but the server is authoritative.
 1. Authenticate the request.
 2. Read the current profile username for the authenticated user.
 3. Verify the username and confirmation phrase exactly.
-4. Verify a fresh AMR authentication timestamp.
+4. Verify a fresh `password` or `oauth` AMR authentication timestamp.
 5. Reject deletion if this is the final active administrator account.
 6. Reject deletion if the account owns Supabase Storage objects.
 7. Call the service-role Auth Admin API with `deleteUser(authenticatedUserId, false)`.
