@@ -18,13 +18,38 @@ function sourceBetween(source: string, start: string, end: string) {
 }
 
 const migration = read("supabase/migrations/20260725020000_add_stock_trading_onboarding.sql");
+const reconciliationMigration = read(
+  "supabase/migrations/20260725233000_reconcile_account_lifecycle.sql",
+);
 const typesSource = read("src/integrations/supabase/types.ts");
 
-test("only one stock onboarding migration exists", () => {
-  const onboardingMigrations = readdirSync(join(process.cwd(), "supabase/migrations")).filter(
-    (name) => name.includes("stock_trading_onboarding") || name.includes("onboarding"),
+test("only one base stock onboarding migration exists", () => {
+  const stockOnboardingMigrations = readdirSync(join(process.cwd(), "supabase/migrations")).filter(
+    (name) => name.includes("stock_trading_onboarding"),
   );
-  assert.deepEqual(onboardingMigrations, ["20260725020000_add_stock_trading_onboarding.sql"]);
+  assert.deepEqual(stockOnboardingMigrations, ["20260725020000_add_stock_trading_onboarding.sql"]);
+});
+
+test("account lifecycle reconciliation preserves onboarding trigger and backfill behavior", () => {
+  assert.match(reconciliationMigration, /^BEGIN;/);
+  assert.match(reconciliationMigration, /COMMIT;\s*$/);
+  assert.match(
+    reconciliationMigration,
+    /CREATE OR REPLACE FUNCTION public\.create_onboarding_progress_for_profile\(\)/,
+  );
+  assert.match(reconciliationMigration, /AFTER INSERT ON public\.profiles/);
+  assert.match(reconciliationMigration, /INSERT INTO public\.user_onboarding_progress \(user_id\)/);
+  assert.match(reconciliationMigration, /ON CONFLICT \(user_id\) DO NOTHING/);
+  assert.match(
+    reconciliationMigration,
+    /CASE WHEN candidates\.has_traded THEN 'none' ELSE 'soft' END/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /Account lifecycle onboarding reconciliation: traded=%, no_trade=%, total_inserted=%/,
+  );
+  assert.doesNotMatch(reconciliationMigration, /INSERT INTO public\.user_wallets/);
+  assert.doesNotMatch(reconciliationMigration, /UPDATE public\.user_onboarding_progress/);
 });
 
 test("stock onboarding migration creates private progress and event tables", () => {

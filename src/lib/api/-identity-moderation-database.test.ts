@@ -48,7 +48,10 @@ function loopContaining(source: string, needle: string, occurrence = 1) {
 
 const migration = read("supabase/migrations/20260719040000_public_identity_moderation.sql");
 const hotfixMigration = read("supabase/migrations/20260720020000_restore_profile_identities.sql");
-const effectiveIdentitySql = `${migration}\n${hotfixMigration}`;
+const reconciliationMigration = read(
+  "supabase/migrations/20260725233000_reconcile_account_lifecycle.sql",
+);
+const effectiveIdentitySql = `${migration}\n${hotfixMigration}\n${reconciliationMigration}`;
 const typesSource = read("src/integrations/supabase/types.ts");
 
 test("public identity moderation migration creates private moderation tables", () => {
@@ -461,16 +464,20 @@ test("hotfix disables automatic remediation and restores exact incident-modified
   );
 });
 
-test("hotfix narrows active enforcement to approved profanity and slur categories", () => {
+test("final reconciliation enforces only cuss-word and slur categories", () => {
   const evaluateFunction = sourceBetween(
-    hotfixMigration,
+    reconciliationMigration,
     "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
-    "CREATE OR REPLACE FUNCTION public.identity_moderation_next_username",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+  const categoryPredicate = sourceBetween(
+    evaluateFunction,
+    "AND terms.category IN (",
+    "    )\n    AND (",
   );
 
-  assert.match(evaluateFunction, /AND kind = 'blocked'/);
+  assert.match(evaluateFunction, /AND terms\.kind = 'blocked'/);
   for (const category of [
-    "common_profanity",
     "severe_profanity",
     "racial_ethnic_slur",
     "religious_slur",
@@ -479,17 +486,18 @@ test("hotfix narrows active enforcement to approved profanity and slur categorie
     "sexual_orientation_slur",
     "disability_slur",
   ]) {
-    assert.match(evaluateFunction, new RegExp(`'${category}'`));
+    assert.match(categoryPredicate, new RegExp(`'${category}'`));
   }
 
   assert.doesNotMatch(evaluateFunction, /kind IN \('blocked', 'reserved'\)/);
   assert.doesNotMatch(evaluateFunction, /CASE WHEN v_rule\.kind = 'reserved'/);
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms[\s\S]*SET active = false[\s\S]*kind IN \('blocked', 'reserved'\)/,
+    reconciliationMigration,
+    /UPDATE public\.identity_moderation_terms AS terms[\s\S]*SET active = false[\s\S]*terms\.kind = 'reserved'/,
   );
   for (const category of [
     "reserved",
+    "common_profanity",
     "contact_info",
     "threat",
     "hate_group",
@@ -498,36 +506,96 @@ test("hotfix narrows active enforcement to approved profanity and slur categorie
     "sexual_profanity",
   ]) {
     assert.doesNotMatch(
-      evaluateFunction,
+      categoryPredicate,
       new RegExp(`'${category}'`),
       `${category} should not be in the active enforcement predicate`,
     );
   }
 });
 
-test("hotfix curates the private term rows to actual profanity and slurs", () => {
+test("final reconciliation matches active blocked terms only as boundary-safe tokens", () => {
+  const evaluateFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+
+  assert.doesNotMatch(evaluateFunction, /LIKE\s+'%'\s*\|\|\s*terms\.normalized_term/);
+  assert.doesNotMatch(evaluateFunction, /terms\.normalized_term\s*\|\|\s*'%'/);
+  assert.match(evaluateFunction, /terms\.match_mode IN \('substring', 'compact_substring'\)/);
+  assert.match(evaluateFunction, /terms\.normalized_term = ANY \(/);
+  assert.match(evaluateFunction, /SELECT DISTINCT candidates\.candidate/);
+  assert.match(evaluateFunction, /regexp_split_to_table\(btrim\(v_value\), '\[\[:space:\]\]\+'\)/);
+  assert.match(evaluateFunction, /public\.identity_moderation_compact\(chunks\.chunk\)/);
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = false,[\s\S]*category = 'common_profanity'[\s\S]*normalized_term IN \('idiot', 'stupid', 'trash'\)/,
+    evaluateFunction,
+    /public\.identity_moderation_reduce_repeats\(\s+public\.identity_moderation_compact\(chunks\.chunk\)\s+\)/,
+  );
+});
+
+test("account lifecycle reconciliation fixes username underscores and qualified moderation columns", () => {
+  const legacyFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.identity_username_legacy_format_valid",
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+  );
+  const evaluateFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+
+  assert.match(legacyFunction, /strpos\(public\.identity_username_canonical\(_value\), '__'\) = 0/);
+  assert.doesNotMatch(legacyFunction, /NOT LIKE '%__%'/);
+  assert.match(evaluateFunction, /strpos\(v_canonical, '__'\) > 0/);
+  assert.doesNotMatch(evaluateFunction, /v_canonical LIKE '%__%'/);
+  assert.match(evaluateFunction, /FROM public\.identity_moderation_terms AS terms/);
+
+  for (const column of [
+    "active",
+    "kind",
+    "category",
+    "normalized_term",
+    "match_mode",
+    "severity",
+    "created_at",
+  ]) {
+    assert.match(evaluateFunction, new RegExp(`terms\\.${column}`));
+  }
+
+  assert.doesNotMatch(evaluateFunction, /\bWHERE active\b/);
+  assert.doesNotMatch(evaluateFunction, /\bAND kind =/);
+  assert.doesNotMatch(evaluateFunction, /\bAND category IN/);
+  assert.doesNotMatch(evaluateFunction, /\bORDER BY severity DESC, created_at ASC/);
+});
+
+test("final reconciliation deactivates non-policy identity moderation rows", () => {
+  const termReconciliation = sourceBetween(
+    reconciliationMigration,
+    "UPDATE public.identity_moderation_terms AS terms",
+    "DO $$",
+  );
+
+  assert.match(
+    termReconciliation,
+    /SET category = 'severe_profanity',\s+active = true,[\s\S]*terms\.category = 'common_profanity'/,
   );
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = true,[\s\S]*category = 'common_profanity'[\s\S]*normalized_term IN \('damn', 'hell', 'crap'\)/,
+    termReconciliation,
+    /SET active = false,[\s\S]*terms\.kind = 'reserved'[\s\S]*terms\.kind = 'blocked'[\s\S]*terms\.category NOT IN/,
   );
-  assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET category = 'severe_profanity',\s+active = true,[\s\S]*category = 'sexual_profanity'[\s\S]*normalized_term IN \('dick', 'cock', 'pussy'\)/,
-  );
-  assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = false,[\s\S]*category = 'sexual_profanity'[\s\S]*normalized_term IN \('porn', 'xxx', 'sex'\)/,
-  );
-  assert.ok(
-    hotfixMigration.indexOf("AND normalized_term IN ('dick', 'cock', 'pussy')") <
-      hotfixMigration.indexOf("WHERE active\n  AND kind IN ('blocked', 'reserved')"),
-    "vulgar terms should be reclassified before non-approved category deactivation runs",
-  );
-  assert.doesNotMatch(hotfixMigration, /DELETE FROM public\.identity_moderation_terms/);
+  for (const category of [
+    "severe_profanity",
+    "racial_ethnic_slur",
+    "religious_slur",
+    "nationality_slur",
+    "sex_gender_slur",
+    "sexual_orientation_slur",
+    "disability_slur",
+  ]) {
+    assert.match(termReconciliation, new RegExp(`'${category}'`));
+  }
+  assert.doesNotMatch(reconciliationMigration, /DELETE FROM public\.identity_moderation_terms/);
 });
 
 test("admin reset RPC is security definer and keeps service-side admin verification", () => {
@@ -570,7 +638,17 @@ test("admin reset RPC is security definer and keeps service-side admin verificat
 });
 
 test("migration avoids destructive schema operations and unrelated domains", () => {
-  assert.doesNotMatch(effectiveIdentitySql, /\bCASCADE\b/);
+  const profileCascadeMatches = reconciliationMigration.match(/\bON DELETE CASCADE\b/g) ?? [];
+
+  assert.equal(profileCascadeMatches.length, 2);
+  assert.match(
+    reconciliationMigration,
+    /identity_moderation_flags_profile_id_fkey[\s\S]*FOREIGN KEY \(profile_id\)[\s\S]*REFERENCES public\.profiles\(id\)\s+ON DELETE CASCADE/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /identity_moderation_actions_profile_id_fkey[\s\S]*FOREIGN KEY \(profile_id\)[\s\S]*REFERENCES public\.profiles\(id\)\s+ON DELETE CASCADE/,
+  );
   assert.doesNotMatch(effectiveIdentitySql, /DROP TABLE|TRUNCATE|DELETE FROM public\.user_wallets/);
   assert.doesNotMatch(
     hotfixMigration,

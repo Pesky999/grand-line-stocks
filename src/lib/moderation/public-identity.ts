@@ -19,7 +19,6 @@ export type PublicIdentityTermRule = {
 };
 
 export const ACTIVE_IDENTITY_MODERATION_CATEGORIES = [
-  "common_profanity",
   "severe_profanity",
   "racial_ethnic_slur",
   "religious_slur",
@@ -255,6 +254,32 @@ function matchesWord(source: string, term: string) {
   return source.split(" ").some((word) => word === term);
 }
 
+function splitWords(value: string) {
+  return value.split(" ").filter(Boolean);
+}
+
+function boundarySafeMatchTokens(forms: PublicIdentityNormalizedForms) {
+  const tokens = new Set([
+    forms.trimmed,
+    forms.separatorNormalized,
+    forms.compact,
+    forms.reduced,
+    forms.reducedCompact,
+    ...splitWords(forms.separatorNormalized),
+    ...splitWords(forms.reduced),
+  ]);
+
+  for (const chunk of forms.trimmed.split(/\s+/u)) {
+    if (!chunk) continue;
+    const compactChunk = toCompact(replaceConfusables(chunk));
+    tokens.add(compactChunk);
+    tokens.add(toCompact(collapseRuns(compactChunk)));
+  }
+
+  tokens.delete("");
+  return tokens;
+}
+
 function isEnforcedBlockingRule(rule: PublicIdentityTermRule) {
   return rule.kind === "blocked" && isActiveIdentityModerationCategory(rule.category);
 }
@@ -270,14 +295,8 @@ function matchesRule(forms: PublicIdentityNormalizedForms, ruleInput: PublicIden
     case "word":
       return matchesWord(forms.separatorNormalized, term) || matchesWord(forms.reduced, term);
     case "substring":
-      return (
-        forms.trimmed.includes(term) ||
-        forms.separatorNormalized.includes(term) ||
-        forms.leetNormalized.includes(term) ||
-        forms.reduced.includes(term)
-      );
     case "compact_substring":
-      return forms.compact.includes(term) || forms.reducedCompact.includes(term);
+      return boundarySafeMatchTokens(forms).has(term);
   }
 }
 
