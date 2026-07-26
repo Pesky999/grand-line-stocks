@@ -210,16 +210,14 @@ export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    void recordOnboardingEventBestEffort(context.userId, {
+    await recordOnboardingEventBestEffort(context.userId, {
       eventName: "first_live_trade_started",
-      metadata: { side: "buy" },
-      dedupeKey: "first_live_trade_started",
+      side: "buy",
     });
     const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares, data.requestId);
-    void recordOnboardingEventBestEffort(context.userId, {
+    await recordOnboardingEventBestEffort(context.userId, {
       eventName: "first_live_trade_completed",
-      metadata: { side: "buy" },
-      dedupeKey: "first_live_trade_completed",
+      side: "buy",
     });
     return {
       ok: true,
@@ -236,20 +234,18 @@ export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    void recordOnboardingEventBestEffort(context.userId, {
+    await recordOnboardingEventBestEffort(context.userId, {
       eventName: "first_live_trade_started",
-      metadata: { side: "sell" },
-      dedupeKey: "first_live_trade_started",
+      side: "sell",
     });
     const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares, data.requestId);
-    void recordOnboardingEventBestEffort(context.userId, {
-      eventName: "first_live_trade_completed",
-      metadata: { side: "sell" },
-      dedupeKey: "first_live_trade_completed",
-    });
     if (tx.cost_basis === null || tx.realized_pnl === null) {
       throw new Error("Sell transaction accounting was not returned.");
     }
+    await recordOnboardingEventBestEffort(context.userId, {
+      eventName: "first_live_trade_completed",
+      side: "sell",
+    });
 
     return {
       ok: true,

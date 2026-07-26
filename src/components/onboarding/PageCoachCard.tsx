@@ -77,14 +77,16 @@ export function PageCoachCard({
                 Next
               </button>
             )}
-            <button
-              type="button"
-              onClick={onGotIt}
-              disabled={busy}
-              className="border border-primary bg-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary-foreground disabled:opacity-50"
-            >
-              Got it
-            </button>
+            {isLast && (
+              <button
+                type="button"
+                onClick={onGotIt}
+                disabled={busy}
+                className="border border-primary bg-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary-foreground disabled:opacity-50"
+              >
+                Got it
+              </button>
+            )}
           </div>
         </div>
       </div>

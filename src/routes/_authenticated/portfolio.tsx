@@ -103,8 +103,7 @@ function Portfolio() {
     void recordMyOnboardingEvent({
       data: {
         eventName: "onboarding_offer_seen",
-        metadata: { offer: "soft" },
-        dedupeKey: `onboarding_offer_seen:soft:v${onboarding.stockTutorialVersion}`,
+        offer: "soft",
       },
     }).catch(() =>
       console.warn("[Onboarding]", {

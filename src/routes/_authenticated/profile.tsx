@@ -39,6 +39,7 @@ import {
   skipMyStockTutorial,
   startMyStockTutorial,
 } from "@/lib/api/onboarding.functions";
+import { notifyPageTipsReplayed } from "@/lib/onboarding/page-tips";
 import { clearOnboardingSessionBypass } from "@/lib/onboarding/session-bypass";
 
 export const Route = createFileRoute("/_authenticated/profile")({
@@ -299,6 +300,7 @@ function Profile() {
     setTutorialBusy(true);
     try {
       await resetMyPageTips();
+      notifyPageTipsReplayed();
       await refreshOnboarding();
       toast.success("Page tips will appear again.");
     } catch (error) {

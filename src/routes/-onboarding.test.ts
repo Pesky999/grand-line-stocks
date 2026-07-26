@@ -97,11 +97,11 @@ test("tutorial route saves progress, supports skip, and replays without rewritin
     onboardingRoute,
     /if \(isReplay\) \{\s*setInteraction\(next\);\s*setFinishedPractice\(true\);\s*return;\s*\}/,
   );
-  assert.match(onboardingRoute, /completedStepKey: "step_5"/);
+  assert.doesNotMatch(onboardingRoute, /completedStepKey/);
   assert.doesNotMatch(onboardingRoute, /completeMyStockTutorial\(\{[\s\S]*replay: true/);
   assert.match(
     onboardingRoute,
-    /await completeMyStockTutorial\(\{ data: \{ completedStepKey: "step_5" \} \}\);\s*clearOnboardingSessionBypass\(\)/,
+    /await completeMyStockTutorial\(\{ data: \{\} \}\);\s*clearOnboardingSessionBypass\(\)/,
   );
   assert.match(onboardingRoute, /if \(isReplay\) \{\s*clearOnboardingSessionBypass\(\)/);
   assert.match(onboardingRoute, /if \(!isReplay\) setOnboardingSessionBypass\(\)/);
@@ -129,11 +129,16 @@ test("page coach is accessible and can be dismissed or skipped", () => {
   assert.match(pageCoachSource, /Close/);
   assert.match(pageCoachSource, /Skip tips/);
   assert.match(pageCoachSource, /Got it/);
+  assert.match(pageCoachSource, /\{!isLast && \(/);
+  assert.match(pageCoachSource, /\{isLast && \(/);
   assert.match(pageCoachSource, /Tip \{currentIndex \+ 1\} \/ \{total\}/);
 
   assert.match(onboardingExperienceSource, /shouldAutoOpenOnboarding/);
   assert.match(onboardingExperienceSource, /hasOnboardingSessionBypass/);
   assert.match(onboardingExperienceSource, /pageTipsForPath/);
+  assert.match(onboardingExperienceSource, /listenForPageTipsReplayed/);
+  assert.match(onboardingExperienceSource, /setHiddenTipIds\(new Set\(\)\)/);
+  assert.match(onboardingExperienceSource, /setTipIndex\(0\)/);
   assert.match(onboardingExperienceSource, /dismissMyPageTip/);
   assert.match(onboardingExperienceSource, /skipMyPageTips/);
   assert.match(onboardingExperienceSource, /recordMyOnboardingEvent/);
@@ -147,6 +152,7 @@ test("page coach is accessible and can be dismissed or skipped", () => {
     onboardingExperienceSource,
     /catch\(\(\) => logOnboardingUiFailure\("page_tip_seen"\)\)/,
   );
+  assert.doesNotMatch(onboardingExperienceSource, /pageKey|dedupeKey|metadata: \{/);
   assert.doesNotMatch(onboardingExperienceSource, /export function clearOnboardingSessionBypass/);
   assert.match(
     sessionBypassSource,
@@ -166,6 +172,7 @@ test("Profile exposes tutorial replay and page-tip controls without disturbing d
   assert.match(profileSource, /startMyStockTutorial/);
   assert.match(profileSource, /skipMyStockTutorial/);
   assert.match(profileSource, /resetMyPageTips/);
+  assert.match(profileSource, /notifyPageTipsReplayed/);
   assert.match(profileSource, /skipMyPageTips/);
   assert.match(profileSource, /clearOnboardingSessionBypass/);
   assert.match(
@@ -198,7 +205,8 @@ test("Portfolio soft prompt is optional and does not modify trading behavior", (
   assert.match(portfolioSource, /showTutorialCard/);
   assert.match(portfolioSource, /stockTutorialOffer === "soft"/);
   assert.match(portfolioSource, /eventName: "onboarding_offer_seen"/);
-  assert.match(portfolioSource, /metadata: \{ offer: "soft" \}/);
+  assert.match(portfolioSource, /offer: "soft"/);
+  assert.doesNotMatch(portfolioSource, /dedupeKey|metadata: \{ offer: "soft" \}/);
   assert.match(portfolioSource, /clearOnboardingSessionBypass/);
   assert.match(
     portfolioSource,

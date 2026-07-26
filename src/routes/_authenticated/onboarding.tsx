@@ -106,8 +106,7 @@ function StockTradingOnboarding() {
     void recordMyOnboardingEvent({
       data: {
         eventName: "onboarding_offer_seen",
-        metadata: { offer: "first_login" },
-        dedupeKey: `onboarding_offer_seen:first_login:v${state.stockTutorialVersion}`,
+        offer: "first_login",
       },
     }).catch(() => logOnboardingRouteFailure("onboarding_offer_seen"));
   }, [state]);
@@ -146,10 +145,10 @@ function StockTradingOnboarding() {
     setFinishedPractice(false);
   }
 
-  async function persistStep(next: PracticeInteractionState, completedStepKey: string) {
+  async function persistStep(next: PracticeInteractionState) {
     if (isReplay) return;
     await saveMyStockTutorialStep({
-      data: { step: next.currentStep, completedStepKey },
+      data: { step: next.currentStep },
     });
     await refreshOnboarding();
   }
@@ -161,7 +160,7 @@ function StockTradingOnboarding() {
       return;
     }
 
-    await completeMyStockTutorial({ data: { completedStepKey: "step_5" } });
+    await completeMyStockTutorial({ data: {} });
     clearOnboardingSessionBypass();
     await refreshOnboarding();
     setInteraction(next);
@@ -185,7 +184,7 @@ function StockTradingOnboarding() {
       }
 
       if (next.currentStep > interaction.currentStep) {
-        await persistStep(next, currentStep.key);
+        await persistStep(next);
       }
       setInteraction(next);
     } catch (error) {

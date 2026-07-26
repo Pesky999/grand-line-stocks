@@ -9,6 +9,7 @@ export type PageTip = {
 };
 
 export const PAGE_TIP_VERSION = 1;
+export const PAGE_TIPS_REPLAYED_EVENT = `berry-street:page-tips-replayed:v${PAGE_TIP_VERSION}`;
 
 export const PAGE_TIPS = [
   {
@@ -113,4 +114,15 @@ export function normalizeTipRoute(pathname: string) {
 
 export function pageTipDedupeKey(eventName: "page_tip_seen" | "page_tip_completed", tip: PageTip) {
   return `${eventName}:${tip.id}:v${tip.version}`;
+}
+
+export function notifyPageTipsReplayed() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(PAGE_TIPS_REPLAYED_EVENT));
+}
+
+export function listenForPageTipsReplayed(onReplay: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(PAGE_TIPS_REPLAYED_EVENT, onReplay);
+  return () => window.removeEventListener(PAGE_TIPS_REPLAYED_EVENT, onReplay);
 }

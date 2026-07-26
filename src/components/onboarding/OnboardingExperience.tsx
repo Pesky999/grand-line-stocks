@@ -9,7 +9,7 @@ import {
   skipMyPageTips,
 } from "@/lib/api/onboarding.functions";
 import { shouldAutoOpenOnboarding } from "@/lib/onboarding/progress";
-import { pageTipDedupeKey, pageTipsForPath } from "@/lib/onboarding/page-tips";
+import { listenForPageTipsReplayed, pageTipsForPath } from "@/lib/onboarding/page-tips";
 import { hasOnboardingSessionBypass } from "@/lib/onboarding/session-bypass";
 import { PageCoachCard } from "@/components/onboarding/PageCoachCard";
 
@@ -48,6 +48,16 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
     seenTipKeyRef.current = null;
   }, [pathname]);
 
+  useEffect(
+    () =>
+      listenForPageTipsReplayed(() => {
+        setHiddenTipIds(new Set());
+        setTipIndex(0);
+        seenTipKeyRef.current = null;
+      }),
+    [],
+  );
+
   useEffect(() => {
     if (!signedIn || !state) return;
     if (
@@ -63,14 +73,14 @@ export function OnboardingExperience({ signedIn }: OnboardingExperienceProps) {
 
   useEffect(() => {
     if (!currentTip) return;
-    const dedupeKey = pageTipDedupeKey("page_tip_seen", currentTip);
-    if (seenTipKeyRef.current === dedupeKey) return;
-    seenTipKeyRef.current = dedupeKey;
+    const seenKey = `${currentTip.id}:v${currentTip.version}`;
+    if (seenTipKeyRef.current === seenKey) return;
+    seenTipKeyRef.current = seenKey;
     void recordMyOnboardingEvent({
       data: {
         eventName: "page_tip_seen",
-        pageKey: currentTip.id,
-        dedupeKey,
+        tipId: currentTip.id,
+        version: currentTip.version,
       },
     }).catch(() => logOnboardingUiFailure("page_tip_seen"));
   }, [currentTip]);

@@ -77,15 +77,23 @@ test("analytics schema is bounded and best-effort", () => {
     "const startTutorialInputSchema",
   );
   assert.match(schema, /z\.discriminatedUnion\("eventName"/);
+  assert.match(
+    schema,
+    /const tutorialStepKeySchema = z\.enum\(\["step_1", "step_2", "step_3", "step_4", "step_5"\]\)/,
+  );
+  assert.match(schema, /const pageTipIdSchema = z\.enum\(\[/);
   assert.match(schema, /eventName: z\.literal\("onboarding_offer_seen"\)/);
   assert.match(schema, /offer: z\.enum\(\["first_login", "soft"\]\)/);
   assert.match(schema, /eventName: z\.literal\("stock_tutorial_started"\)/);
   assert.match(schema, /restart: z\.boolean\(\)/);
   assert.match(schema, /tutorialStartSourceSchema/);
+  assert.match(schema, /eventName: z\.literal\("stock_tutorial_step_completed"\)/);
+  assert.match(schema, /step: tutorialStepKeySchema/);
   assert.match(schema, /eventName: z\.literal\("stock_tutorial_replayed"\)/);
   assert.match(schema, /tutorialReplaySourceSchema/);
+  assert.match(schema, /tipId: pageTipIdSchema/);
+  assert.match(schema, /version: pageTipVersionSchema\.default\(PAGE_TIP_VERSION\)/);
   assert.match(schema, /side: z\.enum\(\["buy", "sell"\]\)/);
-  assert.match(schema, /metadata: emptyMetadataSchema\.optional\(\)/);
   assert.doesNotMatch(schema, /z\.record/);
 
   const bestEffort = sourceBetween(
@@ -99,14 +107,87 @@ test("analytics schema is bounded and best-effort", () => {
   assert.doesNotMatch(bestEffort, /throw error|throw new Error/);
 });
 
-test("analytics metadata rejects arbitrary personal and trade fields", () => {
-  const schema = sourceBetween(
+test("public analytics endpoint accepts only browser-originated observation events", () => {
+  const publicSchema = sourceBetween(
+    apiSource,
+    "const publicRecordOnboardingEventInputSchema",
+    "const startTutorialInputSchema",
+  );
+  const endpoint = exportedFunction(apiSource, "recordMyOnboardingEvent");
+
+  assert.match(endpoint, /publicRecordOnboardingEventInputSchema\.parse/);
+  assert.match(endpoint, /if \(data\.eventName === "onboarding_offer_seen"\)/);
+  assert.match(endpoint, /eventName: "onboarding_offer_seen",\s+offer: data\.offer/);
+  assert.match(
+    endpoint,
+    /eventName: "page_tip_seen",\s+tipId: data\.tipId,\s+version: data\.version/,
+  );
+  assert.match(publicSchema, /eventName: z\.literal\("onboarding_offer_seen"\)/);
+  assert.match(publicSchema, /eventName: z\.literal\("page_tip_seen"\)/);
+  assert.match(publicSchema, /offer: z\.enum\(\["first_login", "soft"\]\)/);
+  assert.match(publicSchema, /tipId: pageTipIdSchema/);
+  assert.match(publicSchema, /version: pageTipVersionSchema\.default\(PAGE_TIP_VERSION\)/);
+
+  for (const rejected of [
+    "stock_tutorial_started",
+    "stock_tutorial_step_completed",
+    "stock_tutorial_skipped",
+    "stock_tutorial_completed",
+    "stock_tutorial_replayed",
+    "first_live_trade_started",
+    "first_live_trade_completed",
+    "page_tip_completed",
+    "page_tips_skipped",
+  ]) {
+    assert.doesNotMatch(publicSchema, new RegExp(`eventName: z\\.literal\\("${rejected}"\\)`));
+  }
+  assert.doesNotMatch(publicSchema, /stepKey|pageKey|dedupeKey|metadata/);
+});
+
+test("trusted analytics derive persisted columns and reject arbitrary payload fields", () => {
+  const trustedSchema = sourceBetween(
     apiSource,
     "const recordOnboardingEventInputSchema",
     "const startTutorialInputSchema",
   );
+  const mapper = sourceBetween(
+    apiSource,
+    "function toStoredEvent",
+    "function logOnboardingFailure",
+  );
+
+  assert.match(
+    mapper,
+    /dedupe_key: `onboarding_offer_seen:\$\{event\.offer\}:v\$\{STOCK_TUTORIAL_VERSION\}`/,
+  );
+  assert.match(
+    mapper,
+    /dedupe_key: event\.restart\s+\?\s+null\s+:\s+`stock_tutorial_started:v\$\{STOCK_TUTORIAL_VERSION\}`/,
+  );
+  assert.match(mapper, /step_key: event\.step/);
+  assert.match(
+    mapper,
+    /dedupe_key: `stock_tutorial_step_completed:\$\{event\.step\}:v\$\{STOCK_TUTORIAL_VERSION\}`/,
+  );
+  assert.match(mapper, /eventName\) \{\s+case "onboarding_offer_seen"/);
+  assert.match(mapper, /metadata: \{ offer: event\.offer \}/);
+  assert.match(
+    mapper,
+    /metadata: \{\s+restart: event\.restart,\s+source: event\.source \?\? "welcome"/,
+  );
+  assert.match(mapper, /metadata: \{ source: event\.source \}/);
+  assert.match(mapper, /metadata: \{ side: event\.side \}/);
+  assert.match(mapper, /dedupe_key: "first_live_trade_started"/);
+  assert.match(mapper, /dedupe_key: "first_live_trade_completed"/);
+  assert.match(mapper, /page_key: event\.tipId/);
+  assert.match(mapper, /dedupe_key: `page_tip_seen:\$\{event\.tipId\}:v\$\{event\.version\}`/);
+  assert.match(mapper, /dedupe_key: `page_tip_completed:\$\{event\.tipId\}:v\$\{event\.version\}`/);
+  assert.match(mapper, /dedupe_key: `page_tips_skipped:v\$\{STOCK_TUTORIAL_VERSION\}`/);
 
   for (const forbidden of [
+    "stepKey",
+    "pageKey",
+    "dedupeKey",
     "email",
     "username",
     "display_name",
@@ -121,9 +202,9 @@ test("analytics metadata rejects arbitrary personal and trade fields", () => {
     "storage",
     "account_deletion",
   ]) {
-    assert.doesNotMatch(schema, new RegExp(`${forbidden}:`));
+    assert.doesNotMatch(trustedSchema, new RegExp(`${forbidden}:`));
   }
-  assert.match(schema, /\.strict\(\)/);
+  assert.match(trustedSchema, /\.strict\(\)/);
 });
 
 test("tutorial replay records an event without rewriting completed progress", () => {
@@ -132,6 +213,7 @@ test("tutorial replay records an event without rewriting completed progress", ()
 
   assert.match(start, /input\.replay && current\.stockTutorialStatus === "completed"/);
   assert.match(start, /eventName: "stock_tutorial_replayed"/);
+  assert.match(start, /source: "profile"/);
   assert.match(start, /return current/);
   assert.match(complete, /if \(input\.replay\)/);
   assert.doesNotMatch(sourceBetween(complete, "if (input.replay)", "const updated"), /eventName/);
@@ -147,12 +229,30 @@ test("trade functions record first live trade analytics without changing trade p
   assert.match(walletSource, /eventName: "first_live_trade_completed"/);
   assert.match(
     walletSource,
+    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_started",\s+side: "buy"/,
+  );
+  assert.match(
+    walletSource,
+    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_completed",\s+side: "buy"/,
+  );
+  assert.match(
+    walletSource,
+    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_started",\s+side: "sell"/,
+  );
+  assert.match(
+    walletSource,
     /executeTrade\(context\.supabase, data\.slug, "buy", data\.shares, data\.requestId\)/,
   );
   assert.match(
     walletSource,
     /executeTrade\(context\.supabase, data\.slug, "sell", data\.shares, data\.requestId\)/,
   );
+  assert.match(
+    walletSource,
+    /if \(tx\.cost_basis === null \|\| tx\.realized_pnl === null\)[\s\S]*eventName: "first_live_trade_completed",\s+side: "sell"/,
+  );
+  assert.doesNotMatch(walletSource, /void recordOnboardingEventBestEffort/);
+  assert.doesNotMatch(walletSource, /metadata: \{ side|dedupeKey: "first_live_trade/);
   assert.doesNotMatch(walletSource, /user_onboarding_progress/);
   assert.doesNotMatch(walletSource, /wallet_ledger_entries[\s\S]*first_live_trade/);
 });
