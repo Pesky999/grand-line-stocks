@@ -48,7 +48,10 @@ function loopContaining(source: string, needle: string, occurrence = 1) {
 
 const migration = read("supabase/migrations/20260719040000_public_identity_moderation.sql");
 const hotfixMigration = read("supabase/migrations/20260720020000_restore_profile_identities.sql");
-const effectiveIdentitySql = `${migration}\n${hotfixMigration}`;
+const reconciliationMigration = read(
+  "supabase/migrations/20260725233000_reconcile_account_lifecycle.sql",
+);
+const effectiveIdentitySql = `${migration}\n${hotfixMigration}\n${reconciliationMigration}`;
 const typesSource = read("src/integrations/supabase/types.ts");
 
 test("public identity moderation migration creates private moderation tables", () => {
@@ -505,6 +508,42 @@ test("hotfix narrows active enforcement to approved profanity and slur categorie
   }
 });
 
+test("account lifecycle reconciliation fixes username underscores and qualified moderation columns", () => {
+  const legacyFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.identity_username_legacy_format_valid",
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+  );
+  const evaluateFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+
+  assert.match(legacyFunction, /strpos\(public\.identity_username_canonical\(_value\), '__'\) = 0/);
+  assert.doesNotMatch(legacyFunction, /NOT LIKE '%__%'/);
+  assert.match(evaluateFunction, /strpos\(v_canonical, '__'\) > 0/);
+  assert.doesNotMatch(evaluateFunction, /v_canonical LIKE '%__%'/);
+  assert.match(evaluateFunction, /FROM public\.identity_moderation_terms AS terms/);
+
+  for (const column of [
+    "active",
+    "kind",
+    "category",
+    "normalized_term",
+    "match_mode",
+    "severity",
+    "created_at",
+  ]) {
+    assert.match(evaluateFunction, new RegExp(`terms\\.${column}`));
+  }
+
+  assert.doesNotMatch(evaluateFunction, /\bWHERE active\b/);
+  assert.doesNotMatch(evaluateFunction, /\bAND kind =/);
+  assert.doesNotMatch(evaluateFunction, /\bAND category IN/);
+  assert.doesNotMatch(evaluateFunction, /\bORDER BY severity DESC, created_at ASC/);
+});
+
 test("hotfix curates the private term rows to actual profanity and slurs", () => {
   assert.match(
     hotfixMigration,
@@ -570,7 +609,17 @@ test("admin reset RPC is security definer and keeps service-side admin verificat
 });
 
 test("migration avoids destructive schema operations and unrelated domains", () => {
-  assert.doesNotMatch(effectiveIdentitySql, /\bCASCADE\b/);
+  const profileCascadeMatches = reconciliationMigration.match(/\bON DELETE CASCADE\b/g) ?? [];
+
+  assert.equal(profileCascadeMatches.length, 2);
+  assert.match(
+    reconciliationMigration,
+    /identity_moderation_flags_profile_id_fkey[\s\S]*FOREIGN KEY \(profile_id\)[\s\S]*REFERENCES public\.profiles\(id\)\s+ON DELETE CASCADE/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /identity_moderation_actions_profile_id_fkey[\s\S]*FOREIGN KEY \(profile_id\)[\s\S]*REFERENCES public\.profiles\(id\)\s+ON DELETE CASCADE/,
+  );
   assert.doesNotMatch(effectiveIdentitySql, /DROP TABLE|TRUNCATE|DELETE FROM public\.user_wallets/);
   assert.doesNotMatch(
     hotfixMigration,
