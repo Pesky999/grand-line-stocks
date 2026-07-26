@@ -5,6 +5,7 @@ import { useMe } from "@/hooks/useMe";
 import { useSignOut } from "@/hooks/useSignOut";
 import { formatBerries } from "@/lib/wallet";
 import { amIAdmin } from "@/lib/api/market.functions";
+import { OnboardingExperience } from "@/components/onboarding/OnboardingExperience";
 import {
   Sheet,
   SheetContent,
@@ -220,6 +221,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main>{children}</main>
+      <OnboardingExperience signedIn={!!user} />
       <footer className="border-t border-border px-4 py-3 text-[10px] uppercase tracking-widest text-muted-foreground">
         Berry Street &copy; — Fictional securities. No real money. Prices set by editorial. Not
         affiliated with Eiichiro Oda or Shueisha.

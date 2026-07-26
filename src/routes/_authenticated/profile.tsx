@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
@@ -31,6 +31,16 @@ import {
 } from "@/lib/account-deletion/security";
 import { toast } from "sonner";
 import { AchievementMedallion } from "@/components/AchievementMedallion";
+import {
+  ONBOARDING_QUERY_KEY,
+  getMyOnboardingState,
+  resetMyPageTips,
+  skipMyPageTips,
+  skipMyStockTutorial,
+  startMyStockTutorial,
+} from "@/lib/api/onboarding.functions";
+import { notifyPageTipsReplayed } from "@/lib/onboarding/page-tips";
+import { clearOnboardingSessionBypass } from "@/lib/onboarding/session-bypass";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({ meta: [{ title: "Profile — Berry Street" }] }),
@@ -113,6 +123,7 @@ function Profile() {
   const { data, isLoading } = useMe();
   const invalidate = useInvalidateMe();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [displayName, setDisplayName] = useState("");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,6 +132,7 @@ function Profile() {
   const [deleteConfirmationUsername, setDeleteConfirmationUsername] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
+  const [tutorialBusy, setTutorialBusy] = useState(false);
   const handleSignOut = useSignOut();
 
   const profile = data?.profile ?? null;
@@ -137,6 +149,13 @@ function Profile() {
     enabled: !!data && !!username,
     retry: false,
     staleTime: 0,
+  });
+  const onboardingQ = useQuery({
+    queryKey: ONBOARDING_QUERY_KEY,
+    queryFn: () => getMyOnboardingState(),
+    enabled: !!data,
+    retry: false,
+    staleTime: 30_000,
   });
 
   if (isLoading || !data) {
@@ -216,6 +235,78 @@ function Profile() {
       await deletionReadiness.refetch();
     } finally {
       setDeletingAccount(false);
+    }
+  }
+
+  async function refreshOnboarding() {
+    await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
+  }
+
+  async function openTutorial(restart = false) {
+    setTutorialBusy(true);
+    try {
+      clearOnboardingSessionBypass();
+      await startMyStockTutorial({ data: { restart, source: "profile" } });
+      await refreshOnboarding();
+      await navigate({ to: "/onboarding" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open the tutorial.");
+    } finally {
+      setTutorialBusy(false);
+    }
+  }
+
+  async function replayTutorial() {
+    setTutorialBusy(true);
+    try {
+      clearOnboardingSessionBypass();
+      await startMyStockTutorial({ data: { replay: true } });
+      await navigate({ to: "/onboarding", search: { replay: true } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not replay the tutorial.");
+    } finally {
+      setTutorialBusy(false);
+    }
+  }
+
+  async function skipTutorialFromProfile() {
+    setTutorialBusy(true);
+    try {
+      clearOnboardingSessionBypass();
+      await skipMyStockTutorial();
+      await refreshOnboarding();
+      toast.success("Tutorial skipped.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not skip the tutorial.");
+    } finally {
+      setTutorialBusy(false);
+    }
+  }
+
+  async function skipTipsFromProfile() {
+    setTutorialBusy(true);
+    try {
+      await skipMyPageTips();
+      await refreshOnboarding();
+      toast.success("Page tips skipped.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not skip page tips.");
+    } finally {
+      setTutorialBusy(false);
+    }
+  }
+
+  async function resetTipsFromProfile() {
+    setTutorialBusy(true);
+    try {
+      await resetMyPageTips();
+      notifyPageTipsReplayed();
+      await refreshOnboarding();
+      toast.success("Page tips will appear again.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not reset page tips.");
+    } finally {
+      setTutorialBusy(false);
     }
   }
 
@@ -395,6 +486,130 @@ function Profile() {
               ))}
             </ul>
           )}
+        </div>
+
+        <div className="terminal-panel">
+          <div className="terminal-header">Help & Tutorials</div>
+          <div className="space-y-4 p-5 text-xs">
+            {onboardingQ.isLoading ? (
+              <div className="text-muted-foreground">Loading tutorial preferences...</div>
+            ) : onboardingQ.isError || !onboardingQ.data ? (
+              <div className="text-muted-foreground">
+                Tutorial preferences are unavailable right now. The rest of your account still works
+                normally.
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Stock trading tutorial
+                  </div>
+                  <div className="text-sm">
+                    {onboardingQ.data.stockTutorialStatus === "completed"
+                      ? "Completed. You can replay the practice trade any time."
+                      : onboardingQ.data.stockTutorialStatus === "in_progress"
+                        ? "In progress. Resume the simulated trade when you are ready."
+                        : onboardingQ.data.stockTutorialStatus === "skipped"
+                          ? "Skipped. You can still practice before placing a real order."
+                          : "Not started. Practice a buy and sell without changing your wallet."}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {onboardingQ.data.stockTutorialStatus === "completed" ? (
+                      <button
+                        type="button"
+                        onClick={() => void replayTutorial()}
+                        disabled={tutorialBusy}
+                        className="border border-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+                      >
+                        Replay practice trade
+                      </button>
+                    ) : onboardingQ.data.stockTutorialStatus === "in_progress" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void navigate({ to: "/onboarding" })}
+                          disabled={tutorialBusy}
+                          className="border border-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+                        >
+                          Resume practice trade
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openTutorial(true)}
+                          disabled={tutorialBusy}
+                          className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary disabled:opacity-50"
+                        >
+                          Start over
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void skipTutorialFromProfile()}
+                          disabled={tutorialBusy}
+                          className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-bear disabled:opacity-50"
+                        >
+                          Skip
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void openTutorial(onboardingQ.data.stockTutorialStatus === "skipped")
+                          }
+                          disabled={tutorialBusy}
+                          className="border border-primary px-3 py-2 text-[10px] uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+                        >
+                          Practice a trade
+                        </button>
+                        {onboardingQ.data.stockTutorialStatus === "not_started" && (
+                          <button
+                            type="button"
+                            onClick={() => void skipTutorialFromProfile()}
+                            disabled={tutorialBusy}
+                            className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-bear disabled:opacity-50"
+                          >
+                            Skip tutorial
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Page tips
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-sm">
+                      {onboardingQ.data.pageTipsDisabled
+                        ? "Page tips are skipped."
+                        : "Page tips are available while you explore."}
+                    </span>
+                    {!onboardingQ.data.pageTipsDisabled && (
+                      <button
+                        type="button"
+                        onClick={() => void skipTipsFromProfile()}
+                        disabled={tutorialBusy}
+                        className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-bear disabled:opacity-50"
+                      >
+                        SKIP REMAINING PAGE TIPS
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void resetTipsFromProfile()}
+                      disabled={tutorialBusy}
+                      className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary disabled:opacity-50"
+                    >
+                      REPLAY PAGE TIPS
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="terminal-panel border-bear/60">

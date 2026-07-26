@@ -77,6 +77,15 @@ test("TerminalShell keeps the shared header before the page main", () => {
   assert.ok(headerIndex < mainIndex);
 });
 
+test("TerminalShell mounts optional onboarding outside the page content", () => {
+  assert.match(terminalShellSource, /import \{ OnboardingExperience \}/);
+  assert.match(terminalShellSource, /<OnboardingExperience signedIn=\{!!user\} \/>/);
+  assert.ok(
+    terminalShellSource.indexOf("<main>{children}</main>") <
+      terminalShellSource.indexOf("<OnboardingExperience"),
+  );
+});
+
 test("character page does not introduce route-specific sticky navigation", () => {
   assert.doesNotMatch(
     characterSource,

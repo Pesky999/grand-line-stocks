@@ -11,6 +11,7 @@ import {
   type TradeHistoryItem,
 } from "@/lib/trade-history/pagination";
 import { isValidShareQuantity } from "@/lib/trading/fractional-shares";
+import { recordOnboardingEventBestEffort } from "@/lib/api/onboarding.functions";
 
 export const TRADE_HISTORY_QUERY_KEY = ["trade-history"] as const;
 
@@ -209,7 +210,15 @@ export const buyShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    await recordOnboardingEventBestEffort(context.userId, {
+      eventName: "first_live_trade_started",
+      side: "buy",
+    });
     const tx = await executeTrade(context.supabase, data.slug, "buy", data.shares, data.requestId);
+    await recordOnboardingEventBestEffort(context.userId, {
+      eventName: "first_live_trade_completed",
+      side: "buy",
+    });
     return {
       ok: true,
       price: Number(tx.price),
@@ -225,10 +234,18 @@ export const sellShares = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => tradeInputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    await recordOnboardingEventBestEffort(context.userId, {
+      eventName: "first_live_trade_started",
+      side: "sell",
+    });
     const tx = await executeTrade(context.supabase, data.slug, "sell", data.shares, data.requestId);
     if (tx.cost_basis === null || tx.realized_pnl === null) {
       throw new Error("Sell transaction accounting was not returned.");
     }
+    await recordOnboardingEventBestEffort(context.userId, {
+      eventName: "first_live_trade_completed",
+      side: "sell",
+    });
 
     return {
       ok: true,

@@ -28,6 +28,7 @@ import { Route as CharacterSlugRouteImport } from './routes/character.$slug'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPricingAdminRouteImport } from './routes/_authenticated/pricing-admin'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedMarketAdminRouteImport } from './routes/_authenticated/market-admin'
 import { Route as AuthenticatedLegacyLogRouteImport } from './routes/_authenticated/legacy-log'
 import { Route as AuthenticatedIdentityModerationAdminRouteImport } from './routes/_authenticated/identity-moderation-admin'
@@ -130,6 +131,11 @@ const AuthenticatedPortfolioRoute = AuthenticatedPortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedMarketAdminRoute =
   AuthenticatedMarketAdminRouteImport.update({
     id: '/market-admin',
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/legacy-log': typeof AuthenticatedLegacyLogRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -207,6 +214,7 @@ export interface FileRoutesByTo {
   '/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/legacy-log': typeof AuthenticatedLegacyLogRoute
   '/market-admin': typeof AuthenticatedMarketAdminRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -235,6 +243,7 @@ export interface FileRoutesById {
   '/_authenticated/identity-moderation-admin': typeof AuthenticatedIdentityModerationAdminRoute
   '/_authenticated/legacy-log': typeof AuthenticatedLegacyLogRoute
   '/_authenticated/market-admin': typeof AuthenticatedMarketAdminRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/pricing-admin': typeof AuthenticatedPricingAdminRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/identity-moderation-admin'
     | '/legacy-log'
     | '/market-admin'
+    | '/onboarding'
     | '/portfolio'
     | '/pricing-admin'
     | '/profile'
@@ -288,6 +298,7 @@ export interface FileRouteTypes {
     | '/identity-moderation-admin'
     | '/legacy-log'
     | '/market-admin'
+    | '/onboarding'
     | '/portfolio'
     | '/pricing-admin'
     | '/profile'
@@ -315,6 +326,7 @@ export interface FileRouteTypes {
     | '/_authenticated/identity-moderation-admin'
     | '/_authenticated/legacy-log'
     | '/_authenticated/market-admin'
+    | '/_authenticated/onboarding'
     | '/_authenticated/portfolio'
     | '/_authenticated/pricing-admin'
     | '/_authenticated/profile'
@@ -476,6 +488,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPortfolioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/market-admin': {
       id: '/_authenticated/market-admin'
       path: '/market-admin'
@@ -528,6 +547,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIdentityModerationAdminRoute: typeof AuthenticatedIdentityModerationAdminRoute
   AuthenticatedLegacyLogRoute: typeof AuthenticatedLegacyLogRoute
   AuthenticatedMarketAdminRoute: typeof AuthenticatedMarketAdminRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
   AuthenticatedPricingAdminRoute: typeof AuthenticatedPricingAdminRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
@@ -541,6 +561,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedIdentityModerationAdminRoute,
   AuthenticatedLegacyLogRoute: AuthenticatedLegacyLogRoute,
   AuthenticatedMarketAdminRoute: AuthenticatedMarketAdminRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
   AuthenticatedPricingAdminRoute: AuthenticatedPricingAdminRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
