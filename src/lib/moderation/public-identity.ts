@@ -19,7 +19,6 @@ export type PublicIdentityTermRule = {
 };
 
 export const ACTIVE_IDENTITY_MODERATION_CATEGORIES = [
-  "common_profanity",
   "severe_profanity",
   "racial_ethnic_slur",
   "religious_slur",

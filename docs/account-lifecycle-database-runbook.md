@@ -1,65 +1,54 @@
 # Account Lifecycle Database Runbook
 
-Migrations are the source of truth for account signup, public identity,
-onboarding, and account deletion behavior.
+Lovable Cloud is the active hosted environment for Berry Street. Codex manages
+repository changes and the migration history that records account signup,
+public identity, onboarding, and account deletion behavior.
 
-Direct production SQL is emergency-only. Any emergency SQL repair must be
-followed by a reviewed forward migration and a regression test that proves the
-repair replays from a clean database.
+Direct Lovable SQL is emergency-only. Do not do direct database work unless the
+live application is actually broken.
 
-## Local Verification
+## Source Of Truth
 
-Database replay requires Docker and the Supabase CLI.
+- Current behavior must be represented by forward migrations in this repository.
+- Historical migrations must not be edited after they are merged or applied.
+- If emergency Lovable SQL is used, mirror the repair with a reviewed forward
+  migration created through Codex.
+- Repository contract tests should verify the migration text without requiring
+  local database tooling, Lovable access, or a hosted database connection.
 
-```bash
-supabase start
-supabase db reset
-supabase test db
-```
+## Identity Policy
 
-Stop the local stack after testing:
+Public username and display-name moderation is intentionally narrow. It blocks
+only explicit cuss words, explicit slurs, and clear deliberate obfuscations of
+those same terms.
 
-```bash
-supabase stop --no-backup
-```
+The policy must not block ordinary reserved-looking names, support/admin-style
+terms, contact-like wording, general insults, threats, suspicious-looking text,
+brand references, or harmless substrings inside normal words.
 
-Never run a linked `supabase db reset` against production.
+## Smoke Tests
 
-## Migration History Checks
+After an account-lifecycle repair reaches Lovable Cloud through the approved
+process:
 
-Use local migration files as the reviewed source of truth:
-
-```bash
-ls supabase/migrations
-```
-
-When comparing a local checkout with a remote project, use read-only migration
-history commands and confirm the linked project before taking any action. If
-remote history differs from the repository, stop and reconcile with a forward
-migration instead of editing historical migrations.
-
-## Production Smoke Tests
-
-After an account-lifecycle migration is applied through the approved production
-process, run these smoke checks:
-
-- Create a new email/password account with an explicit valid username.
-- Confirm the new profile appears with the requested public identity.
-- Confirm an onboarding progress row exists and the stock tutorial/page-tip
-  offer appears according to the expected new-user state.
-- Confirm Replay Page Tips can reset completed page tips.
-- Delete a disposable test account through the self-service profile flow.
+- Create a disposable email/password account in Lovable with a valid available
+  username.
+- Confirm the profile keeps the requested public identity.
+- Confirm onboarding appears for the account according to its new-user state.
+- Delete a disposable non-admin account from the profile page by entering the
+  exact current username twice.
 - Confirm the deleted account cannot sign in.
-- Confirm account-owned profile and onboarding data are gone.
-- Confirm shared pricing records, if any existed, were preserved with deleted
-  audit actors anonymized.
+- Confirm account-owned data no longer blocks deletion.
+- Confirm shared pricing records, if any existed, remain while deleted user
+  references are anonymized.
 
-## Emergency Repair Policy
+## Guardrails
 
-- Production SQL repairs must be as narrow as possible and count/report their
-  effect.
-- Never delete wallets, holdings, transactions, prices, rewards, rankings, game
-  progress, or achievements as part of an identity/onboarding repair.
-- Every production repair gets a matching forward migration.
-- Every repair migration gets an executable database test.
-- Historical migrations that may already have been applied are not edited.
+- Account creation should stay simple: valid email, valid password, available
+  username, username format, and the narrow cuss-word/slur check.
+- Account deletion should stay simple: signed in, exact username, exact username
+  repeated, then delete.
+- Keep the final-active-admin deletion safeguard.
+- Never delete or mutate wallets, holdings, transactions, prices, rewards,
+  rankings, game progress, achievements, schedules, or unrelated product data as
+  part of an identity/onboarding repair.

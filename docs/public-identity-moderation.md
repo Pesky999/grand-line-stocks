@@ -105,9 +105,12 @@ The hotfix migration
 `supabase/migrations/20260720020000_restore_profile_identities.sql` corrects the canonical versus
 moderation split, disables the mutating automatic remediation function, and restores identities that
 were changed by the July 19 incident when the profile still contains the incident-generated value.
-It also deactivates non-approved blocked/reserved categories and makes the evaluator enforce only:
+The reconciliation migration
+`supabase/migrations/20260725233000_reconcile_account_lifecycle.sql` records the final policy:
+moderation blocks only explicit cuss words, explicit slurs, and clear deliberate obfuscations of
+those terms. It deactivates reserved-name, contact, threat, harassment, privacy-abuse, broad
+offensiveness, and other non-policy rules. The evaluator enforces only:
 
-- `common_profanity`
 - `severe_profanity`
 - `racial_ethnic_slur`
 - `religious_slur`
@@ -118,8 +121,8 @@ It also deactivates non-approved blocked/reserved categories and makes the evalu
 
 The latest signup side effects are preserved: profile creation still occurs in `handle_new_user()`,
 and wallet creation still inserts only `user_id`, so the current database default supplies the
-starting Berry balance. The hotfix also curates the private term rows so the active policy is based on
-actual cuss words and slurs rather than broad category labels alone.
+starting Berry balance. The reconciliation also curates the private term rows so the active policy is
+based on actual cuss words and slurs rather than broad category labels alone.
 
 ## Signup And Profile Editing
 
@@ -271,7 +274,6 @@ select
       and (
         kind = 'reserved'
         or category not in (
-          'common_profanity',
           'severe_profanity',
           'racial_ethnic_slur',
           'religious_slur',
@@ -288,7 +290,6 @@ select
     where active
       and kind = 'blocked'
       and category in (
-        'common_profanity',
         'severe_profanity',
         'racial_ethnic_slur',
         'religious_slur',

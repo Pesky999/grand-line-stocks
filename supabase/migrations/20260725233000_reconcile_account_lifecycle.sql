@@ -118,7 +118,6 @@ BEGIN
   WHERE terms.active
     AND terms.kind = 'blocked'
     AND terms.category IN (
-      'common_profanity',
       'severe_profanity',
       'racial_ethnic_slur',
       'religious_slur',
@@ -153,6 +152,34 @@ REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid(text) FR
 REVOKE EXECUTE ON FUNCTION public.evaluate_public_identity(text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.identity_username_legacy_format_valid(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.evaluate_public_identity(text, text) TO service_role;
+
+UPDATE public.identity_moderation_terms AS terms
+SET category = 'severe_profanity',
+    active = true,
+    updated_at = now()
+WHERE terms.kind = 'blocked'
+  AND terms.category = 'common_profanity'
+  AND terms.normalized_term IN ('damn', 'hell', 'crap');
+
+UPDATE public.identity_moderation_terms AS terms
+SET active = false,
+    updated_at = now()
+WHERE terms.active
+  AND (
+    terms.kind = 'reserved'
+    OR (
+      terms.kind = 'blocked'
+      AND terms.category NOT IN (
+        'severe_profanity',
+        'racial_ethnic_slur',
+        'religious_slur',
+        'nationality_slur',
+        'sex_gender_slur',
+        'sexual_orientation_slur',
+        'disability_slur'
+      )
+    )
+  );
 
 DO $$
 BEGIN

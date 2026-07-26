@@ -22,7 +22,7 @@ const rules: PublicIdentityTermRule[] = [
     term: "badword",
     normalizedTerm: "badword",
     kind: "blocked",
-    category: "common_profanity",
+    category: "severe_profanity",
     matchMode: "word",
     severity: 2,
   },
@@ -38,7 +38,7 @@ const rules: PublicIdentityTermRule[] = [
     term: "reef",
     normalizedTerm: "reef",
     kind: "blocked",
-    category: "common_profanity",
+    category: "severe_profanity",
     matchMode: "compact_substring",
     severity: 3,
   },
@@ -100,7 +100,7 @@ test("username moderation matching still catches digit obfuscation without chang
       term: "reef",
       normalizedTerm: "reef",
       kind: "blocked",
-      category: "common_profanity",
+      category: "severe_profanity",
       matchMode: "compact_substring",
       severity: 3,
       active: true,
@@ -112,7 +112,7 @@ test("username moderation matching still catches digit obfuscation without chang
   assert.equal(validateUsernameFormat("r33f_runner").ok, true);
   assert.equal(normalizeIdentityForms("r33f_runner").canonicalUsername, "r33f_runner");
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "common_profanity");
+  if (!result.allowed) assert.equal(result.category, "severe_profanity");
 });
 
 test("display name format accepts ordinary Unicode letters, combining marks, and typographic apostrophes", () => {
@@ -161,6 +161,29 @@ test("reserved-looking usernames are no longer blocked by moderation", () => {
   }
 });
 
+test("ordinary non-policy examples remain available when format is valid", () => {
+  for (const value of [
+    "agent11",
+    "agent_11",
+    "admin",
+    "support",
+    "official",
+    "stupid",
+    "idiot",
+    "trash",
+    "killjoy",
+  ]) {
+    assert.equal(
+      validateUsernameFormat(value).ok,
+      true,
+      `${value} should be a valid username format`,
+    );
+    assert.equal(evaluatePublicIdentity(value, "username", rules).allowed, true, value);
+  }
+
+  assert.equal(validateUsernameFormat("agent__11").ok, false);
+});
+
 test("word rules block separated terms without overmatching inside unrelated words", () => {
   const blocked = evaluatePublicIdentity("good badword user", "display_name", rules);
   const allowed = evaluatePublicIdentity("embadworded", "display_name", rules);
@@ -173,14 +196,14 @@ test("compact substring rules catch separator and leet evasions only when config
   const result = evaluatePublicIdentity("r33f runner", "display_name", rules);
 
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "common_profanity");
+  if (!result.allowed) assert.equal(result.category, "severe_profanity");
 });
 
 test("compact substring rules catch limited homoglyph substitutions for active categories", () => {
   const result = evaluatePublicIdentity("r\u0435\u0435f runner", "display_name", rules);
 
   assert.equal(result.allowed, false);
-  if (!result.allowed) assert.equal(result.category, "common_profanity");
+  if (!result.allowed) assert.equal(result.category, "severe_profanity");
 });
 
 test("allow rules apply only to complete normalized identities", () => {
@@ -204,7 +227,7 @@ test("protected core rules can be evaluated before supplemental allowlist creati
       term: "reef",
       normalizedTerm: "reef",
       kind: "blocked",
-      category: "common_profanity",
+      category: "severe_profanity",
       matchMode: "word",
       severity: 2,
       isCore: true,
@@ -238,7 +261,7 @@ test("protected core rules can be evaluated before supplemental allowlist creati
 
   const result = evaluatePublicIdentity("quiet reef captain", "display_name", protectedRules);
   assert.equal(result.allowed, false, "approved profanity/slur categories should still block");
-  if (!result.allowed) assert.equal(result.category, "common_profanity");
+  if (!result.allowed) assert.equal(result.category, "severe_profanity");
 
   assert.equal(
     evaluatePublicIdentity("harbor friend", "display_name", protectedRules).allowed,
@@ -256,6 +279,7 @@ test("contact-looking display names are not rejected by identity moderation alon
 test("non-approved broad categories do not block unless independently approved", () => {
   for (const category of [
     "contact_info",
+    "common_profanity",
     "threat",
     "hate_group",
     "harassment",
@@ -279,7 +303,6 @@ test("non-approved broad categories do not block unless independently approved",
 
 test("approved profanity and slur categories remain enforceable", () => {
   for (const category of [
-    "common_profanity",
     "severe_profanity",
     "racial_ethnic_slur",
     "religious_slur",
@@ -314,6 +337,6 @@ test("moderation-only evaluation flags active terms without applying new-identit
   assert.equal(blocked.allowed, false);
   if (!blocked.allowed) {
     assert.equal(blocked.code, "blocked");
-    assert.equal(blocked.category, "common_profanity");
+    assert.equal(blocked.category, "severe_profanity");
   }
 });

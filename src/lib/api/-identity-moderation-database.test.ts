@@ -464,16 +464,20 @@ test("hotfix disables automatic remediation and restores exact incident-modified
   );
 });
 
-test("hotfix narrows active enforcement to approved profanity and slur categories", () => {
+test("final reconciliation enforces only cuss-word and slur categories", () => {
   const evaluateFunction = sourceBetween(
-    hotfixMigration,
+    reconciliationMigration,
     "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
-    "CREATE OR REPLACE FUNCTION public.identity_moderation_next_username",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+  const categoryPredicate = sourceBetween(
+    evaluateFunction,
+    "AND terms.category IN (",
+    "    )\n    AND (",
   );
 
-  assert.match(evaluateFunction, /AND kind = 'blocked'/);
+  assert.match(evaluateFunction, /AND terms\.kind = 'blocked'/);
   for (const category of [
-    "common_profanity",
     "severe_profanity",
     "racial_ethnic_slur",
     "religious_slur",
@@ -482,17 +486,18 @@ test("hotfix narrows active enforcement to approved profanity and slur categorie
     "sexual_orientation_slur",
     "disability_slur",
   ]) {
-    assert.match(evaluateFunction, new RegExp(`'${category}'`));
+    assert.match(categoryPredicate, new RegExp(`'${category}'`));
   }
 
   assert.doesNotMatch(evaluateFunction, /kind IN \('blocked', 'reserved'\)/);
   assert.doesNotMatch(evaluateFunction, /CASE WHEN v_rule\.kind = 'reserved'/);
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms[\s\S]*SET active = false[\s\S]*kind IN \('blocked', 'reserved'\)/,
+    reconciliationMigration,
+    /UPDATE public\.identity_moderation_terms AS terms[\s\S]*SET active = false[\s\S]*terms\.kind = 'reserved'/,
   );
   for (const category of [
     "reserved",
+    "common_profanity",
     "contact_info",
     "threat",
     "hate_group",
@@ -501,7 +506,7 @@ test("hotfix narrows active enforcement to approved profanity and slur categorie
     "sexual_profanity",
   ]) {
     assert.doesNotMatch(
-      evaluateFunction,
+      categoryPredicate,
       new RegExp(`'${category}'`),
       `${category} should not be in the active enforcement predicate`,
     );
@@ -544,29 +549,33 @@ test("account lifecycle reconciliation fixes username underscores and qualified 
   assert.doesNotMatch(evaluateFunction, /\bORDER BY severity DESC, created_at ASC/);
 });
 
-test("hotfix curates the private term rows to actual profanity and slurs", () => {
-  assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = false,[\s\S]*category = 'common_profanity'[\s\S]*normalized_term IN \('idiot', 'stupid', 'trash'\)/,
+test("final reconciliation deactivates non-policy identity moderation rows", () => {
+  const termReconciliation = sourceBetween(
+    reconciliationMigration,
+    "UPDATE public.identity_moderation_terms AS terms",
+    "DO $$",
   );
+
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = true,[\s\S]*category = 'common_profanity'[\s\S]*normalized_term IN \('damn', 'hell', 'crap'\)/,
-  );
-  assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET category = 'severe_profanity',\s+active = true,[\s\S]*category = 'sexual_profanity'[\s\S]*normalized_term IN \('dick', 'cock', 'pussy'\)/,
+    termReconciliation,
+    /SET category = 'severe_profanity',\s+active = true,[\s\S]*terms\.category = 'common_profanity'/,
   );
   assert.match(
-    hotfixMigration,
-    /UPDATE public\.identity_moderation_terms\s+SET active = false,[\s\S]*category = 'sexual_profanity'[\s\S]*normalized_term IN \('porn', 'xxx', 'sex'\)/,
+    termReconciliation,
+    /SET active = false,[\s\S]*terms\.kind = 'reserved'[\s\S]*terms\.kind = 'blocked'[\s\S]*terms\.category NOT IN/,
   );
-  assert.ok(
-    hotfixMigration.indexOf("AND normalized_term IN ('dick', 'cock', 'pussy')") <
-      hotfixMigration.indexOf("WHERE active\n  AND kind IN ('blocked', 'reserved')"),
-    "vulgar terms should be reclassified before non-approved category deactivation runs",
-  );
-  assert.doesNotMatch(hotfixMigration, /DELETE FROM public\.identity_moderation_terms/);
+  for (const category of [
+    "severe_profanity",
+    "racial_ethnic_slur",
+    "religious_slur",
+    "nationality_slur",
+    "sex_gender_slur",
+    "sexual_orientation_slur",
+    "disability_slur",
+  ]) {
+    assert.match(termReconciliation, new RegExp(`'${category}'`));
+  }
+  assert.doesNotMatch(reconciliationMigration, /DELETE FROM public\.identity_moderation_terms/);
 });
 
 test("admin reset RPC is security definer and keeps service-side admin verification", () => {
