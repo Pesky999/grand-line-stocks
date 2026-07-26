@@ -7,14 +7,15 @@ import {
   STOCK_TUTORIAL_FINAL_STEP,
   STOCK_TUTORIAL_VERSION,
   completeStockTutorial,
-  createSoftOnboardingState,
   dismissPageTip,
+  recoverMissingOnboardingProgressState,
   resetPageTips,
   restartStockTutorial,
   saveStockTutorialStep,
   skipAllPageTips,
   skipStockTutorial,
   startStockTutorial,
+  type MissingOnboardingProgressClassification,
   type OnboardingProgressState,
   type StockTutorialStatus,
 } from "@/lib/onboarding/progress";
@@ -66,6 +67,11 @@ const pageTipIdSchema = z.enum([
   "profile.overview",
 ]);
 const pageTipVersionSchema = z.literal(PAGE_TIP_VERSION);
+const profileCreatedAtRowSchema = z
+  .object({
+    created_at: z.string().nullable(),
+  })
+  .strict();
 
 function tradeEventSchema(eventName: "first_live_trade_started" | "first_live_trade_completed") {
   return z
@@ -220,10 +226,6 @@ function normalizeProgressRow(row: unknown): OnboardingProgressState {
   };
 }
 
-function defaultProgressForNewUser(): OnboardingProgressState {
-  return createSoftOnboardingState();
-}
-
 function completedStepForSavedStep(savedStep: number): TutorialStepKey | null {
   switch (savedStep) {
     case 2:
@@ -354,11 +356,62 @@ async function readOnboardingProgress(db: OnboardingDb, userId: string) {
   return data ? normalizeProgressRow(data) : null;
 }
 
+async function classifyMissingOnboardingProgress(
+  db: OnboardingDb,
+  userId: string,
+): Promise<MissingOnboardingProgressClassification | null> {
+  try {
+    const { data: profile, error: profileError } = await db
+      .from("profiles")
+      .select("created_at")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      logOnboardingFailure(
+        "missing_progress_profile_read",
+        profileError.code ?? "ONBOARDING_PROFILE_READ_FAILED",
+      );
+      return null;
+    }
+
+    const parsedProfile = profileCreatedAtRowSchema.safeParse(profile);
+    if (!parsedProfile.success || !parsedProfile.data.created_at) return null;
+
+    const { data: transactions, error: transactionsError } = await db
+      .from("transactions")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1);
+
+    if (transactionsError) {
+      logOnboardingFailure(
+        "missing_progress_transaction_read",
+        transactionsError.code ?? "ONBOARDING_TRANSACTION_READ_FAILED",
+      );
+      return null;
+    }
+
+    return {
+      profileCreatedAt: parsedProfile.data.created_at,
+      hasTransactions: (transactions ?? []).length > 0,
+    };
+  } catch {
+    logOnboardingFailure(
+      "missing_progress_classification",
+      "ONBOARDING_PROGRESS_CLASSIFICATION_FAILED",
+    );
+    return null;
+  }
+}
+
 async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
   const existing = await readOnboardingProgress(db, userId);
   if (existing) return existing;
 
-  const next = defaultProgressForNewUser();
+  const next = recoverMissingOnboardingProgressState(
+    await classifyMissingOnboardingProgress(db, userId),
+  );
   const { data, error } = await db
     .from("user_onboarding_progress")
     .insert({

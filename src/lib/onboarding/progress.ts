@@ -1,6 +1,7 @@
 export const STOCK_TUTORIAL_VERSION = 1;
 export const STOCK_TUTORIAL_FINAL_STEP = 5;
 export const ONBOARDING_SESSION_BYPASS_KEY = `berry-street:stock-tutorial-exit:v${STOCK_TUTORIAL_VERSION}`;
+export const FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export const STOCK_TUTORIAL_STATUSES = [
   "not_started",
@@ -25,6 +26,12 @@ export type OnboardingProgressState = {
   skippedAt: string | null;
 };
 
+export type MissingOnboardingProgressClassification = {
+  profileCreatedAt: string | null;
+  hasTransactions: boolean;
+  nowMs?: number;
+};
+
 export function createSoftOnboardingState(): OnboardingProgressState {
   return {
     stockTutorialVersion: STOCK_TUTORIAL_VERSION,
@@ -37,6 +44,38 @@ export function createSoftOnboardingState(): OnboardingProgressState {
     completedAt: null,
     skippedAt: null,
   };
+}
+
+export function createFirstLoginOnboardingState(): OnboardingProgressState {
+  return {
+    ...createSoftOnboardingState(),
+    stockTutorialOffer: "first_login",
+  };
+}
+
+export function createPriorTraderOnboardingState(): OnboardingProgressState {
+  return {
+    ...createSoftOnboardingState(),
+    stockTutorialOffer: "none",
+    pageTipsDisabled: true,
+  };
+}
+
+export function recoverMissingOnboardingProgressState(
+  classification: MissingOnboardingProgressClassification | null,
+): OnboardingProgressState {
+  if (!classification) return createSoftOnboardingState();
+  if (classification.hasTransactions) return createPriorTraderOnboardingState();
+
+  const createdAtMs = Date.parse(classification.profileCreatedAt ?? "");
+  if (!Number.isFinite(createdAtMs)) return createSoftOnboardingState();
+
+  const ageMs = (classification.nowMs ?? Date.now()) - createdAtMs;
+  if (ageMs >= 0 && ageMs <= FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS) {
+    return createFirstLoginOnboardingState();
+  }
+
+  return createSoftOnboardingState();
 }
 
 export function shouldAutoOpenOnboarding(

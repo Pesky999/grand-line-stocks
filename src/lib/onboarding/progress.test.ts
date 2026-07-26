@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createSoftOnboardingState,
+  FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS,
   dismissPageTip,
   ONBOARDING_SESSION_BYPASS_KEY,
+  recoverMissingOnboardingProgressState,
   resetPageTips,
   restartStockTutorial,
   saveStockTutorialStep,
@@ -17,6 +19,7 @@ import {
 } from "./progress.ts";
 
 const now = "2026-07-25T12:00:00.000Z";
+const nowMs = Date.parse(now);
 
 test("stock tutorial transitions cover start, resume, restart, skip, and complete", () => {
   const soft = createSoftOnboardingState();
@@ -107,6 +110,92 @@ test("first-login gate fails open and respects current-session bypass", () => {
     false,
   );
   assert.equal(ONBOARDING_SESSION_BYPASS_KEY, "berry-street:stock-tutorial-exit:v1");
+});
+
+test("missing onboarding row recovery classifies genuinely new accounts as first login", () => {
+  const state = recoverMissingOnboardingProgressState({
+    profileCreatedAt: new Date(nowMs - 60 * 60 * 1000).toISOString(),
+    hasTransactions: false,
+    nowMs,
+  });
+
+  assert.equal(FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS, 24 * 60 * 60 * 1000);
+  assert.equal(state.stockTutorialStatus, "not_started");
+  assert.equal(state.stockTutorialOffer, "first_login");
+  assert.equal(state.stockTutorialLastStep, 0);
+  assert.equal(state.pageTipsDisabled, false);
+  assert.equal(shouldAutoOpenOnboarding(state, { pathname: "/", hasSessionBypass: false }), true);
+});
+
+test("missing onboarding row recovery preserves soft offer for older inactive profiles", () => {
+  const state = recoverMissingOnboardingProgressState({
+    profileCreatedAt: new Date(nowMs - FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS - 1).toISOString(),
+    hasTransactions: false,
+    nowMs,
+  });
+
+  assert.equal(state.stockTutorialStatus, "not_started");
+  assert.equal(state.stockTutorialOffer, "soft");
+  assert.equal(state.stockTutorialLastStep, 0);
+  assert.equal(state.pageTipsDisabled, false);
+  assert.equal(shouldAutoOpenOnboarding(state, { pathname: "/", hasSessionBypass: false }), false);
+});
+
+test("missing onboarding row recovery disables prompts for users with existing transactions", () => {
+  const state = recoverMissingOnboardingProgressState({
+    profileCreatedAt: new Date(nowMs - 60 * 60 * 1000).toISOString(),
+    hasTransactions: true,
+    nowMs,
+  });
+
+  assert.equal(state.stockTutorialStatus, "not_started");
+  assert.equal(state.stockTutorialOffer, "none");
+  assert.equal(state.stockTutorialLastStep, 0);
+  assert.equal(state.pageTipsDisabled, true);
+  assert.equal(shouldAutoOpenOnboarding(state, { pathname: "/", hasSessionBypass: false }), false);
+});
+
+test("missing onboarding row recovery fails open to soft when classification is unavailable", () => {
+  for (const classification of [
+    null,
+    { profileCreatedAt: null, hasTransactions: false, nowMs },
+    { profileCreatedAt: "not-a-date", hasTransactions: false, nowMs },
+  ]) {
+    const state = recoverMissingOnboardingProgressState(classification);
+
+    assert.equal(state.stockTutorialStatus, "not_started");
+    assert.equal(state.stockTutorialOffer, "soft");
+    assert.equal(state.pageTipsDisabled, false);
+    assert.equal(
+      shouldAutoOpenOnboarding(state, { pathname: "/", hasSessionBypass: false }),
+      false,
+    );
+  }
+});
+
+test("existing onboarding rows remain unchanged by normal tutorial states", () => {
+  const firstLogin = recoverMissingOnboardingProgressState({
+    profileCreatedAt: now,
+    hasTransactions: false,
+    nowMs,
+  });
+  const soft = createSoftOnboardingState();
+  const inProgress = startStockTutorial(soft, now);
+  const completed = completeStockTutorial(inProgress, now);
+  const skipped = skipStockTutorial(soft, now);
+
+  assert.deepEqual(
+    firstLogin,
+    recoverMissingOnboardingProgressState({
+      profileCreatedAt: now,
+      hasTransactions: false,
+      nowMs,
+    }),
+  );
+  assert.equal(soft.stockTutorialOffer, "soft");
+  assert.equal(inProgress.stockTutorialStatus, "in_progress");
+  assert.equal(completed.stockTutorialStatus, "completed");
+  assert.equal(skipped.stockTutorialStatus, "skipped");
 });
 
 test("page-tip transitions are versioned and replayable", () => {
