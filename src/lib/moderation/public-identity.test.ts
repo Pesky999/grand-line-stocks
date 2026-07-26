@@ -184,6 +184,55 @@ test("ordinary non-policy examples remain available when format is valid", () =>
   assert.equal(validateUsernameFormat("agent__11").ok, false);
 });
 
+test("boundary-safe substring rules allow harmless larger words", () => {
+  const embeddedSequenceRules: PublicIdentityTermRule[] = [
+    {
+      term: "pic",
+      normalizedTerm: "pic",
+      kind: "blocked",
+      category: "severe_profanity",
+      matchMode: "substring",
+      severity: 3,
+      active: true,
+    },
+    {
+      term: "stan",
+      normalizedTerm: "stan",
+      kind: "blocked",
+      category: "racial_ethnic_slur",
+      matchMode: "compact_substring",
+      severity: 3,
+      active: true,
+    },
+    {
+      term: "thor",
+      normalizedTerm: "thor",
+      kind: "blocked",
+      category: "severe_profanity",
+      matchMode: "compact_substring",
+      severity: 3,
+      active: true,
+    },
+    {
+      term: "reef",
+      normalizedTerm: "reef",
+      kind: "blocked",
+      category: "severe_profanity",
+      matchMode: "compact_substring",
+      severity: 3,
+      active: true,
+    },
+  ];
+
+  for (const value of ["spice", "pakistan", "scunthorpe", "reefer"]) {
+    assert.equal(evaluatePublicIdentity(value, "username", embeddedSequenceRules).allowed, true);
+    assert.equal(
+      evaluatePublicIdentity(`${value} captain`, "display_name", embeddedSequenceRules).allowed,
+      true,
+    );
+  }
+});
+
 test("word rules block separated terms without overmatching inside unrelated words", () => {
   const blocked = evaluatePublicIdentity("good badword user", "display_name", rules);
   const allowed = evaluatePublicIdentity("embadworded", "display_name", rules);
@@ -204,6 +253,43 @@ test("compact substring rules catch limited homoglyph substitutions for active c
 
   assert.equal(result.allowed, false);
   if (!result.allowed) assert.equal(result.category, "severe_profanity");
+});
+
+test("boundary-safe blocking still catches complete cuss and slur fixtures", () => {
+  const boundaryRules: PublicIdentityTermRule[] = [
+    {
+      term: "blockedcuss",
+      normalizedTerm: "blockedcuss",
+      kind: "blocked",
+      category: "severe_profanity",
+      matchMode: "substring",
+      severity: 3,
+      active: true,
+    },
+    {
+      term: "blockedslur",
+      normalizedTerm: "blockedslur",
+      kind: "blocked",
+      category: "racial_ethnic_slur",
+      matchMode: "compact_substring",
+      severity: 3,
+      active: true,
+    },
+  ];
+
+  assert.equal(evaluatePublicIdentity("blockedcuss", "username", boundaryRules).allowed, false);
+  assert.equal(
+    evaluatePublicIdentity("quiet blockedslur captain", "display_name", boundaryRules).allowed,
+    false,
+  );
+  assert.equal(
+    evaluatePublicIdentity("quiet bl0cked-slur captain", "display_name", boundaryRules).allowed,
+    false,
+  );
+  assert.equal(
+    evaluatePublicIdentity("safe blockedslurry captain", "display_name", boundaryRules).allowed,
+    true,
+  );
 });
 
 test("allow rules apply only to complete normalized identities", () => {

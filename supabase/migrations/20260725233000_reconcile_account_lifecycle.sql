@@ -129,8 +129,41 @@ BEGIN
     AND (
       (terms.match_mode = 'exact' AND terms.normalized_term IN (v_normalized, v_words, v_compact))
       OR (terms.match_mode = 'word' AND terms.normalized_term = ANY (regexp_split_to_array(v_words, '[[:space:]]+')))
-      OR (terms.match_mode = 'substring' AND (v_normalized LIKE '%' || terms.normalized_term || '%' OR v_words LIKE '%' || terms.normalized_term || '%' OR v_reduced LIKE '%' || terms.normalized_term || '%'))
-      OR (terms.match_mode = 'compact_substring' AND (v_compact LIKE '%' || terms.normalized_term || '%' OR v_reduced_compact LIKE '%' || terms.normalized_term || '%'))
+      OR (
+        terms.match_mode IN ('substring', 'compact_substring')
+        AND terms.normalized_term = ANY (
+          ARRAY(
+            SELECT DISTINCT candidates.candidate
+            FROM (
+              SELECT unnest(ARRAY[
+                v_normalized,
+                v_words,
+                v_compact,
+                v_reduced,
+                v_reduced_compact
+              ]) AS candidate
+              UNION ALL
+              SELECT unnest(regexp_split_to_array(v_words, '[[:space:]]+')) AS candidate
+              UNION ALL
+              SELECT unnest(regexp_split_to_array(v_reduced, '[[:space:]]+')) AS candidate
+              UNION ALL
+              SELECT public.identity_moderation_compact(chunks.chunk) AS candidate
+              FROM regexp_split_to_table(btrim(v_value), '[[:space:]]+') AS chunks(chunk)
+              UNION ALL
+              SELECT regexp_replace(
+                public.identity_moderation_reduce_repeats(
+                  public.identity_moderation_compact(chunks.chunk)
+                ),
+                '[^[:alnum:]]+',
+                '',
+                'g'
+              ) AS candidate
+              FROM regexp_split_to_table(btrim(v_value), '[[:space:]]+') AS chunks(chunk)
+            ) AS candidates
+            WHERE candidates.candidate <> ''
+          )
+        )
+      )
     )
   ORDER BY terms.severity DESC, terms.created_at ASC
   LIMIT 1;

@@ -513,6 +513,26 @@ test("final reconciliation enforces only cuss-word and slur categories", () => {
   }
 });
 
+test("final reconciliation matches active blocked terms only as boundary-safe tokens", () => {
+  const evaluateFunction = sourceBetween(
+    reconciliationMigration,
+    "CREATE OR REPLACE FUNCTION public.evaluate_public_identity",
+    "REVOKE EXECUTE ON FUNCTION public.identity_username_legacy_format_valid",
+  );
+
+  assert.doesNotMatch(evaluateFunction, /LIKE\s+'%'\s*\|\|\s*terms\.normalized_term/);
+  assert.doesNotMatch(evaluateFunction, /terms\.normalized_term\s*\|\|\s*'%'/);
+  assert.match(evaluateFunction, /terms\.match_mode IN \('substring', 'compact_substring'\)/);
+  assert.match(evaluateFunction, /terms\.normalized_term = ANY \(/);
+  assert.match(evaluateFunction, /SELECT DISTINCT candidates\.candidate/);
+  assert.match(evaluateFunction, /regexp_split_to_table\(btrim\(v_value\), '\[\[:space:\]\]\+'\)/);
+  assert.match(evaluateFunction, /public\.identity_moderation_compact\(chunks\.chunk\)/);
+  assert.match(
+    evaluateFunction,
+    /public\.identity_moderation_reduce_repeats\(\s+public\.identity_moderation_compact\(chunks\.chunk\)\s+\)/,
+  );
+});
+
 test("account lifecycle reconciliation fixes username underscores and qualified moderation columns", () => {
   const legacyFunction = sourceBetween(
     reconciliationMigration,
