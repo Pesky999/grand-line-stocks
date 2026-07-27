@@ -14,6 +14,9 @@ const legacyRouteSource = existsSync(legacyRoutePath) ? readFileSync(legacyRoute
 const authenticatedRouteSource = read("src/routes/_authenticated/route.tsx");
 const terminalShellSource = read("src/components/TerminalShell.tsx");
 const profileSource = read("src/routes/_authenticated/profile.tsx");
+const publicProfileSource = read("src/routes/u.$username.tsx");
+const leaderboardsSource = read("src/routes/leaderboards.tsx");
+const characterRouteSource = read("src/routes/character.$slug.tsx");
 const routeTreeSource = read("src/routeTree.gen.ts");
 const legendSource = read("src/lib/legendary.ts");
 const progressSource = read("src/lib/legacy-log/progress.ts");
@@ -61,6 +64,36 @@ test("profile Prestige section keeps public profile link and adds Legacy Log lin
   assert.match(profileSource, /to="\/u\/\$username"/);
   assert.match(profileSource, /view public profile/);
   assert.match(profileSource, /Achievements \(\{ach\.length\}\)/);
+  assert.match(profileSource, /const publicProfile = pub\.data\?\.found \? pub\.data : null/);
+  assert.doesNotMatch(profileSource, /pub\.data\?\.stats|pub\.data\?\.achievements/);
+});
+
+test("public profile route shows a contained not-found state for deleted or missing users", () => {
+  assert.match(publicProfileSource, /errorComponent: \(\) => <InvestorNotFound \/>/);
+  assert.match(publicProfileSource, /notFoundComponent: \(\) => <InvestorNotFound \/>/);
+  assert.match(publicProfileSource, /INVESTOR NOT FOUND/);
+  assert.match(publicProfileSource, /to="\/leaderboards"/);
+  assert.match(publicProfileSource, /Back to Ranks/);
+  assert.match(publicProfileSource, /retry: false/);
+  assert.match(publicProfileSource, /q\.isError \|\| !q\.data \|\| !q\.data\.found/);
+  assert.doesNotMatch(publicProfileSource, /throw notFound|import \{[^}]*notFound/);
+});
+
+test("public profile does not display private cash or holdings when public RLS cannot read them", () => {
+  assert.match(publicProfileSource, /d\.cash != null &&/);
+  assert.match(publicProfileSource, /d\.equity != null &&/);
+  assert.match(publicProfileSource, /d\.holdings\.length > 0 &&/);
+  assert.doesNotMatch(publicProfileSource, /No open positions\./);
+});
+
+test("public rank and profile routes do not link ghost deleted users as anon", () => {
+  for (const [name, source] of [
+    ["public profile", publicProfileSource],
+    ["leaderboards", leaderboardsSource],
+    ["character page", characterRouteSource],
+  ] as const) {
+    assert.doesNotMatch(source, /\/u\/anon|username:\s*"anon"|\?\?\s*"anon"/, name);
+  }
 });
 
 test("authenticated layout records daily activity without blocking navigation", () => {

@@ -169,8 +169,9 @@ function Profile() {
   const marketValue = data.holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const netWorth = data.berries + marketValue;
   const joined = profile?.created_at ? new Date(profile.created_at) : null;
-  const stats = (pub.data?.stats ?? {}) as ProfileStats;
-  const ach = (pub.data?.achievements ?? []) as ProfileAchievement[];
+  const publicProfile = pub.data?.found ? pub.data : null;
+  const stats = (publicProfile?.stats ?? {}) as ProfileStats;
+  const ach = (publicProfile?.achievements ?? []) as ProfileAchievement[];
   const title = stats.title ?? "rookie_pirate";
   const specialization = stats.specialization ?? "generalist";
   const readiness = deletionReadiness.data ?? null;
@@ -426,7 +427,7 @@ function Profile() {
                 Rank · Best
               </div>
               <div className="mt-1 tabular">
-                {pub.data?.rank ? `#${pub.data.rank}` : "—"}
+                {publicProfile?.rank ? `#${publicProfile.rank}` : "—"}
                 <span className="ml-2 text-muted-foreground">
                   best #{stats.highest_rank ?? "—"}
                 </span>

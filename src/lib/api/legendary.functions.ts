@@ -3,12 +3,9 @@ import { z } from "zod";
 import { getPublicSupabaseClient } from "@/integrations/supabase/public.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-async function admin() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return supabaseAdmin;
-}
-
 export const LEGACY_LOG_QUERY_KEY = ["legacy-log"] as const;
+
+const PUBLIC_PLAYER_USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_]{1,18}[a-z0-9])$/;
 
 const progressionResultSchema = z
   .object({
@@ -36,14 +33,12 @@ type PublicLeaderboardRow = {
   title: string | null;
 };
 
-type PublicProfileHoldingRow = {
-  shares: number | string;
-  avg_cost: number | string;
-  characters: {
-    slug: string;
-    name: string;
-    current_price: number | string;
-  };
+type PublicProfileVisibleHolding = {
+  slug: string;
+  name: string;
+  shares: number;
+  avgCost: number;
+  currentPrice: number;
 };
 
 type PublicCharacterTopHolderRow = {
@@ -52,6 +47,36 @@ type PublicCharacterTopHolderRow = {
   value: number | string;
   username: string | null;
   display_name: string | null;
+};
+
+type PublicProfileRow = {
+  id: string;
+  username: string;
+  display_name: string | null;
+  created_at: string;
+};
+
+type PublicProfileAchievementRow = {
+  unlocked_at: string;
+  achievements: {
+    code: string;
+    name: string;
+    description: string;
+    tier: string;
+    icon: string | null;
+  } | null;
+};
+
+type PublicProfileSnapshotRow = {
+  snapshot_date: string;
+  net_worth: number | string | null;
+  return_pct: number | string | null;
+};
+
+type PublicProfileRankRow = {
+  rank: number | null;
+  prev_rank: number | null;
+  value: number | string | null;
 };
 
 export const BOARD_KEYS = [
@@ -64,6 +89,28 @@ export const BOARD_KEYS = [
   "most_accurate",
 ] as const;
 export type BoardKey = (typeof BOARD_KEYS)[number] | string;
+
+export function isPublicPlayerUsername(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value !== "anon" &&
+    !value.includes("__") &&
+    PUBLIC_PLAYER_USERNAME_PATTERN.test(value)
+  );
+}
+
+function hasPublicPlayerUsername<T extends { username: string | null }>(
+  row: T,
+): row is T & { username: string } {
+  return isPublicPlayerUsername(row.username);
+}
+
+function logPublicProfileReadFailure(stage: string, error: { code?: string | null } | null) {
+  console.warn("[Public profile]", {
+    stage,
+    code: error?.code ?? "PUBLIC_PROFILE_READ_FAILED",
+  });
+}
 
 export const listLeaderboard = createServerFn({ method: "GET" })
   .inputValidator((d) =>
@@ -83,11 +130,11 @@ export const listLeaderboard = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return ((rows ?? []) as PublicLeaderboardRow[]).map((r) => ({
+    return ((rows ?? []) as PublicLeaderboardRow[]).filter(hasPublicPlayerUsername).map((r) => ({
       rank: r.rank,
       prev_rank: r.prev_rank,
       value: Number(r.value),
-      username: r.username ?? "anon",
+      username: r.username,
       display_name: r.display_name ?? null,
       title: r.title ?? "rookie_pirate",
     }));
@@ -96,70 +143,78 @@ export const listLeaderboard = createServerFn({ method: "GET" })
 export const getPublicProfile = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ username: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const db = await admin();
-    const { data: profile } = await db
+    const db = getPublicSupabaseClient();
+    if (!isPublicPlayerUsername(data.username)) return { found: false } as const;
+
+    const { data: profile, error: profileError } = await db
       .from("profiles")
       .select("id,username,display_name,created_at")
       .eq("username", data.username)
       .maybeSingle();
-    if (!profile) throw new Error("Investor not found");
-    const [
-      { data: stats },
-      { data: wallet },
-      { data: achievements },
-      { data: snapshots },
-      { data: holdings },
-      { data: rankRow },
-    ] = await Promise.all([
-      db.from("user_stats").select("*").eq("user_id", profile.id).maybeSingle(),
-      db.from("user_wallets").select("berries").eq("user_id", profile.id).maybeSingle(),
+
+    if (profileError) {
+      logPublicProfileReadFailure("profile_read", profileError);
+      return { found: false } as const;
+    }
+
+    if (!profile || !isPublicPlayerUsername(profile.username)) return { found: false } as const;
+    const publicProfile = profile as PublicProfileRow;
+
+    const [statsResult, achievementsResult, snapshotsResult, rankResult] = await Promise.all([
+      db.from("user_stats").select("*").eq("user_id", publicProfile.id).maybeSingle(),
       db
         .from("user_achievements")
         .select("unlocked_at,achievements(code,name,description,tier,icon)")
-        .eq("user_id", profile.id)
+        .eq("user_id", publicProfile.id)
         .order("unlocked_at", { ascending: false }),
       db
         .from("net_worth_snapshots")
         .select("snapshot_date,net_worth,return_pct")
-        .eq("user_id", profile.id)
+        .eq("user_id", publicProfile.id)
         .order("snapshot_date", { ascending: true })
         .limit(120),
       db
-        .from("user_holdings")
-        .select("shares,avg_cost,characters(slug,name,current_price)")
-        .eq("user_id", profile.id),
-      db
         .from("leaderboard_cache")
-        .select("rank,prev_rank")
+        .select("rank,prev_rank,value")
         .eq("board_key", "net_worth_all_time")
-        .eq("user_id", profile.id)
+        .eq("user_id", publicProfile.id)
         .maybeSingle(),
     ]);
 
-    const profileHoldings = (holdings ?? []) as PublicProfileHoldingRow[];
-    const equity = profileHoldings.reduce(
-      (s, h) => s + Number(h.shares) * Number(h.characters.current_price),
-      0,
-    );
-    const cash = Number(wallet?.berries ?? 0);
+    for (const [stage, error] of [
+      ["stats_read", statsResult.error],
+      ["achievements_read", achievementsResult.error],
+      ["snapshots_read", snapshotsResult.error],
+      ["rank_read", rankResult.error],
+    ] as const) {
+      if (error) logPublicProfileReadFailure(stage, error);
+    }
+
+    const stats = statsResult.error ? null : statsResult.data;
+    const achievements = achievementsResult.error
+      ? []
+      : ((achievementsResult.data ?? []) as PublicProfileAchievementRow[]).filter(
+          (entry) => entry.achievements,
+        );
+    const snapshots = snapshotsResult.error
+      ? []
+      : ((snapshotsResult.data ?? []) as PublicProfileSnapshotRow[]);
+    const rankRow = rankResult.error ? null : (rankResult.data as PublicProfileRankRow | null);
+    const netWorth = Number(stats?.current_net_worth ?? rankRow?.value ?? 0);
+
     return {
-      profile,
+      found: true,
+      profile: publicProfile,
       stats,
-      cash,
-      equity,
-      net_worth: cash + equity,
-      achievements: achievements ?? [],
-      snapshots: snapshots ?? [],
-      holdings: profileHoldings.map((h) => ({
-        slug: h.characters.slug,
-        name: h.characters.name,
-        shares: Number(h.shares),
-        avgCost: Number(h.avg_cost),
-        currentPrice: Number(h.characters.current_price),
-      })),
+      cash: null,
+      equity: null,
+      net_worth: netWorth,
+      achievements,
+      snapshots,
+      holdings: [] as PublicProfileVisibleHolding[],
       rank: rankRow?.rank ?? null,
       prev_rank: rankRow?.prev_rank ?? null,
-    };
+    } as const;
   });
 
 export const listLegacy = createServerFn({ method: "GET" })
@@ -182,11 +237,11 @@ export const listLegacy = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return rows ?? [];
+    return (rows ?? []).filter(hasPublicPlayerUsername);
   });
 
 export const listAchievementsCatalog = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await admin();
+  const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("achievements")
     .select("code,name,description,tier,category,icon,reputation_reward")
@@ -206,7 +261,7 @@ export const recordMyDailyActivity = createServerFn({ method: "POST" })
 export const getMyLegacyLog = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
+    const db = context.supabase;
     const userId = context.userId;
 
     const { data: profile, error: profileError } = await db
@@ -302,10 +357,17 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       shares: number | string;
       created_at: string;
       characters: {
+        slug: string;
         category: string;
       } | null;
     }[];
-    const characterIds = [...new Set(positiveHoldings.map((holding) => holding.character_id))];
+    const characterSlugs = [
+      ...new Set(
+        positiveHoldings
+          .map((holding) => holding.characters?.slug)
+          .filter((slug): slug is string => Boolean(slug)),
+      ),
+    ];
     const heldCategories = new Set(
       positiveHoldings
         .map((holding) => holding.characters?.category)
@@ -313,23 +375,34 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
     );
     let largestHolderEligible = false;
 
-    if (characterIds.length > 0) {
-      const { data: holderRows, error } = await db
-        .from("user_holdings")
-        .select("character_id,user_id,shares")
-        .in("character_id", characterIds)
-        .gt("shares", 0);
-      if (error) throw error;
+    if (profile?.username && characterSlugs.length > 0) {
+      const topHolderResults = await Promise.all(
+        characterSlugs.map((slug) =>
+          db.rpc("get_public_character_top_holders", {
+            _slug: slug,
+            _limit: 1,
+            _offset: 0,
+          }),
+        ),
+      );
+
+      for (const { error } of topHolderResults) {
+        if (error) throw error;
+      }
+
+      const topSharesBySlug = new Map<string, number>();
+      topHolderResults.forEach(({ data }, index) => {
+        const topRow = ((data ?? []) as PublicCharacterTopHolderRow[])[0];
+        if (topRow) topSharesBySlug.set(characterSlugs[index], Number(topRow.shares));
+      });
 
       largestHolderEligible = positiveHoldings.some((holding) => {
-        const userShares = Number(holding.shares);
-        const maxShares = Math.max(
-          ...(holderRows ?? [])
-            .filter((row) => row.character_id === holding.character_id)
-            .map((row) => Number(row.shares)),
-          0,
+        const slug = holding.characters?.slug;
+        if (!slug) return false;
+        const topShares = topSharesBySlug.get(slug);
+        return (
+          topShares != null && Number(holding.shares) > 0 && Number(holding.shares) >= topShares
         );
-        return userShares > 0 && userShares >= maxShares;
       });
     }
 
@@ -447,27 +520,30 @@ export const listCharacterTopHolders = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return ((rows ?? []) as PublicCharacterTopHolderRow[]).map((r) => ({
-      rank: r.rank,
-      shares: Number(r.shares),
-      value: Number(r.value),
-      username: r.username ?? "anon",
-      display_name: r.display_name ?? null,
-    }));
+    return ((rows ?? []) as PublicCharacterTopHolderRow[])
+      .filter(hasPublicPlayerUsername)
+      .map((r) => ({
+        rank: r.rank,
+        shares: Number(r.shares),
+        value: Number(r.value),
+        username: r.username,
+        display_name: r.display_name ?? null,
+      }));
   });
 
 export const listClimbersAndFallers = createServerFn({ method: "GET" }).handler(async () => {
   const db = getPublicSupabaseClient();
   const { data: rows, error } = await db.rpc("get_public_leaderboard_movers", { _limit: 5 });
   if (error) throw error;
-  const climbers = (rows ?? []).filter((r) => r.direction === "climber");
-  const fallers = (rows ?? []).filter((r) => r.direction === "faller");
+  const publicRows = (rows ?? []).filter(hasPublicPlayerUsername);
+  const climbers = publicRows.filter((r) => r.direction === "climber");
+  const fallers = publicRows.filter((r) => r.direction === "faller");
   return {
     climbers: climbers.map((r) => ({
-      username: r.username ?? "anon",
+      username: r.username,
       rank: r.rank,
       delta: r.delta,
     })),
-    fallers: fallers.map((r) => ({ username: r.username ?? "anon", rank: r.rank, delta: r.delta })),
+    fallers: fallers.map((r) => ({ username: r.username, rank: r.rank, delta: r.delta })),
   };
 });

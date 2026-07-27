@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getPublicProfile, listLegacy } from "@/lib/api/legendary.functions";
 import { AchievementMedallion } from "@/components/AchievementMedallion";
@@ -17,16 +17,8 @@ export const Route = createFileRoute("/u/$username")({
       },
     ],
   }),
-  errorComponent: ({ error }) => (
-    <TerminalShell>
-      <div className="p-8 text-sm text-muted-foreground">{error.message}</div>
-    </TerminalShell>
-  ),
-  notFoundComponent: () => (
-    <TerminalShell>
-      <div className="p-8 text-sm text-muted-foreground">Investor not found.</div>
-    </TerminalShell>
-  ),
+  errorComponent: () => <InvestorNotFound />,
+  notFoundComponent: () => <InvestorNotFound />,
   component: PublicProfile,
 });
 
@@ -72,6 +64,28 @@ type PublicLegacyRecord = {
   description: string;
 };
 
+function InvestorNotFound() {
+  return (
+    <TerminalShell>
+      <div className="mx-auto max-w-xl space-y-4 p-8 text-center">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Public profile unavailable
+        </div>
+        <h1 className="text-2xl font-bold tracking-widest text-primary">INVESTOR NOT FOUND</h1>
+        <p className="text-sm text-muted-foreground">
+          This player profile may have been deleted, renamed, or never existed.
+        </p>
+        <Link
+          to="/leaderboards"
+          className="inline-block border border-primary px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground"
+        >
+          Back to Ranks
+        </Link>
+      </div>
+    </TerminalShell>
+  );
+}
+
 function PublicProfile() {
   const { username } = Route.useParams();
   const q = useQuery({
@@ -93,8 +107,8 @@ function PublicProfile() {
       </TerminalShell>
     );
   }
-  if (q.isError || !q.data) {
-    throw notFound();
+  if (q.isError || !q.data || !q.data.found) {
+    return <InvestorNotFound />;
   }
   const d = q.data;
   const s = (d.stats ?? {}) as PublicProfileStats;
@@ -135,8 +149,8 @@ function PublicProfile() {
 
       <div className="grid gap-px border-b border-border bg-border md:grid-cols-4">
         <Stat label="Net Worth" value={`฿${formatBerries(d.net_worth)}`} tone="accent" />
-        <Stat label="Cash" value={`฿${formatBerries(d.cash)}`} />
-        <Stat label="Portfolio Value" value={`฿${formatBerries(d.equity)}`} />
+        {d.cash != null && <Stat label="Cash" value={`฿${formatBerries(d.cash)}`} />}
+        {d.equity != null && <Stat label="Portfolio Value" value={`฿${formatBerries(d.equity)}`} />}
         <Stat
           label="Total Return"
           value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`}
@@ -204,11 +218,9 @@ function PublicProfile() {
             )}
           </div>
 
-          <div className="terminal-panel">
-            <div className="terminal-header">Current Positions ({d.holdings.length})</div>
-            {d.holdings.length === 0 ? (
-              <div className="p-4 text-xs text-muted-foreground">No open positions.</div>
-            ) : (
+          {d.holdings.length > 0 && (
+            <div className="terminal-panel">
+              <div className="terminal-header">Current Positions ({d.holdings.length})</div>
               <ul className="divide-y divide-border text-xs">
                 {d.holdings.map((h) => (
                   <li key={h.slug} className="flex items-center justify-between px-3 py-2">
@@ -227,8 +239,8 @@ function PublicProfile() {
                   </li>
                 ))}
               </ul>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
         <aside className="space-y-4">

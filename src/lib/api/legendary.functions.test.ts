@@ -26,13 +26,71 @@ test("recordMyDailyActivity requires auth and accepts no user id", () => {
   assert.match(activity, /recordMyDailyActivityResultSchema\.parse\(data\)/);
 });
 
+test("public profile reads use the public client and never require service-role access", () => {
+  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+
+  assert.match(publicProfile, /const db = getPublicSupabaseClient\(\)/);
+  assert.doesNotMatch(publicProfile, /await admin\(\)|supabaseAdmin|client\.server/);
+  assert.match(publicProfile, /\.from\("profiles"\)/);
+  assert.match(publicProfile, /\.from\("user_stats"\)/);
+  assert.match(publicProfile, /\.from\("user_achievements"\)/);
+  assert.match(publicProfile, /\.from\("net_worth_snapshots"\)/);
+  assert.match(publicProfile, /\.from\("leaderboard_cache"\)/);
+  assert.doesNotMatch(publicProfile, /\.from\("user_wallets"\)/);
+  assert.doesNotMatch(publicProfile, /\.from\("user_holdings"\)/);
+  assert.match(publicProfile, /cash: null/);
+  assert.match(publicProfile, /equity: null/);
+  assert.match(publicProfile, /holdings: \[\] as PublicProfileVisibleHolding\[\]/);
+});
+
+test("public profile failures and deleted usernames return a contained not-found result", () => {
+  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+
+  assert.match(publicProfile, /if \(!isPublicPlayerUsername\(data\.username\)\)/);
+  assert.match(publicProfile, /return \{ found: false \} as const/);
+  assert.match(publicProfile, /logPublicProfileReadFailure\("profile_read", profileError\)/);
+  assert.doesNotMatch(publicProfile, /throw notFound|throw profileError|throw new Error/);
+});
+
+test("public leaderboard and holder APIs filter ghost usernames instead of linking anon", () => {
+  const leaderboard = between("export const listLeaderboard", "export const getPublicProfile");
+  const legacy = between("export const listLegacy", "export const listAchievementsCatalog");
+  const topHolders = between(
+    "export const listCharacterTopHolders",
+    "export const listClimbersAndFallers",
+  );
+  const movers = source.slice(source.indexOf("export const listClimbersAndFallers"));
+
+  for (const [name, block] of [
+    ["leaderboard", leaderboard],
+    ["legacy", legacy],
+    ["top holders", topHolders],
+    ["movers", movers],
+  ] as const) {
+    assert.match(block, /filter\(hasPublicPlayerUsername\)/, `${name} should filter usernames`);
+    assert.doesNotMatch(block, /\?\? "anon"|"anon"/, `${name} should not synthesize anon`);
+  }
+});
+
+test("public achievement catalog no longer needs the admin client", () => {
+  const catalog = between(
+    "export const listAchievementsCatalog",
+    "export const recordMyDailyActivity",
+  );
+
+  assert.match(catalog, /const db = getPublicSupabaseClient\(\)/);
+  assert.doesNotMatch(catalog, /await admin\(\)|supabaseAdmin|client\.server/);
+});
+
 test("getMyLegacyLog requires auth and is read-only", () => {
   const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
 
   assert.match(legacyLog, /createServerFn\(\{ method: "GET" \}\)/);
   assert.match(legacyLog, /middleware\(\[requireSupabaseAuth\]\)/);
+  assert.match(legacyLog, /const db = context\.supabase/);
   assert.match(legacyLog, /const userId = context\.userId/);
-  assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
+  assert.doesNotMatch(legacyLog, /await admin\(\)|supabaseAdmin|client\.server/);
+  assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
   assert.doesNotMatch(legacyLog, /record_my_daily_activity|refresh_user_progression/);
 });
 
@@ -90,7 +148,9 @@ test("Legacy Log first-event and largest-holder eligibility are returned as bool
   assert.match(legacyLog, /\.gte\("published_at", profile\.created_at\)/);
   assert.match(legacyLog, /\.lte\("published_at", new Date\(\)\.toISOString\(\)\)/);
   assert.match(legacyLog, /firstEventEligible: \(firstEvent \?\? \[\]\)\.length > 0/);
-  assert.match(legacyLog, /largestHolderEligible = positiveHoldings\.some/);
+  assert.match(legacyLog, /\.rpc\("get_public_character_top_holders"/);
+  assert.match(legacyLog, /const topSharesBySlug = new Map<string, number>\(\)/);
+  assert.match(legacyLog, /Number\(holding\.shares\) >= topShares/);
   assert.doesNotMatch(legacyLog, /return \{[\s\S]*holderRows[\s\S]*\}/);
 });
 
@@ -117,5 +177,6 @@ test("Legacy Log reads new achievement expansion data sources without writes", (
     legacyLog,
     /Number\(submission\.score\) === Number\(submission\.daily_crew_missions\?\.max_score \?\? 100\)/,
   );
-  assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
+  assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
+  assert.doesNotMatch(legacyLog, /record_my_daily_activity|refresh_user_progression/);
 });
