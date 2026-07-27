@@ -8,14 +8,14 @@ import {
   STOCK_TUTORIAL_VERSION,
   completeStockTutorial,
   dismissPageTip,
-  recoverMissingOnboardingProgressState,
+  createFirstLoginOnboardingState,
+  promoteUntouchedOnboardingState,
   resetPageTips,
   restartStockTutorial,
   saveStockTutorialStep,
   skipAllPageTips,
   skipStockTutorial,
   startStockTutorial,
-  type MissingOnboardingProgressClassification,
   type OnboardingProgressState,
   type StockTutorialStatus,
 } from "@/lib/onboarding/progress";
@@ -67,11 +67,6 @@ const pageTipIdSchema = z.enum([
   "profile.overview",
 ]);
 const pageTipVersionSchema = z.literal(PAGE_TIP_VERSION);
-const profileCreatedAtRowSchema = z
-  .object({
-    created_at: z.string().nullable(),
-  })
-  .strict();
 
 function tradeEventSchema(eventName: "first_live_trade_started" | "first_live_trade_completed") {
   return z
@@ -356,62 +351,69 @@ async function readOnboardingProgress(db: OnboardingDb, userId: string) {
   return data ? normalizeProgressRow(data) : null;
 }
 
-async function classifyMissingOnboardingProgress(
+async function promoteOnboardingProgressIfUntouched(
   db: OnboardingDb,
   userId: string,
-): Promise<MissingOnboardingProgressClassification | null> {
+  current: OnboardingProgressState,
+) {
+  const next = promoteUntouchedOnboardingState(current);
+  if (next === current) return current;
+
+  const { data, error } = await db
+    .from("user_onboarding_progress")
+    .update({
+      stock_tutorial_offer: next.stockTutorialOffer,
+      page_tips_disabled: next.pageTipsDisabled,
+    })
+    .eq("user_id", userId)
+    .eq("stock_tutorial_status", "not_started")
+    .eq("stock_tutorial_last_step", 0)
+    .in("stock_tutorial_offer", ["soft", "none"])
+    .is("started_at", null)
+    .is("completed_at", null)
+    .is("skipped_at", null)
+    .select(
+      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
+    )
+    .maybeSingle();
+
+  if (error) {
+    logOnboardingFailure(
+      "promote_untouched_progress",
+      error.code ?? "ONBOARDING_PROGRESS_PROMOTION_FAILED",
+    );
+    try {
+      const latest = await readOnboardingProgress(db, userId);
+      if (latest) return latest;
+    } catch {
+      logOnboardingFailure(
+        "promote_untouched_progress_recheck",
+        "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
+      );
+    }
+    return next;
+  }
+
+  if (data) return normalizeProgressRow(data);
+
   try {
-    const { data: profile, error: profileError } = await db
-      .from("profiles")
-      .select("created_at")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (profileError) {
-      logOnboardingFailure(
-        "missing_progress_profile_read",
-        profileError.code ?? "ONBOARDING_PROFILE_READ_FAILED",
-      );
-      return null;
-    }
-
-    const parsedProfile = profileCreatedAtRowSchema.safeParse(profile);
-    if (!parsedProfile.success || !parsedProfile.data.created_at) return null;
-
-    const { data: transactions, error: transactionsError } = await db
-      .from("transactions")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(1);
-
-    if (transactionsError) {
-      logOnboardingFailure(
-        "missing_progress_transaction_read",
-        transactionsError.code ?? "ONBOARDING_TRANSACTION_READ_FAILED",
-      );
-      return null;
-    }
-
-    return {
-      profileCreatedAt: parsedProfile.data.created_at,
-      hasTransactions: (transactions ?? []).length > 0,
-    };
+    const latest = await readOnboardingProgress(db, userId);
+    if (latest) return latest;
   } catch {
     logOnboardingFailure(
-      "missing_progress_classification",
-      "ONBOARDING_PROGRESS_CLASSIFICATION_FAILED",
+      "promote_untouched_progress_recheck",
+      "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
     );
-    return null;
   }
+
+  return next;
 }
 
 async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
   const existing = await readOnboardingProgress(db, userId);
-  if (existing) return existing;
+  if (existing) return promoteOnboardingProgressIfUntouched(db, userId, existing);
 
-  const next = recoverMissingOnboardingProgressState(
-    await classifyMissingOnboardingProgress(db, userId),
-  );
+  const next = createFirstLoginOnboardingState();
   const { data, error } = await db
     .from("user_onboarding_progress")
     .insert({
@@ -425,10 +427,21 @@ async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
 
   if (error) {
     if (error.code === "23505") {
-      const raced = await readOnboardingProgress(db, userId);
-      if (raced) return raced;
+      try {
+        const raced = await readOnboardingProgress(db, userId);
+        if (raced) return promoteOnboardingProgressIfUntouched(db, userId, raced);
+      } catch {
+        logOnboardingFailure(
+          "create_missing_progress_recheck",
+          "ONBOARDING_PROGRESS_CREATE_RECHECK_FAILED",
+        );
+      }
     }
-    throw error;
+    logOnboardingFailure(
+      "create_missing_progress",
+      error.code ?? "ONBOARDING_PROGRESS_CREATE_FAILED",
+    );
+    return next;
   }
 
   return normalizeProgressRow(data);

@@ -57,13 +57,17 @@ test("onboarding writes use the trusted server client and strict state transitio
   assert.match(apiSource, /async function admin\(\)/);
   assert.match(apiSource, /supabaseAdmin/);
   assert.match(apiSource, /ensureOnboardingProgress/);
-  assert.match(apiSource, /recoverMissingOnboardingProgressState/);
+  assert.match(apiSource, /createFirstLoginOnboardingState/);
+  assert.match(apiSource, /promoteUntouchedOnboardingState/);
   assert.match(ensureProgress, /const existing = await readOnboardingProgress\(db, userId\)/);
-  assert.match(ensureProgress, /if \(existing\) return existing/);
+  assert.match(
+    ensureProgress,
+    /if \(existing\) return promoteOnboardingProgressIfUntouched\(db, userId, existing\)/,
+  );
   assert.ok(
-    ensureProgress.indexOf("if (existing) return existing") <
-      ensureProgress.indexOf("classifyMissingOnboardingProgress"),
-    "existing progress rows should return before missing-row recovery classification",
+    ensureProgress.indexOf("if (existing) return promoteOnboardingProgressIfUntouched") <
+      ensureProgress.indexOf("const next = createFirstLoginOnboardingState()"),
+    "existing progress rows should be considered before missing-row creation",
   );
   assert.match(apiSource, /startStockTutorial/);
   assert.match(apiSource, /restartStockTutorial/);
@@ -75,10 +79,10 @@ test("onboarding writes use the trusted server client and strict state transitio
   assert.match(apiSource, /resetPageTips/);
 });
 
-test("missing progress recovery classifies profile age and transaction state fail-open", () => {
-  const classifier = sourceBetween(
+test("missing progress recovery creates first-login without profile or trade classification", () => {
+  const promote = sourceBetween(
     apiSource,
-    "async function classifyMissingOnboardingProgress",
+    "async function promoteOnboardingProgressIfUntouched",
     "async function ensureOnboardingProgress",
   );
   const ensureProgress = sourceBetween(
@@ -87,19 +91,25 @@ test("missing progress recovery classifies profile age and transaction state fai
     "async function updateOnboardingProgress",
   );
 
-  assert.match(classifier, /\.from\("profiles"\)[\s\S]*\.select\("created_at"\)/);
-  assert.match(classifier, /\.eq\("id", userId\)[\s\S]*\.maybeSingle\(\)/);
-  assert.match(classifier, /profileCreatedAtRowSchema\.safeParse\(profile\)/);
-  assert.match(classifier, /\.from\("transactions"\)[\s\S]*\.select\("id"\)/);
-  assert.match(classifier, /\.eq\("user_id", userId\)[\s\S]*\.limit\(1\)/);
-  assert.match(classifier, /hasTransactions: \(transactions \?\? \[\]\)\.length > 0/);
-  assert.match(classifier, /return null/);
-  assert.match(classifier, /missing_progress_profile_read/);
-  assert.match(classifier, /missing_progress_transaction_read/);
-  assert.match(classifier, /missing_progress_classification/);
-  assert.match(ensureProgress, /recoverMissingOnboardingProgressState/);
-  assert.match(ensureProgress, /await classifyMissingOnboardingProgress\(db, userId\)/);
+  assert.doesNotMatch(apiSource, /classifyMissingOnboardingProgress/);
+  assert.doesNotMatch(apiSource, /profileCreatedAt|created_at|profiles|transactions/);
+  assert.doesNotMatch(apiSource, /FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS/);
+  assert.match(promote, /const next = promoteUntouchedOnboardingState\(current\)/);
+  assert.match(promote, /\.update\(\{\s+stock_tutorial_offer: next\.stockTutorialOffer/);
+  assert.match(promote, /page_tips_disabled: next\.pageTipsDisabled/);
+  assert.match(promote, /\.eq\("stock_tutorial_status", "not_started"\)/);
+  assert.match(promote, /\.eq\("stock_tutorial_last_step", 0\)/);
+  assert.match(promote, /\.in\("stock_tutorial_offer", \["soft", "none"\]\)/);
+  assert.match(promote, /\.is\("started_at", null\)/);
+  assert.match(promote, /\.is\("completed_at", null\)/);
+  assert.match(promote, /\.is\("skipped_at", null\)/);
+  assert.match(promote, /promote_untouched_progress/);
+  assert.match(promote, /return next/);
+  assert.match(ensureProgress, /const next = createFirstLoginOnboardingState\(\)/);
   assert.match(ensureProgress, /\.insert\(\{\s+user_id: userId,\s+\.\.\.toDatabasePatch\(next\)/);
+  assert.match(ensureProgress, /if \(error\.code === "23505"\)/);
+  assert.match(ensureProgress, /create_missing_progress/);
+  assert.match(ensureProgress, /return next/);
 });
 
 test("analytics schema is bounded and best-effort", () => {
@@ -290,21 +300,13 @@ test("trade functions record first live trade analytics without changing trade p
 });
 
 test("onboarding API does not mutate real economy, games, or account deletion state", () => {
-  const classifier = sourceBetween(
-    apiSource,
-    "async function classifyMissingOnboardingProgress",
-    "async function ensureOnboardingProgress",
-  );
-
-  assert.match(classifier, /\.from\("transactions"\)[\s\S]*\.select\("id"\)/);
-  assert.doesNotMatch(classifier, /\.(?:insert|update|delete|upsert)\(/);
-
   for (const forbidden of [
     /execute_trade_authenticated/,
     /deleteMyAccount/,
     /auth\.admin\.deleteUser/,
     /user_wallets/,
     /user_holdings/,
+    /transactions/,
     /wallet_ledger_entries/,
     /daily_crew/i,
     /grand_line_guess/i,
