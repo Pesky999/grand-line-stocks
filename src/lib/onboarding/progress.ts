@@ -39,6 +39,36 @@ export function createSoftOnboardingState(): OnboardingProgressState {
   };
 }
 
+export function createFirstLoginOnboardingState(): OnboardingProgressState {
+  return {
+    ...createSoftOnboardingState(),
+    stockTutorialOffer: "first_login",
+  };
+}
+
+export function isUntouchedOnboardingState(state: OnboardingProgressState) {
+  return (
+    state.stockTutorialStatus === "not_started" &&
+    state.stockTutorialLastStep === 0 &&
+    state.startedAt === null &&
+    state.completedAt === null &&
+    state.skippedAt === null
+  );
+}
+
+export function promoteUntouchedOnboardingState(
+  state: OnboardingProgressState,
+): OnboardingProgressState {
+  if (!isUntouchedOnboardingState(state)) return state;
+  if (state.stockTutorialOffer !== "soft" && state.stockTutorialOffer !== "none") return state;
+
+  return {
+    ...state,
+    stockTutorialOffer: "first_login",
+    pageTipsDisabled: false,
+  };
+}
+
 export function shouldAutoOpenOnboarding(
   state: Pick<
     OnboardingProgressState,

@@ -7,8 +7,9 @@ import {
   STOCK_TUTORIAL_FINAL_STEP,
   STOCK_TUTORIAL_VERSION,
   completeStockTutorial,
-  createSoftOnboardingState,
   dismissPageTip,
+  createFirstLoginOnboardingState,
+  promoteUntouchedOnboardingState,
   resetPageTips,
   restartStockTutorial,
   saveStockTutorialStep,
@@ -220,10 +221,6 @@ function normalizeProgressRow(row: unknown): OnboardingProgressState {
   };
 }
 
-function defaultProgressForNewUser(): OnboardingProgressState {
-  return createSoftOnboardingState();
-}
-
 function completedStepForSavedStep(savedStep: number): TutorialStepKey | null {
   switch (savedStep) {
     case 2:
@@ -354,11 +351,69 @@ async function readOnboardingProgress(db: OnboardingDb, userId: string) {
   return data ? normalizeProgressRow(data) : null;
 }
 
+async function promoteOnboardingProgressIfUntouched(
+  db: OnboardingDb,
+  userId: string,
+  current: OnboardingProgressState,
+) {
+  const next = promoteUntouchedOnboardingState(current);
+  if (next === current) return current;
+
+  const { data, error } = await db
+    .from("user_onboarding_progress")
+    .update({
+      stock_tutorial_offer: next.stockTutorialOffer,
+      page_tips_disabled: next.pageTipsDisabled,
+    })
+    .eq("user_id", userId)
+    .eq("stock_tutorial_status", "not_started")
+    .eq("stock_tutorial_last_step", 0)
+    .in("stock_tutorial_offer", ["soft", "none"])
+    .is("started_at", null)
+    .is("completed_at", null)
+    .is("skipped_at", null)
+    .select(
+      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
+    )
+    .maybeSingle();
+
+  if (error) {
+    logOnboardingFailure(
+      "promote_untouched_progress",
+      error.code ?? "ONBOARDING_PROGRESS_PROMOTION_FAILED",
+    );
+    try {
+      const latest = await readOnboardingProgress(db, userId);
+      if (latest) return latest;
+    } catch {
+      logOnboardingFailure(
+        "promote_untouched_progress_recheck",
+        "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
+      );
+    }
+    return next;
+  }
+
+  if (data) return normalizeProgressRow(data);
+
+  try {
+    const latest = await readOnboardingProgress(db, userId);
+    if (latest) return latest;
+  } catch {
+    logOnboardingFailure(
+      "promote_untouched_progress_recheck",
+      "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
+    );
+  }
+
+  return next;
+}
+
 async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
   const existing = await readOnboardingProgress(db, userId);
-  if (existing) return existing;
+  if (existing) return promoteOnboardingProgressIfUntouched(db, userId, existing);
 
-  const next = defaultProgressForNewUser();
+  const next = createFirstLoginOnboardingState();
   const { data, error } = await db
     .from("user_onboarding_progress")
     .insert({
@@ -372,10 +427,21 @@ async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
 
   if (error) {
     if (error.code === "23505") {
-      const raced = await readOnboardingProgress(db, userId);
-      if (raced) return raced;
+      try {
+        const raced = await readOnboardingProgress(db, userId);
+        if (raced) return promoteOnboardingProgressIfUntouched(db, userId, raced);
+      } catch {
+        logOnboardingFailure(
+          "create_missing_progress_recheck",
+          "ONBOARDING_PROGRESS_CREATE_RECHECK_FAILED",
+        );
+      }
     }
-    throw error;
+    logOnboardingFailure(
+      "create_missing_progress",
+      error.code ?? "ONBOARDING_PROGRESS_CREATE_FAILED",
+    );
+    return next;
   }
 
   return normalizeProgressRow(data);

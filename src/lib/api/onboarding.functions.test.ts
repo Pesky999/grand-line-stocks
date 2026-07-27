@@ -48,17 +48,26 @@ test("onboarding server functions are authenticated and never accept a user id f
 });
 
 test("onboarding writes use the trusted server client and strict state transitions", () => {
+  const ensureProgress = sourceBetween(
+    apiSource,
+    "async function ensureOnboardingProgress",
+    "async function updateOnboardingProgress",
+  );
+
   assert.match(apiSource, /async function admin\(\)/);
   assert.match(apiSource, /supabaseAdmin/);
   assert.match(apiSource, /ensureOnboardingProgress/);
-  assert.match(apiSource, /defaultProgressForNewUser/);
+  assert.match(apiSource, /createFirstLoginOnboardingState/);
+  assert.match(apiSource, /promoteUntouchedOnboardingState/);
+  assert.match(ensureProgress, /const existing = await readOnboardingProgress\(db, userId\)/);
   assert.match(
-    apiSource,
-    /function defaultProgressForNewUser\(\): OnboardingProgressState \{\s*return createSoftOnboardingState\(\);\s*\}/,
+    ensureProgress,
+    /if \(existing\) return promoteOnboardingProgressIfUntouched\(db, userId, existing\)/,
   );
-  assert.doesNotMatch(
-    apiSource,
-    /defaultProgressForNewUser[\s\S]*stockTutorialOffer: "first_login"/,
+  assert.ok(
+    ensureProgress.indexOf("if (existing) return promoteOnboardingProgressIfUntouched") <
+      ensureProgress.indexOf("const next = createFirstLoginOnboardingState()"),
+    "existing progress rows should be considered before missing-row creation",
   );
   assert.match(apiSource, /startStockTutorial/);
   assert.match(apiSource, /restartStockTutorial/);
@@ -68,6 +77,39 @@ test("onboarding writes use the trusted server client and strict state transitio
   assert.match(apiSource, /dismissPageTip/);
   assert.match(apiSource, /skipAllPageTips/);
   assert.match(apiSource, /resetPageTips/);
+});
+
+test("missing progress recovery creates first-login without profile or trade classification", () => {
+  const promote = sourceBetween(
+    apiSource,
+    "async function promoteOnboardingProgressIfUntouched",
+    "async function ensureOnboardingProgress",
+  );
+  const ensureProgress = sourceBetween(
+    apiSource,
+    "async function ensureOnboardingProgress",
+    "async function updateOnboardingProgress",
+  );
+
+  assert.doesNotMatch(apiSource, /classifyMissingOnboardingProgress/);
+  assert.doesNotMatch(apiSource, /profileCreatedAt|created_at|profiles|transactions/);
+  assert.doesNotMatch(apiSource, /FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS/);
+  assert.match(promote, /const next = promoteUntouchedOnboardingState\(current\)/);
+  assert.match(promote, /\.update\(\{\s+stock_tutorial_offer: next\.stockTutorialOffer/);
+  assert.match(promote, /page_tips_disabled: next\.pageTipsDisabled/);
+  assert.match(promote, /\.eq\("stock_tutorial_status", "not_started"\)/);
+  assert.match(promote, /\.eq\("stock_tutorial_last_step", 0\)/);
+  assert.match(promote, /\.in\("stock_tutorial_offer", \["soft", "none"\]\)/);
+  assert.match(promote, /\.is\("started_at", null\)/);
+  assert.match(promote, /\.is\("completed_at", null\)/);
+  assert.match(promote, /\.is\("skipped_at", null\)/);
+  assert.match(promote, /promote_untouched_progress/);
+  assert.match(promote, /return next/);
+  assert.match(ensureProgress, /const next = createFirstLoginOnboardingState\(\)/);
+  assert.match(ensureProgress, /\.insert\(\{\s+user_id: userId,\s+\.\.\.toDatabasePatch\(next\)/);
+  assert.match(ensureProgress, /if \(error\.code === "23505"\)/);
+  assert.match(ensureProgress, /create_missing_progress/);
+  assert.match(ensureProgress, /return next/);
 });
 
 test("analytics schema is bounded and best-effort", () => {
