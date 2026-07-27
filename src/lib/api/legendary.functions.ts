@@ -5,7 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const LEGACY_LOG_QUERY_KEY = ["legacy-log"] as const;
 
-const PUBLIC_PLAYER_USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_]{1,18}[a-z0-9])$/;
+const PUBLIC_PROFILE_USERNAME_MAX_LENGTH = 64;
 
 const progressionResultSchema = z
   .object({
@@ -93,9 +93,9 @@ export type BoardKey = (typeof BOARD_KEYS)[number] | string;
 export function isPublicPlayerUsername(value: unknown): value is string {
   return (
     typeof value === "string" &&
-    value !== "anon" &&
-    !value.includes("__") &&
-    PUBLIC_PLAYER_USERNAME_PATTERN.test(value)
+    value.length > 0 &&
+    value.length <= PUBLIC_PROFILE_USERNAME_MAX_LENGTH &&
+    value.trim().length > 0
   );
 }
 
@@ -110,6 +110,32 @@ function logPublicProfileReadFailure(stage: string, error: { code?: string | nul
     stage,
     code: error?.code ?? "PUBLIC_PROFILE_READ_FAILED",
   });
+}
+
+async function filterRowsWithExistingPublicProfiles<T extends { username: string | null }>(
+  db: ReturnType<typeof getPublicSupabaseClient>,
+  rows: T[],
+  stage: string,
+): Promise<(T & { username: string })[]> {
+  const candidateRows = rows.filter(hasPublicPlayerUsername);
+  const usernames = [...new Set(candidateRows.map((row) => row.username))];
+
+  if (usernames.length === 0) return [];
+
+  const { data, error } = await db.from("profiles").select("username").in("username", usernames);
+
+  if (error) {
+    logPublicProfileReadFailure(stage, error);
+    return [];
+  }
+
+  const existingUsernames = new Set(
+    (data ?? [])
+      .map((profile) => profile.username)
+      .filter((username): username is string => isPublicPlayerUsername(username)),
+  );
+
+  return candidateRows.filter((row) => existingUsernames.has(row.username));
 }
 
 export const listLeaderboard = createServerFn({ method: "GET" })
@@ -130,7 +156,12 @@ export const listLeaderboard = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return ((rows ?? []) as PublicLeaderboardRow[]).filter(hasPublicPlayerUsername).map((r) => ({
+    const publicRows = await filterRowsWithExistingPublicProfiles(
+      db,
+      (rows ?? []) as PublicLeaderboardRow[],
+      "leaderboard_profile_filter",
+    );
+    return publicRows.map((r) => ({
       rank: r.rank,
       prev_rank: r.prev_rank,
       value: Number(r.value),
@@ -157,7 +188,7 @@ export const getPublicProfile = createServerFn({ method: "GET" })
       return { found: false } as const;
     }
 
-    if (!profile || !isPublicPlayerUsername(profile.username)) return { found: false } as const;
+    if (!profile) return { found: false } as const;
     const publicProfile = profile as PublicProfileRow;
 
     const [statsResult, achievementsResult, snapshotsResult, rankResult] = await Promise.all([
@@ -200,7 +231,8 @@ export const getPublicProfile = createServerFn({ method: "GET" })
       ? []
       : ((snapshotsResult.data ?? []) as PublicProfileSnapshotRow[]);
     const rankRow = rankResult.error ? null : (rankResult.data as PublicProfileRankRow | null);
-    const netWorth = Number(stats?.current_net_worth ?? rankRow?.value ?? 0);
+    const netWorthSource = stats?.current_net_worth ?? rankRow?.value ?? null;
+    const netWorth = netWorthSource == null ? null : Number(netWorthSource);
 
     return {
       found: true,
@@ -237,7 +269,7 @@ export const listLegacy = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return (rows ?? []).filter(hasPublicPlayerUsername);
+    return filterRowsWithExistingPublicProfiles(db, rows ?? [], "legacy_profile_filter");
   });
 
 export const listAchievementsCatalog = createServerFn({ method: "GET" }).handler(async () => {
@@ -520,22 +552,29 @@ export const listCharacterTopHolders = createServerFn({ method: "GET" })
       _offset: data.offset,
     });
     if (error) throw error;
-    return ((rows ?? []) as PublicCharacterTopHolderRow[])
-      .filter(hasPublicPlayerUsername)
-      .map((r) => ({
-        rank: r.rank,
-        shares: Number(r.shares),
-        value: Number(r.value),
-        username: r.username,
-        display_name: r.display_name ?? null,
-      }));
+    const publicRows = await filterRowsWithExistingPublicProfiles(
+      db,
+      (rows ?? []) as PublicCharacterTopHolderRow[],
+      "character_top_holders_profile_filter",
+    );
+    return publicRows.map((r) => ({
+      rank: r.rank,
+      shares: Number(r.shares),
+      value: Number(r.value),
+      username: r.username,
+      display_name: r.display_name ?? null,
+    }));
   });
 
 export const listClimbersAndFallers = createServerFn({ method: "GET" }).handler(async () => {
   const db = getPublicSupabaseClient();
   const { data: rows, error } = await db.rpc("get_public_leaderboard_movers", { _limit: 5 });
   if (error) throw error;
-  const publicRows = (rows ?? []).filter(hasPublicPlayerUsername);
+  const publicRows = await filterRowsWithExistingPublicProfiles(
+    db,
+    rows ?? [],
+    "leaderboard_movers_profile_filter",
+  );
   const climbers = publicRows.filter((r) => r.direction === "climber");
   const fallers = publicRows.filter((r) => r.direction === "faller");
   return {

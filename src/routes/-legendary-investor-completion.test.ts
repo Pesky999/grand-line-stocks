@@ -86,6 +86,31 @@ test("public profile does not display private cash or holdings when public RLS c
   assert.doesNotMatch(publicProfileSource, /No open positions\./);
 });
 
+test("public profile does not synthesize financial performance when stats are unavailable", () => {
+  assert.match(publicProfileSource, /const hasPublicStats = d\.stats != null/);
+  assert.match(publicProfileSource, /d\.net_worth == null\s+\? null/);
+  assert.match(publicProfileSource, /d\.net_worth != null &&/);
+  assert.match(publicProfileSource, /totalReturn != null &&/);
+  assert.match(publicProfileSource, /Public statistics are unavailable right now\./);
+  assert.doesNotMatch(
+    publicProfileSource,
+    /const totalReturn = \(\(d\.net_worth - STARTING_WALLET_BALANCE\)/,
+  );
+  assert.doesNotMatch(
+    publicProfileSource,
+    /s\.days_active \?\? 1|s\.reputation_score \?\? 0|s\.total_trades \?\? 0|s\.realized_pnl \?\? 0/,
+  );
+});
+
+test("public profile identity can render when optional public statistics fail", () => {
+  assert.match(publicProfileSource, /const profileFacts = \[`Joined/);
+  assert.match(publicProfileSource, /profileFacts\.join\(" · "\)/);
+  assert.match(publicProfileSource, /\{title && \(/);
+  assert.match(publicProfileSource, /\{specialization && \(/);
+  assert.match(publicProfileSource, /q\.isError \|\| !q\.data \|\| !q\.data\.found/);
+  assert.doesNotMatch(publicProfileSource, /!d\.stats|stats missing/);
+});
+
 test("public rank and profile routes do not link ghost deleted users as anon", () => {
   for (const [name, source] of [
     ["public profile", publicProfileSource],

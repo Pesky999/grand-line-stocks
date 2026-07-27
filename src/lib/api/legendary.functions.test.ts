@@ -43,16 +43,45 @@ test("public profile reads use the public client and never require service-role 
   assert.match(publicProfile, /holdings: \[\] as PublicProfileVisibleHolding\[\]/);
 });
 
+test("public profile lookup treats existing usernames as authoritative profile rows", () => {
+  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+
+  assert.match(source, /const PUBLIC_PROFILE_USERNAME_MAX_LENGTH = 64/);
+  assert.match(publicProfile, /if \(!isPublicPlayerUsername\(data\.username\)\)/);
+  assert.match(publicProfile, /\.eq\("username", data\.username\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(publicProfile, /if \(!profile\) return \{ found: false \} as const/);
+  assert.doesNotMatch(source, /PUBLIC_PLAYER_USERNAME_PATTERN|value !== "anon"/);
+  assert.doesNotMatch(publicProfile, /!profile \|\| !isPublicPlayerUsername\(profile\.username\)/);
+});
+
 test("public profile failures and deleted usernames return a contained not-found result", () => {
   const publicProfile = between("export const getPublicProfile", "export const listLegacy");
 
-  assert.match(publicProfile, /if \(!isPublicPlayerUsername\(data\.username\)\)/);
   assert.match(publicProfile, /return \{ found: false \} as const/);
   assert.match(publicProfile, /logPublicProfileReadFailure\("profile_read", profileError\)/);
   assert.doesNotMatch(publicProfile, /throw notFound|throw profileError|throw new Error/);
 });
 
-test("public leaderboard and holder APIs filter ghost usernames instead of linking anon", () => {
+test("public profile keeps unavailable financial data nullable instead of synthetic zeroes", () => {
+  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+
+  assert.match(
+    publicProfile,
+    /const netWorthSource = stats\?\.current_net_worth \?\? rankRow\?\.value \?\? null/,
+  );
+  assert.match(
+    publicProfile,
+    /const netWorth = netWorthSource == null \? null : Number\(netWorthSource\)/,
+  );
+  assert.match(publicProfile, /net_worth: netWorth/);
+  assert.doesNotMatch(publicProfile, /current_net_worth \?\? rankRow\?\.value \?\? 0/);
+});
+
+test("public leaderboard and holder APIs verify real profile rows instead of linking ghosts", () => {
+  const helper = between(
+    "async function filterRowsWithExistingPublicProfiles",
+    "export const listLeaderboard",
+  );
   const leaderboard = between("export const listLeaderboard", "export const getPublicProfile");
   const legacy = between("export const listLegacy", "export const listAchievementsCatalog");
   const topHolders = between(
@@ -61,15 +90,40 @@ test("public leaderboard and holder APIs filter ghost usernames instead of linki
   );
   const movers = source.slice(source.indexOf("export const listClimbersAndFallers"));
 
+  assert.match(helper, /const candidateRows = rows\.filter\(hasPublicPlayerUsername\)/);
+  assert.match(
+    helper,
+    /\.from\("profiles"\)[\s\S]*\.select\("username"\)[\s\S]*\.in\("username", usernames\)/,
+  );
+  assert.match(helper, /existingUsernames\.has\(row\.username\)/);
+  assert.doesNotMatch(helper, /auth\.users|await admin\(\)|supabaseAdmin|client\.server/);
+  assert.doesNotMatch(helper, /value !== "anon"|\?\? "anon"/);
+
   for (const [name, block] of [
     ["leaderboard", leaderboard],
     ["legacy", legacy],
     ["top holders", topHolders],
     ["movers", movers],
   ] as const) {
-    assert.match(block, /filter\(hasPublicPlayerUsername\)/, `${name} should filter usernames`);
+    assert.match(block, /filterRowsWithExistingPublicProfiles\(/, `${name} should verify profiles`);
     assert.doesNotMatch(block, /\?\? "anon"|"anon"/, `${name} should not synthesize anon`);
   }
+});
+
+test("public profile filtering preserves a real anon profile and drops stale anon rows", () => {
+  const helper = between(
+    "async function filterRowsWithExistingPublicProfiles",
+    "export const listLeaderboard",
+  );
+
+  assert.doesNotMatch(source, /value !== "anon"|username:\s*"anon"|\?\?\s*"anon"/);
+  assert.match(helper, /\.in\("username", usernames\)/);
+  assert.match(helper, /const existingUsernames = new Set/);
+  assert.match(
+    helper,
+    /return candidateRows\.filter\(\(row\) => existingUsernames\.has\(row\.username\)\)/,
+  );
+  assert.doesNotMatch(helper, /PUBLIC_PLAYER_USERNAME_PATTERN|\.test\(row\.username\)/);
 });
 
 test("public achievement catalog no longer needs the admin client", () => {
