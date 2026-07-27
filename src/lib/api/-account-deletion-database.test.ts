@@ -159,6 +159,25 @@ test("shared pricing audit actor references are anonymized with SET NULL", () =>
   }
 });
 
+test("shared editorial and moderation actor references are anonymized with SET NULL", () => {
+  const migrationHistory = migrationFiles
+    .map((file) => read(`supabase/migrations/${file}`))
+    .join("\n");
+
+  for (const [table, column] of [
+    ["market_events", "created_by"],
+    ["identity_moderation_terms", "created_by"],
+    ["identity_moderation_flags", "reviewed_by"],
+    ["identity_moderation_actions", "actor_user_id"],
+  ] as const) {
+    assert.match(
+      migrationHistory,
+      new RegExp(`${column}\\s+uuid\\s+REFERENCES auth\\.users\\(id\\) ON DELETE SET NULL`, "i"),
+      `${table}.${column} should survive account deletion with the actor anonymized`,
+    );
+  }
+});
+
 test("orphan preflight exists before every replacement foreign key", () => {
   for (const [orphanCheck, constraint] of [
     ["Cannot harden legacy_records.user_id", "legacy_records_user_id_fkey"],
@@ -227,6 +246,8 @@ test("existing account-owned references already cascade in current migration his
     "grand_line_guess_stats",
     "daily_crew_submissions",
     "wallet_ledger_entries",
+    "user_onboarding_progress",
+    "user_onboarding_events",
   ]) {
     assert.match(
       migrationHistory,
@@ -237,4 +258,23 @@ test("existing account-owned references already cascade in current migration his
       `${table} should have account-owned cascade in migration history`,
     );
   }
+});
+
+test("account-owned child rows cascade through owned parent tables", () => {
+  const migrationHistory = migrationFiles
+    .map((file) => read(`supabase/migrations/${file}`))
+    .join("\n");
+
+  assert.match(
+    migrationHistory,
+    /CREATE TABLE(?: IF NOT EXISTS)? public\.daily_crew_submission_roles[\s\S]*?FOREIGN KEY \(submission_id, mission_id\)[\s\S]*?REFERENCES public\.daily_crew_submissions\(id, mission_id\)[\s\S]*?ON DELETE CASCADE/i,
+  );
+  assert.match(
+    migrationHistory,
+    /CREATE TABLE(?: IF NOT EXISTS)? public\.grand_line_guess_attempts[\s\S]*?puzzle_id uuid NOT NULL REFERENCES public\.grand_line_guess_daily_puzzles\(id\) ON DELETE CASCADE/i,
+  );
+  assert.match(
+    migrationHistory,
+    /CREATE TABLE(?: IF NOT EXISTS)? public\.grand_line_guess_results[\s\S]*?puzzle_id uuid NOT NULL REFERENCES public\.grand_line_guess_daily_puzzles\(id\) ON DELETE CASCADE/i,
+  );
 });
