@@ -237,6 +237,7 @@ RETURNS TABLE (
   rank integer,
   prev_rank integer,
   value numeric,
+  is_public boolean,
   username text,
   display_name text,
   title public.investor_title
@@ -275,7 +276,8 @@ BEGIN
   SELECT
     lc.rank,
     lc.prev_rank,
-    lc.value,
+    CASE WHEN p.public_trading_profile IS TRUE THEN lc.value ELSE NULL END AS value,
+    p.public_trading_profile IS TRUE AS is_public,
     p.username,
     p.display_name,
     COALESCE(us.title, 'rookie_pirate'::public.investor_title) AS title
@@ -341,6 +343,7 @@ BEGIN
     JOIN public.profiles AS p ON p.id = h.user_id
     WHERE c.slug = v_slug
       AND h.shares > 0
+      AND p.public_trading_profile IS TRUE
   )
   SELECT
     ranked.holder_rank,
@@ -352,6 +355,58 @@ BEGIN
   ORDER BY ranked.holder_rank ASC
   LIMIT v_limit
   OFFSET v_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_my_character_largest_holder(_slug text)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_slug text := lower(btrim(COALESCE(_slug, '')));
+  v_character_id uuid;
+  v_my_shares numeric := 0;
+  v_max_shares numeric := 0;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF v_slug = '' OR v_slug !~ '^[a-z0-9][a-z0-9_-]{0,63}$' THEN
+    RAISE EXCEPTION 'Invalid character slug' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT c.id
+  INTO v_character_id
+  FROM public.characters AS c
+  WHERE c.slug = v_slug;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  SELECT h.shares
+  INTO v_my_shares
+  FROM public.user_holdings AS h
+  WHERE h.user_id = v_user_id
+    AND h.character_id = v_character_id
+    AND h.shares > 0;
+
+  IF COALESCE(v_my_shares, 0) <= 0 THEN
+    RETURN false;
+  END IF;
+
+  SELECT COALESCE(MAX(h.shares), 0)
+  INTO v_max_shares
+  FROM public.user_holdings AS h
+  WHERE h.character_id = v_character_id
+    AND h.shares > 0;
+
+  RETURN v_my_shares >= v_max_shares;
 END;
 $$;
 
@@ -476,15 +531,18 @@ REVOKE ALL ON FUNCTION public.set_my_public_trading_profile(boolean) FROM PUBLIC
 REVOKE ALL ON FUNCTION public.get_public_investor_profile(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_public_leaderboard(text, integer, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_public_character_top_holders(text, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_my_character_largest_holder(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_public_leaderboard_movers(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_public_legacy_records(text, integer, integer) FROM PUBLIC;
 
 REVOKE EXECUTE ON FUNCTION public.set_my_public_trading_profile(boolean) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.is_my_character_largest_holder(text) FROM anon;
 
 GRANT EXECUTE ON FUNCTION public.set_my_public_trading_profile(boolean) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_public_investor_profile(text) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_public_leaderboard(text, integer, integer) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_public_character_top_holders(text, integer, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_my_character_largest_holder(text) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_public_leaderboard_movers(integer) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_public_legacy_records(text, integer, integer) TO anon, authenticated, service_role;
 

@@ -28,6 +28,7 @@ const legendarySource = read("src/lib/api/legendary.functions.ts");
 const walletSource = read("src/lib/api/wallet.functions.ts");
 const publicProfileRoute = read("src/routes/u.$username.tsx");
 const privateProfileRoute = read("src/routes/_authenticated/profile.tsx");
+const leaderboardsRoute = read("src/routes/leaderboards.tsx");
 const typesSource = read("src/integrations/supabase/types.ts");
 const migrationHistory = readdirSync(join(process.cwd(), "supabase/migrations"))
   .filter((file) => file.endsWith(".sql"))
@@ -153,6 +154,92 @@ test("public list RPCs exclude deleted profiles at the query level without synth
   assert.match(legacy, /WHERE p\.public_trading_profile IS TRUE/);
 });
 
+test("leaderboard RPC keeps private players ranked while masking board values", () => {
+  const leaderboard = between(
+    migration,
+    "CREATE OR REPLACE FUNCTION public.get_public_leaderboard(",
+    "CREATE OR REPLACE FUNCTION public.get_public_character_top_holders(",
+  );
+
+  assert.match(leaderboard, /is_public boolean/);
+  assert.match(
+    leaderboard,
+    /CASE WHEN p\.public_trading_profile IS TRUE THEN lc\.value ELSE NULL END AS value/,
+  );
+  assert.match(leaderboard, /p\.public_trading_profile IS TRUE AS is_public/);
+  assert.match(leaderboard, /JOIN public\.profiles AS p ON p\.id = lc\.user_id/);
+  assert.match(leaderboard, /ORDER BY lc\.rank ASC/);
+  assert.doesNotMatch(leaderboard, /WHERE p\.public_trading_profile IS TRUE/);
+
+  const listLeaderboard = between(
+    legendarySource,
+    "export const listLeaderboard",
+    "export const getPublicProfile",
+  );
+  assert.match(listLeaderboard, /value: r\.value == null \? null : Number\(r\.value\)/);
+  assert.match(listLeaderboard, /is_public: r\.is_public/);
+  assert.doesNotMatch(listLeaderboard, /value: Number\(r\.value\)/);
+
+  assert.match(leaderboardsRoute, /privateValue = r\.is_public === false \|\| r\.value == null/);
+  assert.match(leaderboardsRoute, /Private/);
+  assert.match(leaderboardsRoute, /board\.value\(Number\(r\.value\)\)/);
+});
+
+test("public top-holder RPC filters private holders before ranking and pagination", () => {
+  const topHolders = between(
+    migration,
+    "CREATE OR REPLACE FUNCTION public.get_public_character_top_holders(",
+    "CREATE OR REPLACE FUNCTION public.is_my_character_largest_holder(",
+  );
+  const ranked = between(topHolders, "WITH ranked AS (", "  FROM ranked");
+
+  assert.match(ranked, /JOIN public\.profiles AS p ON p\.id = h\.user_id/);
+  assert.match(ranked, /AND p\.public_trading_profile IS TRUE/);
+  assert.match(ranked, /row_number\(\) OVER/);
+  assert.match(topHolders, /LIMIT v_limit\s+OFFSET v_offset/);
+  assert.doesNotMatch(topHolders, /'anon'|hidden investor|deleted user/i);
+});
+
+test("owner-only largest-holder RPC preserves private eligibility without leaking holders", () => {
+  const rpc = between(
+    migration,
+    "CREATE OR REPLACE FUNCTION public.is_my_character_largest_holder(_slug text)",
+    "CREATE OR REPLACE FUNCTION public.get_public_leaderboard_movers(",
+  );
+  const signature = rpc.slice(0, rpc.indexOf("RETURNS boolean"));
+
+  assert.match(rpc, /RETURNS boolean/);
+  assert.match(rpc, /SECURITY DEFINER/);
+  assert.match(rpc, /SET search_path = pg_catalog, public, pg_temp/);
+  assert.match(rpc, /v_user_id uuid := auth\.uid\(\)/);
+  assert.match(rpc, /MAX\(h\.shares\)/);
+  assert.match(rpc, /RETURN v_my_shares >= v_max_shares/);
+  assert.match(rpc, /IF COALESCE\(v_my_shares, 0\) <= 0 THEN\s+RETURN false;/);
+  assert.doesNotMatch(signature, /_user_id|user_id uuid|profile_id/i);
+  assert.doesNotMatch(rpc, /RETURNS TABLE|username|display_name|jsonb_build_object/i);
+  assert.match(
+    migration,
+    /REVOKE ALL ON FUNCTION public\.is_my_character_largest_holder\(text\) FROM PUBLIC;/,
+  );
+  assert.match(
+    migration,
+    /REVOKE EXECUTE ON FUNCTION public\.is_my_character_largest_holder\(text\) FROM anon;/,
+  );
+  assert.match(
+    migration,
+    /GRANT EXECUTE ON FUNCTION public\.is_my_character_largest_holder\(text\) TO authenticated, service_role;/,
+  );
+
+  const legacyLog = between(
+    legendarySource,
+    "export const getMyLegacyLog",
+    "export const listCharacterTopHolders",
+  );
+  assert.match(legacyLog, /db\.rpc\("is_my_character_largest_holder"/);
+  assert.match(legacyLog, /largestHolderEligible = largestHolderResults\.some/);
+  assert.doesNotMatch(legacyLog, /get_public_character_top_holders/);
+});
+
 test("application public reads use public clients and keep app-level profile existence filtering", () => {
   const getPublicProfile = between(
     legendarySource,
@@ -223,11 +310,39 @@ test("generated types expose the privacy column and RPCs without broad type rege
     "set_my_public_trading_profile:",
     "submit_trivia_answer:",
   );
+  const leaderboardRpc = between(
+    typesSource,
+    "get_public_leaderboard:",
+    "get_public_leaderboard_movers:",
+  );
+  const largestHolderRpc = between(
+    typesSource,
+    "is_my_character_largest_holder:",
+    "preview_market_event:",
+  );
 
   assert.match(publicProfileRpc, /Args: \{ _username: string \}/);
   assert.match(publicProfileRpc, /Returns: Json/);
   assert.match(privacyRpc, /Args: \{ _is_public: boolean \}/);
   assert.match(privacyRpc, /Returns: boolean/);
+  assert.match(leaderboardRpc, /is_public: boolean/);
+  assert.match(leaderboardRpc, /value: number \| null/);
+  assert.match(largestHolderRpc, /Args: \{ _slug: string \}/);
+  assert.match(largestHolderRpc, /Returns: boolean/);
+});
+
+test("changed profile and ranking files contain no introduced mojibake sequences", () => {
+  for (const [name, source] of [
+    ["owner profile route", privateProfileRoute],
+    ["public profile route", publicProfileRoute],
+    ["leaderboards route", leaderboardsRoute],
+    ["legendary API", legendarySource],
+    ["privacy migration", migration],
+  ] as const) {
+    assert.doesNotMatch(source, /\u00e2\u20ac|\u00c3|\u00c2|\ufffd/, name);
+  }
+
+  assert.match(privateProfileRoute, /"\\u2014"/);
 });
 
 test("deleted accounts leave no username tombstone and account-owned data still cascades", () => {

@@ -27,7 +27,8 @@ const recordMyDailyActivityResultSchema = z
 type PublicLeaderboardRow = {
   rank: number;
   prev_rank: number | null;
-  value: number | string;
+  value: number | string | null;
+  is_public: boolean;
   username: string | null;
   display_name: string | null;
   title: string | null;
@@ -213,7 +214,8 @@ export const listLeaderboard = createServerFn({ method: "GET" })
     return publicRows.map((r) => ({
       rank: r.rank,
       prev_rank: r.prev_rank,
-      value: Number(r.value),
+      value: r.value == null ? null : Number(r.value),
+      is_public: r.is_public,
       username: r.username,
       display_name: r.display_name ?? null,
       title: r.title ?? "rookie_pirate",
@@ -413,35 +415,20 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
     );
     let largestHolderEligible = false;
 
-    if (profile?.username && characterSlugs.length > 0) {
-      const topHolderResults = await Promise.all(
+    if (characterSlugs.length > 0) {
+      const largestHolderResults = await Promise.all(
         characterSlugs.map((slug) =>
-          db.rpc("get_public_character_top_holders", {
+          db.rpc("is_my_character_largest_holder", {
             _slug: slug,
-            _limit: 1,
-            _offset: 0,
           }),
         ),
       );
 
-      for (const { error } of topHolderResults) {
+      for (const { error } of largestHolderResults) {
         if (error) throw error;
       }
 
-      const topSharesBySlug = new Map<string, number>();
-      topHolderResults.forEach(({ data }, index) => {
-        const topRow = ((data ?? []) as PublicCharacterTopHolderRow[])[0];
-        if (topRow) topSharesBySlug.set(characterSlugs[index], Number(topRow.shares));
-      });
-
-      largestHolderEligible = positiveHoldings.some((holding) => {
-        const slug = holding.characters?.slug;
-        if (!slug) return false;
-        const topShares = topSharesBySlug.get(slug);
-        return (
-          topShares != null && Number(holding.shares) > 0 && Number(holding.shares) >= topShares
-        );
-      });
+      largestHolderEligible = largestHolderResults.some(({ data }) => data === true);
     }
 
     const dailyCrewRows = (dailyCrewSubmissions ?? []) as {

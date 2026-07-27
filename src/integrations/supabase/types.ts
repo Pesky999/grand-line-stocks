@@ -2586,11 +2586,12 @@ export type Database = {
         Args: { _board_key: string; _limit?: number; _offset?: number }
         Returns: {
           display_name: string
+          is_public: boolean
           prev_rank: number
           rank: number
           title: Database["public"]["Enums"]["investor_title"]
           username: string
-          value: number
+          value: number | null
         }[]
       }
       get_public_leaderboard_movers: {
@@ -2623,6 +2624,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_my_character_largest_holder: {
+        Args: { _slug: string }
         Returns: boolean
       }
       preview_market_event: {

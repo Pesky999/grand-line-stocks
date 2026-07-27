@@ -208,10 +208,12 @@ test("Legacy Log first-event and largest-holder eligibility are returned as bool
   assert.match(legacyLog, /\.gte\("published_at", profile\.created_at\)/);
   assert.match(legacyLog, /\.lte\("published_at", new Date\(\)\.toISOString\(\)\)/);
   assert.match(legacyLog, /firstEventEligible: \(firstEvent \?\? \[\]\)\.length > 0/);
-  assert.match(legacyLog, /\.rpc\("get_public_character_top_holders"/);
-  assert.match(legacyLog, /const topSharesBySlug = new Map<string, number>\(\)/);
-  assert.match(legacyLog, /Number\(holding\.shares\) >= topShares/);
-  assert.doesNotMatch(legacyLog, /return \{[\s\S]*holderRows[\s\S]*\}/);
+  assert.match(legacyLog, /\.rpc\("is_my_character_largest_holder"/);
+  assert.match(
+    legacyLog,
+    /largestHolderEligible = largestHolderResults\.some\(\(\{ data \}\) => data === true\)/,
+  );
+  assert.doesNotMatch(legacyLog, /get_public_character_top_holders|topSharesBySlug|holderRows/);
 });
 
 test("Legacy Log reads new achievement expansion data sources without writes", () => {

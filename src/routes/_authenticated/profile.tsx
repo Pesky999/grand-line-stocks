@@ -489,7 +489,7 @@ function Profile() {
                 Rank · Best
               </div>
               <div className="mt-1 tabular">
-                {data.rank?.rank ? `#${data.rank.rank}` : "â€”"}
+                {data.rank?.rank ? `#${data.rank.rank}` : "\u2014"}
                 <span className="ml-2 text-muted-foreground">
                   best #{stats.highest_rank ?? "—"}
                 </span>
