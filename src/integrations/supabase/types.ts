@@ -1837,6 +1837,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          public_trading_profile: boolean
           updated_at: string
           username: string
         }
@@ -1844,6 +1845,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          public_trading_profile?: boolean
           updated_at?: string
           username: string
         }
@@ -1851,6 +1853,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          public_trading_profile?: boolean
           updated_at?: string
           username?: string
         }
@@ -2575,15 +2578,20 @@ export type Database = {
           value: number
         }[]
       }
+      get_public_investor_profile: {
+        Args: { _username: string }
+        Returns: Json
+      }
       get_public_leaderboard: {
         Args: { _board_key: string; _limit?: number; _offset?: number }
         Returns: {
           display_name: string
+          is_public: boolean
           prev_rank: number
           rank: number
           title: Database["public"]["Enums"]["investor_title"]
           username: string
-          value: number
+          value: number | null
         }[]
       }
       get_public_leaderboard_movers: {
@@ -2616,6 +2624,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_my_character_largest_holder: {
+        Args: { _slug: string }
         Returns: boolean
       }
       preview_market_event: {
@@ -2794,6 +2806,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      set_my_public_trading_profile: {
+        Args: { _is_public: boolean }
+        Returns: boolean
       }
       submit_trivia_answer: {
         Args: { _choice_index: number; _question_id: string }

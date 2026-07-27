@@ -109,6 +109,15 @@ type UserHoldingWithCharacter = {
     current_price: number;
   };
 };
+type UserAchievementWithCatalog = {
+  unlocked_at: string;
+  achievements: {
+    code: string;
+    name: string;
+    description: string;
+    icon: string | null;
+  } | null;
+};
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -124,30 +133,47 @@ export const getMe = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     if (!context.userId) return null;
     const db = context.supabase;
-    const [{ data: profile }, { data: wallet }, { data: holdings }, { data: stats }] =
-      await Promise.all([
-        db
-          .from("profiles")
-          .select("id,username,display_name,created_at")
-          .eq("id", context.userId)
-          .maybeSingle(),
-        db
-          .from("user_wallets")
-          .select("berries,updated_at")
-          .eq("user_id", context.userId)
-          .maybeSingle(),
-        db
-          .from("user_holdings")
-          .select(
-            "shares,avg_cost,total_cost_basis,character_id,characters(slug,name,current_price)",
-          )
-          .eq("user_id", context.userId),
-        db
-          .from("user_stats")
-          .select("realized_pnl,wins,losses,total_sells")
-          .eq("user_id", context.userId)
-          .maybeSingle(),
-      ]);
+    const [
+      { data: profile },
+      { data: wallet },
+      { data: holdings },
+      { data: stats },
+      { data: rank },
+      { data: achievements },
+    ] = await Promise.all([
+      db
+        .from("profiles")
+        .select("id,username,display_name,created_at,public_trading_profile")
+        .eq("id", context.userId)
+        .maybeSingle(),
+      db
+        .from("user_wallets")
+        .select("berries,updated_at")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      db
+        .from("user_holdings")
+        .select("shares,avg_cost,total_cost_basis,character_id,characters(slug,name,current_price)")
+        .eq("user_id", context.userId),
+      db
+        .from("user_stats")
+        .select(
+          "title,specialization,reputation_score,highest_rank,realized_pnl,wins,losses,total_sells",
+        )
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      db
+        .from("leaderboard_cache")
+        .select("rank,prev_rank,value")
+        .eq("board_key", "net_worth_all_time")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      db
+        .from("user_achievements")
+        .select("unlocked_at,achievements(code,name,description,icon)")
+        .eq("user_id", context.userId)
+        .order("unlocked_at", { ascending: false }),
+    ]);
     const claimsEmail = (context.claims as AuthClaimsWithEmail).email;
     return {
       userId: context.userId,
@@ -166,6 +192,11 @@ export const getMe = createServerFn({ method: "GET" })
       wins: Number(stats?.wins ?? 0),
       losses: Number(stats?.losses ?? 0),
       totalSells: Number(stats?.total_sells ?? 0),
+      stats,
+      rank,
+      achievements: ((achievements ?? []) as UserAchievementWithCatalog[]).filter(
+        (entry) => entry.achievements,
+      ),
     };
   });
 

@@ -27,56 +27,11 @@ const recordMyDailyActivityResultSchema = z
 type PublicLeaderboardRow = {
   rank: number;
   prev_rank: number | null;
-  value: number | string;
+  value: number | string | null;
+  is_public: boolean;
   username: string | null;
   display_name: string | null;
   title: string | null;
-};
-
-type PublicProfileVisibleHolding = {
-  slug: string;
-  name: string;
-  shares: number;
-  avgCost: number;
-  currentPrice: number;
-};
-
-type PublicCharacterTopHolderRow = {
-  rank: number;
-  shares: number | string;
-  value: number | string;
-  username: string | null;
-  display_name: string | null;
-};
-
-type PublicProfileRow = {
-  id: string;
-  username: string;
-  display_name: string | null;
-  created_at: string;
-};
-
-type PublicProfileAchievementRow = {
-  unlocked_at: string;
-  achievements: {
-    code: string;
-    name: string;
-    description: string;
-    tier: string;
-    icon: string | null;
-  } | null;
-};
-
-type PublicProfileSnapshotRow = {
-  snapshot_date: string;
-  net_worth: number | string | null;
-  return_pct: number | string | null;
-};
-
-type PublicProfileRankRow = {
-  rank: number | null;
-  prev_rank: number | null;
-  value: number | string | null;
 };
 
 export const BOARD_KEYS = [
@@ -89,6 +44,101 @@ export const BOARD_KEYS = [
   "most_accurate",
 ] as const;
 export type BoardKey = (typeof BOARD_KEYS)[number] | string;
+
+type PublicCharacterTopHolderRow = {
+  rank: number;
+  shares: number | string;
+  value: number | string;
+  username: string | null;
+  display_name: string | null;
+};
+
+const publicProfileStatsSchema = z
+  .object({
+    title: z.string().nullable().optional(),
+    specialization: z.string().nullable().optional(),
+    days_active: z.coerce.number().nullable().optional(),
+    reputation_score: z.coerce.number().nullable().optional(),
+    wins: z.coerce.number().nullable().optional(),
+    losses: z.coerce.number().nullable().optional(),
+    total_trades: z.coerce.number().nullable().optional(),
+    total_buys: z.coerce.number().nullable().optional(),
+    total_sells: z.coerce.number().nullable().optional(),
+    total_volume: z.coerce.number().nullable().optional(),
+    realized_pnl: z.coerce.number().nullable().optional(),
+    avg_holding_days: z.coerce.number().nullable().optional(),
+    best_trade_slug: z.string().nullable().optional(),
+    best_trade_pnl: z.coerce.number().nullable().optional(),
+    worst_trade_slug: z.string().nullable().optional(),
+    worst_trade_pnl: z.coerce.number().nullable().optional(),
+    largest_position_slug: z.string().nullable().optional(),
+    largest_position_value: z.coerce.number().nullable().optional(),
+    highest_rank: z.coerce.number().nullable().optional(),
+    current_rank: z.coerce.number().nullable().optional(),
+  })
+  .strict();
+
+const publicProfileAchievementSchema = z
+  .object({
+    unlocked_at: z.string(),
+    achievements: z
+      .object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string(),
+        tier: z.string(),
+        icon: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const publicProfileSnapshotSchema = z
+  .object({
+    snapshot_date: z.string(),
+    net_worth: z.coerce.number().nullable(),
+    return_pct: z.coerce.number().nullable(),
+  })
+  .strict();
+
+const publicProfileHoldingSchema = z
+  .object({
+    slug: z.string(),
+    name: z.string(),
+    shares: z.coerce.number(),
+    avgCost: z.coerce.number(),
+    currentPrice: z.coerce.number(),
+    value: z.coerce.number(),
+  })
+  .strict();
+
+const publicInvestorProfileResultSchema = z.discriminatedUnion("found", [
+  z.object({ found: z.literal(false) }).strict(),
+  z
+    .object({
+      found: z.literal(true),
+      is_public: z.boolean(),
+      profile: z
+        .object({
+          username: z.string(),
+          display_name: z.string().nullable(),
+          created_at: z.string(),
+        })
+        .strict(),
+      title: z.string().nullable(),
+      specialization: z.string().nullable(),
+      rank: z.coerce.number().nullable(),
+      prev_rank: z.coerce.number().nullable(),
+      stats: publicProfileStatsSchema.nullable(),
+      cash: z.coerce.number().nullable(),
+      equity: z.coerce.number().nullable(),
+      net_worth: z.coerce.number().nullable(),
+      holdings: z.array(publicProfileHoldingSchema),
+      achievements: z.array(publicProfileAchievementSchema),
+      snapshots: z.array(publicProfileSnapshotSchema),
+    })
+    .strict(),
+]);
 
 export function isPublicPlayerUsername(value: unknown): value is string {
   return (
@@ -164,7 +214,8 @@ export const listLeaderboard = createServerFn({ method: "GET" })
     return publicRows.map((r) => ({
       rank: r.rank,
       prev_rank: r.prev_rank,
-      value: Number(r.value),
+      value: r.value == null ? null : Number(r.value),
+      is_public: r.is_public,
       username: r.username,
       display_name: r.display_name ?? null,
       title: r.title ?? "rookie_pirate",
@@ -177,76 +228,33 @@ export const getPublicProfile = createServerFn({ method: "GET" })
     const db = getPublicSupabaseClient();
     if (!isPublicPlayerUsername(data.username)) return { found: false } as const;
 
-    const { data: profile, error: profileError } = await db
-      .from("profiles")
-      .select("id,username,display_name,created_at")
-      .eq("username", data.username)
-      .maybeSingle();
+    const { data: profile, error } = await db.rpc("get_public_investor_profile", {
+      _username: data.username,
+    });
 
-    if (profileError) {
-      logPublicProfileReadFailure("profile_read", profileError);
+    if (error) {
+      logPublicProfileReadFailure("profile_read", error);
       return { found: false } as const;
     }
 
-    if (!profile) return { found: false } as const;
-    const publicProfile = profile as PublicProfileRow;
+    return publicInvestorProfileResultSchema.parse(profile);
+  });
 
-    const [statsResult, achievementsResult, snapshotsResult, rankResult] = await Promise.all([
-      db.from("user_stats").select("*").eq("user_id", publicProfile.id).maybeSingle(),
-      db
-        .from("user_achievements")
-        .select("unlocked_at,achievements(code,name,description,tier,icon)")
-        .eq("user_id", publicProfile.id)
-        .order("unlocked_at", { ascending: false }),
-      db
-        .from("net_worth_snapshots")
-        .select("snapshot_date,net_worth,return_pct")
-        .eq("user_id", publicProfile.id)
-        .order("snapshot_date", { ascending: true })
-        .limit(120),
-      db
-        .from("leaderboard_cache")
-        .select("rank,prev_rank,value")
-        .eq("board_key", "net_worth_all_time")
-        .eq("user_id", publicProfile.id)
-        .maybeSingle(),
-    ]);
-
-    for (const [stage, error] of [
-      ["stats_read", statsResult.error],
-      ["achievements_read", achievementsResult.error],
-      ["snapshots_read", snapshotsResult.error],
-      ["rank_read", rankResult.error],
-    ] as const) {
-      if (error) logPublicProfileReadFailure(stage, error);
-    }
-
-    const stats = statsResult.error ? null : statsResult.data;
-    const achievements = achievementsResult.error
-      ? []
-      : ((achievementsResult.data ?? []) as PublicProfileAchievementRow[]).filter(
-          (entry) => entry.achievements,
-        );
-    const snapshots = snapshotsResult.error
-      ? []
-      : ((snapshotsResult.data ?? []) as PublicProfileSnapshotRow[]);
-    const rankRow = rankResult.error ? null : (rankResult.data as PublicProfileRankRow | null);
-    const netWorthSource = stats?.current_net_worth ?? rankRow?.value ?? null;
-    const netWorth = netWorthSource == null ? null : Number(netWorthSource);
-
-    return {
-      found: true,
-      profile: publicProfile,
-      stats,
-      cash: null,
-      equity: null,
-      net_worth: netWorth,
-      achievements,
-      snapshots,
-      holdings: [] as PublicProfileVisibleHolding[],
-      rank: rankRow?.rank ?? null,
-      prev_rank: rankRow?.prev_rank ?? null,
-    } as const;
+export const setMyPublicTradingProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        isPublic: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: setting, error } = await context.supabase.rpc("set_my_public_trading_profile", {
+      _is_public: data.isPublic,
+    });
+    if (error) throw new Error(error.message);
+    return { publicTradingProfile: Boolean(setting) } as const;
   });
 
 export const listLegacy = createServerFn({ method: "GET" })
@@ -407,35 +415,20 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
     );
     let largestHolderEligible = false;
 
-    if (profile?.username && characterSlugs.length > 0) {
-      const topHolderResults = await Promise.all(
+    if (characterSlugs.length > 0) {
+      const largestHolderResults = await Promise.all(
         characterSlugs.map((slug) =>
-          db.rpc("get_public_character_top_holders", {
+          db.rpc("is_my_character_largest_holder", {
             _slug: slug,
-            _limit: 1,
-            _offset: 0,
           }),
         ),
       );
 
-      for (const { error } of topHolderResults) {
+      for (const { error } of largestHolderResults) {
         if (error) throw error;
       }
 
-      const topSharesBySlug = new Map<string, number>();
-      topHolderResults.forEach(({ data }, index) => {
-        const topRow = ((data ?? []) as PublicCharacterTopHolderRow[])[0];
-        if (topRow) topSharesBySlug.set(characterSlugs[index], Number(topRow.shares));
-      });
-
-      largestHolderEligible = positiveHoldings.some((holding) => {
-        const slug = holding.characters?.slug;
-        if (!slug) return false;
-        const topShares = topSharesBySlug.get(slug);
-        return (
-          topShares != null && Number(holding.shares) > 0 && Number(holding.shares) >= topShares
-        );
-      });
+      largestHolderEligible = largestHolderResults.some(({ data }) => data === true);
     }
 
     const dailyCrewRows = (dailyCrewSubmissions ?? []) as {

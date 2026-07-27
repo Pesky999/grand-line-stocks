@@ -318,7 +318,10 @@ test("broad leaderboard refresh does not rewrite wallets or holdings", () => {
 });
 
 test("wallet API returns database accounting fields without recalculating authoritative P/L", () => {
-  assert.match(walletFunctionsSource, /\.select\("realized_pnl,wins,losses,total_sells"\)/);
+  assert.match(
+    walletFunctionsSource,
+    /\.select\(\s*"[^"]*realized_pnl,wins,losses,total_sells[^"]*"/,
+  );
   assert.match(walletFunctionsSource, /realizedPnl: Number\(stats\?\.realized_pnl \?\? 0\)/);
   assert.match(walletFunctionsSource, /totalCostBasis: Number\(h\.total_cost_basis\)/);
   assert.match(walletFunctionsSource, /costBasis: Number\(tx\.cost_basis\)/);

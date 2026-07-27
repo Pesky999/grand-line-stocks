@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe, useInvalidateMe } from "@/hooks/useMe";
 import { updateProfile } from "@/lib/api/wallet.functions";
-import { getPublicProfile } from "@/lib/api/legendary.functions";
+import { setMyPublicTradingProfile } from "@/lib/api/legendary.functions";
 import {
   deleteMyAccount,
   getMyAccountDeletionReadiness,
@@ -133,16 +133,12 @@ function Profile() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
   const [tutorialBusy, setTutorialBusy] = useState(false);
+  const [privacySaving, setPrivacySaving] = useState(false);
+  const [privacyOverride, setPrivacyOverride] = useState<boolean | null>(null);
   const handleSignOut = useSignOut();
 
   const profile = data?.profile ?? null;
   const username = profile?.username ?? null;
-  const pub = useQuery({
-    queryKey: ["public-profile", username],
-    queryFn: () => getPublicProfile({ data: { username: username! } }),
-    enabled: !!username,
-    staleTime: 30_000,
-  });
   const deletionReadiness = useQuery({
     queryKey: ["account-deletion-readiness"],
     queryFn: () => getMyAccountDeletionReadiness(),
@@ -169,11 +165,11 @@ function Profile() {
   const marketValue = data.holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0);
   const netWorth = data.berries + marketValue;
   const joined = profile?.created_at ? new Date(profile.created_at) : null;
-  const publicProfile = pub.data?.found ? pub.data : null;
-  const stats = (publicProfile?.stats ?? {}) as ProfileStats;
-  const ach = (publicProfile?.achievements ?? []) as ProfileAchievement[];
+  const stats = (data.stats ?? {}) as ProfileStats;
+  const ach = (data.achievements ?? []) as ProfileAchievement[];
   const title = stats.title ?? "rookie_pirate";
   const specialization = stats.specialization ?? "generalist";
+  const publicTradingProfile = privacyOverride ?? profile?.public_trading_profile ?? true;
   const readiness = deletionReadiness.data ?? null;
   const finalDeletionEnabled =
     !!username &&
@@ -200,6 +196,28 @@ function Profile() {
       toast.error(e instanceof Error ? e.message : "Could not update profile.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePrivacyChange(isPublic: boolean) {
+    const previous = publicTradingProfile;
+    setPrivacySaving(true);
+    setPrivacyOverride(isPublic);
+    try {
+      const result = await setMyPublicTradingProfile({ data: { isPublic } });
+      setPrivacyOverride(result.publicTradingProfile);
+      await invalidate();
+      setPrivacyOverride(null);
+      toast.success(
+        result.publicTradingProfile
+          ? "Public trading profile enabled."
+          : "Trading profile set to private.",
+      );
+    } catch (error) {
+      setPrivacyOverride(previous);
+      toast.error(error instanceof Error ? error.message : "Could not update privacy setting.");
+    } finally {
+      setPrivacySaving(false);
     }
   }
 
@@ -381,6 +399,50 @@ function Profile() {
         </div>
 
         <div className="terminal-panel">
+          <div className="terminal-header">PUBLIC TRADING PROFILE</div>
+          <div className="space-y-4 p-5 text-xs">
+            <p className="text-sm text-muted-foreground">
+              When enabled, other players can view your cash, portfolio value, positions, investor
+              statistics, achievements, and performance history.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handlePrivacyChange(true)}
+                disabled={privacySaving || publicTradingProfile}
+                className={`border px-4 py-2 text-[10px] font-bold uppercase tracking-widest ${
+                  publicTradingProfile
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:text-primary"
+                } disabled:opacity-60`}
+              >
+                PUBLIC
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePrivacyChange(false)}
+                disabled={privacySaving || !publicTradingProfile}
+                className={`border px-4 py-2 text-[10px] font-bold uppercase tracking-widest ${
+                  !publicTradingProfile
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:text-primary"
+                } disabled:opacity-60`}
+              >
+                PRIVATE
+              </button>
+              {privacySaving && (
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Saving...
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] leading-relaxed text-muted-foreground">
+              Rankings stay public while your detailed trading profile can be hidden.
+            </div>
+          </div>
+        </div>
+
+        <div className="terminal-panel">
           <div className="terminal-header flex items-center justify-between gap-3">
             <span>Prestige</span>
             <Link
@@ -427,7 +489,7 @@ function Profile() {
                 Rank · Best
               </div>
               <div className="mt-1 tabular">
-                {publicProfile?.rank ? `#${publicProfile.rank}` : "—"}
+                {data.rank?.rank ? `#${data.rank.rank}` : "\u2014"}
                 <span className="ml-2 text-muted-foreground">
                   best #{stats.highest_rank ?? "—"}
                 </span>

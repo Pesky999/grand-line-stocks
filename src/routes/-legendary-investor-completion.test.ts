@@ -64,7 +64,9 @@ test("profile Prestige section keeps public profile link and adds Legacy Log lin
   assert.match(profileSource, /to="\/u\/\$username"/);
   assert.match(profileSource, /view public profile/);
   assert.match(profileSource, /Achievements \(\{ach\.length\}\)/);
-  assert.match(profileSource, /const publicProfile = pub\.data\?\.found \? pub\.data : null/);
+  assert.match(profileSource, /PUBLIC TRADING PROFILE/);
+  assert.match(profileSource, /setMyPublicTradingProfile/);
+  assert.match(profileSource, /data\.rank\?\.rank \? `#\$\{data\.rank\.rank\}`/);
   assert.doesNotMatch(profileSource, /pub\.data\?\.stats|pub\.data\?\.achievements/);
 });
 
@@ -79,10 +81,13 @@ test("public profile route shows a contained not-found state for deleted or miss
   assert.doesNotMatch(publicProfileSource, /throw notFound|import \{[^}]*notFound/);
 });
 
-test("public profile does not display private cash or holdings when public RLS cannot read them", () => {
+test("public profile restores public trading data and can hide private trading details", () => {
+  assert.match(publicProfileSource, /TRADING PROFILE PRIVATE/);
+  assert.match(publicProfileSource, /!d\.is_public \? \(/);
   assert.match(publicProfileSource, /d\.cash != null &&/);
   assert.match(publicProfileSource, /d\.equity != null &&/);
   assert.match(publicProfileSource, /d\.holdings\.length > 0 &&/);
+  assert.match(publicProfileSource, /h\.shares \* h\.currentPrice/);
   assert.doesNotMatch(publicProfileSource, /No open positions\./);
 });
 

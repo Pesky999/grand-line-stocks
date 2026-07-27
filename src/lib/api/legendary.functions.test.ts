@@ -31,16 +31,13 @@ test("public profile reads use the public client and never require service-role 
 
   assert.match(publicProfile, /const db = getPublicSupabaseClient\(\)/);
   assert.doesNotMatch(publicProfile, /await admin\(\)|supabaseAdmin|client\.server/);
-  assert.match(publicProfile, /\.from\("profiles"\)/);
-  assert.match(publicProfile, /\.from\("user_stats"\)/);
-  assert.match(publicProfile, /\.from\("user_achievements"\)/);
-  assert.match(publicProfile, /\.from\("net_worth_snapshots"\)/);
-  assert.match(publicProfile, /\.from\("leaderboard_cache"\)/);
+  assert.match(publicProfile, /\.rpc\("get_public_investor_profile"/);
+  assert.match(publicProfile, /_username: data\.username/);
+  assert.match(publicProfile, /publicInvestorProfileResultSchema\.parse\(profile\)/);
+  assert.doesNotMatch(publicProfile, /\.from\("profiles"\)/);
   assert.doesNotMatch(publicProfile, /\.from\("user_wallets"\)/);
   assert.doesNotMatch(publicProfile, /\.from\("user_holdings"\)/);
-  assert.match(publicProfile, /cash: null/);
-  assert.match(publicProfile, /equity: null/);
-  assert.match(publicProfile, /holdings: \[\] as PublicProfileVisibleHolding\[\]/);
+  assert.doesNotMatch(publicProfile, /cash: null|equity: null|holdings: \[\]/);
 });
 
 test("public profile lookup treats existing usernames as authoritative profile rows", () => {
@@ -48,33 +45,42 @@ test("public profile lookup treats existing usernames as authoritative profile r
 
   assert.match(source, /const PUBLIC_PROFILE_USERNAME_MAX_LENGTH = 64/);
   assert.match(publicProfile, /if \(!isPublicPlayerUsername\(data\.username\)\)/);
-  assert.match(publicProfile, /\.eq\("username", data\.username\)[\s\S]*\.maybeSingle\(\)/);
-  assert.match(publicProfile, /if \(!profile\) return \{ found: false \} as const/);
+  assert.match(
+    publicProfile,
+    /\.rpc\("get_public_investor_profile", \{\s*_username: data\.username/,
+  );
+  assert.match(source, /z\.object\(\{ found: z\.literal\(false\) \}\)\.strict\(\)/);
   assert.doesNotMatch(source, /PUBLIC_PLAYER_USERNAME_PATTERN|value !== "anon"/);
+  assert.doesNotMatch(publicProfile, /\.eq\("username", data\.username\)[\s\S]*\.maybeSingle\(\)/);
   assert.doesNotMatch(publicProfile, /!profile \|\| !isPublicPlayerUsername\(profile\.username\)/);
 });
 
 test("public profile failures and deleted usernames return a contained not-found result", () => {
-  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+  const publicProfile = between(
+    "export const getPublicProfile",
+    "export const setMyPublicTradingProfile",
+  );
 
   assert.match(publicProfile, /return \{ found: false \} as const/);
-  assert.match(publicProfile, /logPublicProfileReadFailure\("profile_read", profileError\)/);
+  assert.match(publicProfile, /logPublicProfileReadFailure\("profile_read", error\)/);
   assert.doesNotMatch(publicProfile, /throw notFound|throw profileError|throw new Error/);
 });
 
-test("public profile keeps unavailable financial data nullable instead of synthetic zeroes", () => {
-  const publicProfile = between("export const getPublicProfile", "export const listLegacy");
+test("public profile schema accepts restored trading data without exposing private identity fields", () => {
+  const schema = between(
+    "const publicInvestorProfileResultSchema",
+    "export function isPublicPlayerUsername",
+  );
 
-  assert.match(
-    publicProfile,
-    /const netWorthSource = stats\?\.current_net_worth \?\? rankRow\?\.value \?\? null/,
-  );
-  assert.match(
-    publicProfile,
-    /const netWorth = netWorthSource == null \? null : Number\(netWorthSource\)/,
-  );
-  assert.match(publicProfile, /net_worth: netWorth/);
-  assert.doesNotMatch(publicProfile, /current_net_worth \?\? rankRow\?\.value \?\? 0/);
+  assert.match(schema, /is_public: z\.boolean\(\)/);
+  assert.match(schema, /cash: z\.coerce\.number\(\)\.nullable\(\)/);
+  assert.match(schema, /equity: z\.coerce\.number\(\)\.nullable\(\)/);
+  assert.match(schema, /net_worth: z\.coerce\.number\(\)\.nullable\(\)/);
+  assert.match(schema, /holdings: z\.array\(publicProfileHoldingSchema\)/);
+  assert.match(schema, /achievements: z\.array\(publicProfileAchievementSchema\)/);
+  assert.match(schema, /snapshots: z\.array\(publicProfileSnapshotSchema\)/);
+  assert.match(source, /value: z\.coerce\.number\(\)/);
+  assert.doesNotMatch(schema, /user_id|id: z\.string\(\)\.uuid\(\)|email|auth|role|moderation/);
 });
 
 test("public leaderboard and holder APIs verify real profile rows instead of linking ghosts", () => {
@@ -202,10 +208,12 @@ test("Legacy Log first-event and largest-holder eligibility are returned as bool
   assert.match(legacyLog, /\.gte\("published_at", profile\.created_at\)/);
   assert.match(legacyLog, /\.lte\("published_at", new Date\(\)\.toISOString\(\)\)/);
   assert.match(legacyLog, /firstEventEligible: \(firstEvent \?\? \[\]\)\.length > 0/);
-  assert.match(legacyLog, /\.rpc\("get_public_character_top_holders"/);
-  assert.match(legacyLog, /const topSharesBySlug = new Map<string, number>\(\)/);
-  assert.match(legacyLog, /Number\(holding\.shares\) >= topShares/);
-  assert.doesNotMatch(legacyLog, /return \{[\s\S]*holderRows[\s\S]*\}/);
+  assert.match(legacyLog, /\.rpc\("is_my_character_largest_holder"/);
+  assert.match(
+    legacyLog,
+    /largestHolderEligible = largestHolderResults\.some\(\(\{ data \}\) => data === true\)/,
+  );
+  assert.doesNotMatch(legacyLog, /get_public_character_top_holders|topSharesBySlug|holderRows/);
 });
 
 test("Legacy Log reads new achievement expansion data sources without writes", () => {

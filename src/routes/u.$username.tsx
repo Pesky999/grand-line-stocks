@@ -125,8 +125,8 @@ function PublicProfile() {
   const userLegacy = ((legacy.data ?? []) as PublicLegacyRecord[]).filter(
     (l) => l.username === username,
   );
-  const title = s.title ?? null;
-  const specialization = s.specialization ?? null;
+  const title = s.title ?? d.title ?? null;
+  const specialization = d.is_public ? (s.specialization ?? d.specialization ?? null) : null;
   const profileFacts = [`Joined ${new Date(d.profile.created_at).toLocaleDateString()}`];
   if (s.days_active != null) profileFacts.push(`${s.days_active} days active`);
   if (s.reputation_score != null) profileFacts.push(`Reputation ${s.reputation_score}/1000`);
@@ -157,178 +157,205 @@ function PublicProfile() {
         <div className="mt-1 text-[11px] text-muted-foreground">{profileFacts.join(" · ")}</div>
       </div>
 
-      {(d.net_worth != null || d.cash != null || d.equity != null || totalReturn != null) && (
-        <div className="grid gap-px border-b border-border bg-border md:grid-cols-4">
-          {d.net_worth != null && (
-            <Stat label="Net Worth" value={`\u0E3F${formatBerries(d.net_worth)}`} tone="accent" />
-          )}
-          {d.cash != null && <Stat label="Cash" value={`\u0E3F${formatBerries(d.cash)}`} />}
-          {d.equity != null && (
-            <Stat label="Portfolio Value" value={`\u0E3F${formatBerries(d.equity)}`} />
-          )}
-          {totalReturn != null && (
-            <Stat
-              label="Total Return"
-              value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`}
-              tone={totalReturn >= 0 ? "bull" : "bear"}
-            />
-          )}
+      {!d.is_public ? (
+        <div className="p-4">
+          <div className="terminal-panel">
+            <div className="terminal-header">TRADING PROFILE PRIVATE</div>
+            <div className="space-y-2 p-5 text-sm text-muted-foreground">
+              <p>
+                This investor keeps their detailed trading profile private. Rankings remain public,
+                but cash, positions, statistics, achievements, and performance history are hidden.
+              </p>
+            </div>
+          </div>
         </div>
-      )}
-
-      <div className="grid gap-4 p-4 lg:grid-cols-3">
-        <section className="lg:col-span-2 space-y-4">
-          <div className="terminal-panel">
-            <div className="terminal-header">Investment Statistics</div>
-            {!hasPublicStats ? (
-              <div className="p-4 text-xs text-muted-foreground">
-                Public statistics are unavailable right now.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-px bg-border text-xs">
-                <Cell label="Total Trades" value={s.total_trades ?? "—"} />
-                <Cell
-                  label="Win Rate"
-                  value={
-                    winRate == null || wins == null || losses == null
-                      ? "—"
-                      : `${winRate.toFixed(1)}% (${wins}W / ${losses}L)`
-                  }
+      ) : (
+        <>
+          {(d.net_worth != null || d.cash != null || d.equity != null || totalReturn != null) && (
+            <div className="grid gap-px border-b border-border bg-border md:grid-cols-4">
+              {d.net_worth != null && (
+                <Stat
+                  label="Net Worth"
+                  value={`\u0E3F${formatBerries(d.net_worth)}`}
+                  tone="accent"
                 />
-                <Cell
-                  label="Realized P/L"
-                  value={
-                    s.realized_pnl == null
-                      ? "—"
-                      : `${s.realized_pnl >= 0 ? "+" : ""}\u0E3F${formatBerries(s.realized_pnl)}`
-                  }
+              )}
+              {d.cash != null && <Stat label="Cash" value={`\u0E3F${formatBerries(d.cash)}`} />}
+              {d.equity != null && (
+                <Stat label="Portfolio Value" value={`\u0E3F${formatBerries(d.equity)}`} />
+              )}
+              {totalReturn != null && (
+                <Stat
+                  label="Total Return"
+                  value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`}
+                  tone={totalReturn >= 0 ? "bull" : "bear"}
                 />
-                <Cell
-                  label="Avg Holding"
-                  value={s.avg_holding_days == null ? "—" : `${s.avg_holding_days.toFixed(1)} days`}
-                />
-                <Cell
-                  label="Best Trade"
-                  value={
-                    s.best_trade_slug && s.best_trade_pnl != null
-                      ? `${s.best_trade_slug.toUpperCase()} (+\u0E3F${formatBerries(s.best_trade_pnl)})`
-                      : "—"
-                  }
-                />
-                <Cell
-                  label="Worst Trade"
-                  value={
-                    s.worst_trade_slug && s.worst_trade_pnl != null
-                      ? `${s.worst_trade_slug.toUpperCase()} (\u0E3F${formatBerries(s.worst_trade_pnl)})`
-                      : "—"
-                  }
-                />
-                <Cell
-                  label="Largest Position"
-                  value={
-                    s.largest_position_slug && s.largest_position_value != null
-                      ? `${s.largest_position_slug.toUpperCase()} (\u0E3F${formatBerries(s.largest_position_value)})`
-                      : "—"
-                  }
-                />
-                <Cell label="Highest Rank" value={s.highest_rank ? `#${s.highest_rank}` : "—"} />
-              </div>
-            )}
-          </div>
-
-          <div className="terminal-panel">
-            <div className="terminal-header">
-              Net Worth History · {d.snapshots.length} snapshots
+              )}
             </div>
-            {d.snapshots.length === 0 ? (
-              <div className="p-4 text-xs text-muted-foreground">
-                Not enough history yet. Snapshots accumulate daily.
-              </div>
-            ) : (
-              <Sparkline
-                points={(d.snapshots as PublicProfileSnapshot[]).map((snapshot) =>
-                  Number(snapshot.net_worth),
+          )}
+
+          <div className="grid gap-4 p-4 lg:grid-cols-3">
+            <section className="lg:col-span-2 space-y-4">
+              <div className="terminal-panel">
+                <div className="terminal-header">Investment Statistics</div>
+                {!hasPublicStats ? (
+                  <div className="p-4 text-xs text-muted-foreground">
+                    Public statistics are unavailable right now.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-px bg-border text-xs">
+                    <Cell label="Total Trades" value={s.total_trades ?? "—"} />
+                    <Cell
+                      label="Win Rate"
+                      value={
+                        winRate == null || wins == null || losses == null
+                          ? "—"
+                          : `${winRate.toFixed(1)}% (${wins}W / ${losses}L)`
+                      }
+                    />
+                    <Cell
+                      label="Realized P/L"
+                      value={
+                        s.realized_pnl == null
+                          ? "—"
+                          : `${s.realized_pnl >= 0 ? "+" : ""}\u0E3F${formatBerries(s.realized_pnl)}`
+                      }
+                    />
+                    <Cell
+                      label="Avg Holding"
+                      value={
+                        s.avg_holding_days == null ? "—" : `${s.avg_holding_days.toFixed(1)} days`
+                      }
+                    />
+                    <Cell
+                      label="Best Trade"
+                      value={
+                        s.best_trade_slug && s.best_trade_pnl != null
+                          ? `${s.best_trade_slug.toUpperCase()} (+\u0E3F${formatBerries(s.best_trade_pnl)})`
+                          : "—"
+                      }
+                    />
+                    <Cell
+                      label="Worst Trade"
+                      value={
+                        s.worst_trade_slug && s.worst_trade_pnl != null
+                          ? `${s.worst_trade_slug.toUpperCase()} (\u0E3F${formatBerries(s.worst_trade_pnl)})`
+                          : "—"
+                      }
+                    />
+                    <Cell
+                      label="Largest Position"
+                      value={
+                        s.largest_position_slug && s.largest_position_value != null
+                          ? `${s.largest_position_slug.toUpperCase()} (\u0E3F${formatBerries(s.largest_position_value)})`
+                          : "—"
+                      }
+                    />
+                    <Cell
+                      label="Highest Rank"
+                      value={s.highest_rank ? `#${s.highest_rank}` : "—"}
+                    />
+                  </div>
                 )}
-              />
-            )}
-          </div>
+              </div>
 
-          {d.holdings.length > 0 && (
-            <div className="terminal-panel">
-              <div className="terminal-header">Current Positions ({d.holdings.length})</div>
-              <ul className="divide-y divide-border text-xs">
-                {d.holdings.map((h) => (
-                  <li key={h.slug} className="flex items-center justify-between px-3 py-2">
-                    <Link
-                      to="/character/$slug"
-                      params={{ slug: h.slug }}
-                      className="text-primary hover:underline"
-                    >
-                      <span className="font-bold">{h.slug.toUpperCase().slice(0, 4)}</span> ·{" "}
-                      {h.name}
-                    </Link>
-                    <span className="tabular">
-                      {formatShares(h.shares)} sh @ ฿{h.avgCost.toFixed(2)} · ฿
-                      {formatBerries(h.shares * h.currentPrice)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
+              <div className="terminal-panel">
+                <div className="terminal-header">
+                  Net Worth History · {d.snapshots.length} snapshots
+                </div>
+                {d.snapshots.length === 0 ? (
+                  <div className="p-4 text-xs text-muted-foreground">
+                    Not enough history yet. Snapshots accumulate daily.
+                  </div>
+                ) : (
+                  <Sparkline
+                    points={(d.snapshots as PublicProfileSnapshot[]).map((snapshot) =>
+                      Number(snapshot.net_worth),
+                    )}
+                  />
+                )}
+              </div>
 
-        <aside className="space-y-4">
-          <div className="terminal-panel">
-            <div className="terminal-header">Achievements ({d.achievements.length})</div>
-            {d.achievements.length === 0 ? (
-              <div className="p-4 text-xs text-muted-foreground">No achievements unlocked yet.</div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(d.achievements as PublicProfileAchievement[]).map((ua) => (
-                  <li key={ua.achievements.code} className="px-3 py-2">
-                    <div className="flex items-start gap-2">
-                      <AchievementMedallion
-                        code={ua.achievements.code}
-                        name={ua.achievements.name}
-                        icon={ua.achievements.icon}
-                        size="md"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-sm font-bold">{ua.achievements.name}</span>
-                          <span
-                            className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}
-                          >
-                            {ua.achievements.tier}
-                          </span>
+              {d.holdings.length > 0 && (
+                <div className="terminal-panel">
+                  <div className="terminal-header">Current Positions ({d.holdings.length})</div>
+                  <ul className="divide-y divide-border text-xs">
+                    {d.holdings.map((h) => (
+                      <li key={h.slug} className="flex items-center justify-between px-3 py-2">
+                        <Link
+                          to="/character/$slug"
+                          params={{ slug: h.slug }}
+                          className="text-primary hover:underline"
+                        >
+                          <span className="font-bold">{h.slug.toUpperCase().slice(0, 4)}</span> ·{" "}
+                          {h.name}
+                        </Link>
+                        <span className="tabular">
+                          {formatShares(h.shares)} sh @ ฿{h.avgCost.toFixed(2)} · ฿
+                          {formatBerries(h.shares * h.currentPrice)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+
+            <aside className="space-y-4">
+              <div className="terminal-panel">
+                <div className="terminal-header">Achievements ({d.achievements.length})</div>
+                {d.achievements.length === 0 ? (
+                  <div className="p-4 text-xs text-muted-foreground">
+                    No achievements unlocked yet.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {(d.achievements as PublicProfileAchievement[]).map((ua) => (
+                      <li key={ua.achievements.code} className="px-3 py-2">
+                        <div className="flex items-start gap-2">
+                          <AchievementMedallion
+                            code={ua.achievements.code}
+                            name={ua.achievements.name}
+                            icon={ua.achievements.icon}
+                            size="md"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-sm font-bold">{ua.achievements.name}</span>
+                              <span
+                                className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${TIER_TONE[ua.achievements.tier]}`}
+                              >
+                                {ua.achievements.tier}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {ua.achievements.description}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {ua.achievements.description}
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
-          {userLegacy.length > 0 && (
-            <div className="terminal-panel">
-              <div className="terminal-header">Legacy Records</div>
-              <ul className="divide-y divide-border text-xs">
-                {userLegacy.map((l) => (
-                  <li key={l.code} className="px-3 py-2">
-                    <div className="font-bold text-yellow-400">{l.title}</div>
-                    <div className="text-[11px] text-muted-foreground">{l.description}</div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </aside>
-      </div>
+              {userLegacy.length > 0 && (
+                <div className="terminal-panel">
+                  <div className="terminal-header">Legacy Records</div>
+                  <ul className="divide-y divide-border text-xs">
+                    {userLegacy.map((l) => (
+                      <li key={l.code} className="px-3 py-2">
+                        <div className="font-bold text-yellow-400">{l.title}</div>
+                        <div className="text-[11px] text-muted-foreground">{l.description}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </aside>
+          </div>
+        </>
+      )}
     </TerminalShell>
   );
 }
