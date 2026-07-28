@@ -2568,6 +2568,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_my_legacy_rank: {
+        Args: never
+        Returns: {
+          prev_rank: number
+          rank: number
+          value: number
+        }[]
+      }
       get_public_character_top_holders: {
         Args: { _limit?: number; _offset?: number; _slug: string }
         Returns: {

@@ -324,12 +324,7 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       { data: dailyCrewSubmissions, error: dailyCrewError },
     ] = await Promise.all([
       db.from("user_stats").select("*").eq("user_id", userId).maybeSingle(),
-      db
-        .from("leaderboard_cache")
-        .select("rank,prev_rank,value")
-        .eq("board_key", "net_worth_all_time")
-        .eq("user_id", userId)
-        .maybeSingle(),
+      db.rpc("get_my_legacy_rank").maybeSingle(),
       db
         .from("achievements")
         .select("code,name,description,tier,category,icon,reputation_reward")
