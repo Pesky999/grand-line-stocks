@@ -1,5 +1,10 @@
 BEGIN;
 
+-- PostgreSQL cannot change a table-returning function's OUT column shape
+-- through CREATE OR REPLACE. Drop the previous leaderboard signature inside
+-- this transaction so the updated function can be recreated atomically below.
+DROP FUNCTION IF EXISTS public.get_public_leaderboard(text, integer, integer);
+
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS public_trading_profile boolean NOT NULL DEFAULT true;
 
