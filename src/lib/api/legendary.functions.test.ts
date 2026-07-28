@@ -1,11 +1,24 @@
 /// <reference types="node" />
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-const source = readFileSync(join(process.cwd(), "src/lib/api/legendary.functions.ts"), "utf8");
+function readProjectFile(path: string) {
+  return readFileSync(join(process.cwd(), path), "utf8");
+}
+
+function normalizedSha256(source: string) {
+  return createHash("sha256").update(source.replace(/\r\n/g, "\n")).digest("hex");
+}
+
+const source = readProjectFile("src/lib/api/legendary.functions.ts");
+const legacyRankMigration = readProjectFile(
+  "supabase/migrations/20260728020000_get_my_legacy_rank.sql",
+);
+const typesSource = readProjectFile("src/integrations/supabase/types.ts");
 
 function between(start: string, end: string) {
   const startIndex = source.indexOf(start);
@@ -152,6 +165,82 @@ test("getMyLegacyLog requires auth and is read-only", () => {
   assert.doesNotMatch(legacyLog, /await admin\(\)|supabaseAdmin|client\.server/);
   assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
   assert.doesNotMatch(legacyLog, /record_my_daily_activity|refresh_user_progression/);
+});
+
+test("getMyLegacyLog reads its private all-time rank through the caller-only RPC", () => {
+  const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
+
+  assert.match(legacyLog, /db\.rpc\("get_my_legacy_rank"\)\.maybeSingle\(\)/);
+  assert.doesNotMatch(legacyLog, /\.from\("leaderboard_cache"\)/);
+  assert.doesNotMatch(
+    legacyLog,
+    /get_my_legacy_rank[\s\S]*_user_id|_user_id[\s\S]*get_my_legacy_rank/,
+  );
+});
+
+test("get_my_legacy_rank exposes only the authenticated player's private rank row", () => {
+  assert.match(legacyRankMigration, /^BEGIN;/);
+  assert.match(legacyRankMigration, /COMMIT;\s*$/);
+  assert.match(
+    legacyRankMigration,
+    /CREATE OR REPLACE FUNCTION public\.get_my_legacy_rank\(\)\s+RETURNS TABLE \(\s*rank integer,\s*prev_rank integer,\s*value numeric\s*\)/,
+  );
+  assert.match(legacyRankMigration, /LANGUAGE sql\s+STABLE\s+SECURITY DEFINER/);
+  assert.match(legacyRankMigration, /SET search_path = pg_catalog, public, pg_temp/);
+  assert.match(
+    legacyRankMigration,
+    /FROM public\.leaderboard_cache AS leaderboard\s+WHERE leaderboard\.user_id = auth\.uid\(\)\s+AND leaderboard\.board_key = 'net_worth_all_time'/,
+  );
+  assert.doesNotMatch(
+    legacyRankMigration.slice(
+      legacyRankMigration.indexOf("public.get_my_legacy_rank("),
+      legacyRankMigration.indexOf("RETURNS TABLE"),
+    ),
+    /user_id|uuid|text|integer|numeric/,
+  );
+  assert.doesNotMatch(legacyRankMigration, /username|display_name|profile|auth\.users/);
+});
+
+test("get_my_legacy_rank is caller-only without direct leaderboard table grants", () => {
+  assert.match(
+    legacyRankMigration,
+    /REVOKE ALL ON FUNCTION public\.get_my_legacy_rank\(\) FROM PUBLIC;/,
+  );
+  assert.match(
+    legacyRankMigration,
+    /REVOKE EXECUTE ON FUNCTION public\.get_my_legacy_rank\(\) FROM anon;/,
+  );
+  assert.match(
+    legacyRankMigration,
+    /GRANT EXECUTE ON FUNCTION public\.get_my_legacy_rank\(\) TO authenticated, service_role;/,
+  );
+  assert.doesNotMatch(
+    legacyRankMigration,
+    /GRANT\s+(?:SELECT|ALL)\s+ON\s+(?:TABLE\s+)?public\.leaderboard_cache/i,
+  );
+  assert.match(legacyRankMigration, /NOTIFY pgrst, 'reload schema';/);
+});
+
+test("generated types expose the no-argument Legacy Log rank RPC", () => {
+  assert.match(
+    typesSource,
+    /get_my_legacy_rank:\s*\{\s*Args: never\s*Returns:\s*\{\s*prev_rank: number\s*rank: number\s*value: number\s*\}\[\]\s*\}/,
+  );
+});
+
+test("historical onboarding migrations remain byte-for-byte unchanged after line-ending normalization", () => {
+  assert.equal(
+    normalizedSha256(
+      readProjectFile("supabase/migrations/20260725020000_add_stock_trading_onboarding.sql"),
+    ),
+    "ef09bde7d00b049f05e6e3f244c674209ac7469c12575a2612132056fbd6322d",
+  );
+  assert.equal(
+    normalizedSha256(
+      readProjectFile("supabase/migrations/20260725233000_reconcile_account_lifecycle.sql"),
+    ),
+    "58d1b7252b1ac9013fec4ac9dad0d9a55d656d2c2aae9bc746df68cab0774de5",
+  );
 });
 
 test("getMyLegacyLog scopes private reads to the authenticated player", () => {
