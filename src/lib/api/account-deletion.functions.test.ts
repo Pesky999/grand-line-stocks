@@ -18,6 +18,8 @@ function sourceBetween(source: string, start: string, end: string) {
 }
 
 const source = read("src/lib/api/account-deletion.functions.ts");
+const adminClientSource = read("src/integrations/supabase/client.server.ts");
+const serverSecretSource = read("src/integrations/supabase/server-secret.server.ts");
 
 test("account deletion server functions require auth and use the trusted admin client", () => {
   assert.match(
@@ -49,8 +51,9 @@ test("readiness reports only final-admin deletion blocking state", () => {
   );
 
   assert.match(readinessType, /canDelete: boolean/);
-  assert.match(readinessType, /isAdmin: boolean/);
-  assert.match(readinessType, /isLastAdmin: boolean/);
+  assert.match(readinessType, /available: boolean/);
+  assert.match(readinessType, /isAdmin: boolean \| null/);
+  assert.match(readinessType, /isLastAdmin: boolean \| null/);
   assert.match(readinessType, /reasonCode: AccountDeletionReasonCode \| null/);
   assert.doesNotMatch(
     readinessType,
@@ -58,9 +61,42 @@ test("readiness reports only final-admin deletion blocking state", () => {
   );
   assert.match(readiness, /const adminState = await getAdminDeletionState\(db, userId\)/);
   assert.match(readiness, /adminState\.isLastAdmin[\s\S]*\? "LAST_ADMIN_ACCOUNT"[\s\S]*: null/);
+  assert.match(readiness, /available: true/);
   assert.match(readiness, /canDelete: reasonCode === null/);
-  assert.match(handler, /return getReadinessForUser\(db, context\.userId\)/);
+  assert.match(handler, /return await getReadinessForUser\(db, context\.userId\)/);
   assert.doesNotMatch(handler, /context\.supabase|context\.claims/);
+});
+
+test("readiness fails closed when server configuration or verification is unavailable", () => {
+  const unavailable = sourceBetween(
+    source,
+    "function unavailableAccountDeletionReadiness",
+    "async function readCurrentProfileUsername",
+  );
+  const handler = sourceBetween(
+    source,
+    "export const getMyAccountDeletionReadiness",
+    "export const deleteMyAccount",
+  );
+
+  assert.match(unavailable, /available: false/);
+  assert.match(unavailable, /canDelete: false/);
+  assert.match(unavailable, /isAdmin: null/);
+  assert.match(unavailable, /isLastAdmin: null/);
+  assert.match(handler, /try \{/);
+  assert.match(handler, /catch \{/);
+  assert.match(handler, /code: "ACCOUNT_DELETION_READINESS_UNAVAILABLE"/);
+  assert.match(handler, /return unavailableAccountDeletionReadiness\(\)/);
+  assert.doesNotMatch(handler, /error\.message|console\.(?:log|info|warn)\(/);
+});
+
+test("missing admin configuration names accepted server-only variables without leaking values", () => {
+  assert.match(serverSecretSource, /BERRY_STREET_SUPABASE_SERVER_SECRET/);
+  assert.match(serverSecretSource, /SUPABASE_SECRET_KEY/);
+  assert.match(serverSecretSource, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(serverSecretSource, /Accepted server secret variables, in priority order/);
+  assert.doesNotMatch(adminClientSource + serverSecretSource, /console\.(?:log|info|warn|error)\(/);
+  assert.doesNotMatch(adminClientSource + serverSecretSource, /VITE_.*(?:SECRET|SERVICE_ROLE)/);
 });
 
 test("deleteMyAccount accepts only exact double-username confirmation input", () => {

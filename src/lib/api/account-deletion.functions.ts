@@ -9,9 +9,10 @@ import {
 } from "@/lib/account-deletion/security";
 
 type AccountDeletionReadiness = {
+  available: boolean;
   canDelete: boolean;
-  isAdmin: boolean;
-  isLastAdmin: boolean;
+  isAdmin: boolean | null;
+  isLastAdmin: boolean | null;
   reasonCode: AccountDeletionReasonCode | null;
 };
 
@@ -72,6 +73,16 @@ function logAccountDeletionFailure(stage: string, code: AccountDeletionReasonCod
   console.error("[Account deletion]", { stage, code });
 }
 
+function unavailableAccountDeletionReadiness(): AccountDeletionReadiness {
+  return {
+    available: false,
+    canDelete: false,
+    isAdmin: null,
+    isLastAdmin: null,
+    reasonCode: null,
+  };
+}
+
 async function readCurrentProfileUsername(db: SupabaseClient<Database>, userId: string) {
   const { data, error } = await db
     .from("profiles")
@@ -126,6 +137,7 @@ async function getReadinessForUser(
     : null;
 
   return {
+    available: true,
     canDelete: reasonCode === null,
     isAdmin: adminState.isAdmin,
     isLastAdmin: adminState.isLastAdmin,
@@ -136,8 +148,16 @@ async function getReadinessForUser(
 export const getMyAccountDeletionReadiness = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await admin();
-    return getReadinessForUser(db, context.userId);
+    try {
+      const db = await admin();
+      return await getReadinessForUser(db, context.userId);
+    } catch {
+      console.error("[Account deletion]", {
+        stage: "readiness",
+        code: "ACCOUNT_DELETION_READINESS_UNAVAILABLE",
+      });
+      return unavailableAccountDeletionReadiness();
+    }
   });
 
 export const deleteMyAccount = createServerFn({ method: "POST" })
