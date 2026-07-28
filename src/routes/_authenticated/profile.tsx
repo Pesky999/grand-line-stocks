@@ -171,6 +171,7 @@ function Profile() {
   const specialization = stats.specialization ?? "generalist";
   const publicTradingProfile = privacyOverride ?? profile?.public_trading_profile ?? true;
   const readiness = deletionReadiness.data ?? null;
+  const deletionUnavailable = deletionReadiness.isError || readiness?.available === false;
   const finalDeletionEnabled =
     !!username &&
     deleteUsername === username &&
@@ -698,10 +699,15 @@ function Profile() {
                 deleting it.
               </p>
             )}
+            {deletionUnavailable && (
+              <p role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
+                Account deletion is temporarily unavailable. Please refresh and try again later.
+              </p>
+            )}
             <button
               type="button"
               onClick={openDeleteDialog}
-              disabled={deletionReadiness.isLoading}
+              disabled={deletionReadiness.isLoading || deletionUnavailable}
               className="border border-bear px-4 py-2 text-xs font-bold uppercase tracking-widest text-bear hover:bg-bear hover:text-destructive-foreground disabled:opacity-40"
             >
               DELETE ACCOUNT
@@ -745,6 +751,12 @@ function Profile() {
               {deletionReadiness.isLoading ? (
                 <div className="text-muted-foreground">Checking deletion readiness...</div>
               ) : null}
+
+              {deletionUnavailable && (
+                <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">
+                  Account deletion is temporarily unavailable. Please refresh and try again later.
+                </div>
+              )}
 
               {readiness?.isLastAdmin && (
                 <div role="alert" className="border border-bear/60 bg-bear/10 px-3 py-2 text-bear">

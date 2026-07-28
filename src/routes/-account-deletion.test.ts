@@ -116,6 +116,31 @@ test("readiness and safe errors remain visible without preemptive storage warnin
   );
 });
 
+test("Profile remains usable and deletion fails closed when readiness is unavailable", () => {
+  assert.match(
+    profileSource,
+    /const deletionUnavailable =\s+deletionReadiness\.isError \|\| readiness\?\.available === false/,
+  );
+  assert.match(
+    profileSource,
+    /Account deletion is temporarily unavailable\. Please refresh and try again later\./,
+  );
+  assert.match(profileSource, /disabled=\{deletionReadiness\.isLoading \|\| deletionUnavailable\}/);
+  assert.match(profileSource, /readiness\?\.canDelete === true/);
+  assert.match(profileSource, /disabled=\{!finalDeletionEnabled\}/);
+
+  const profileLoadingGate = sourceBetween(
+    profileSource,
+    "if (isLoading || !data)",
+    "const marketValue",
+  );
+  assert.doesNotMatch(profileLoadingGate, /deletionReadiness|deletionUnavailable/);
+  assert.match(profileSource, /Trader Identity/);
+  assert.match(profileSource, /PUBLIC TRADING PROFILE/);
+  assert.match(profileSource, /Prestige/);
+  assert.match(profileSource, /Help & Tutorials/);
+});
+
 test("successful deletion clears local account state and performs full auth navigation", () => {
   const cleanup = sourceBetween(
     profileSource,
