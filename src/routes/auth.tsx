@@ -1,11 +1,17 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { TerminalShell } from "@/components/TerminalShell";
 import { checkPublicUsernameAvailability } from "@/lib/api/identity-moderation.functions";
 import { validateUsernameFormat } from "@/lib/moderation/public-identity";
 import { ACCOUNT_DELETION_SUCCESS_KEY } from "@/lib/account-deletion/security";
+import {
+  canRequestEmailConfirmationResend,
+  getEmailConfirmationCooldownSeconds,
+  isEmailNotConfirmedError,
+  requestSignupConfirmationEmail,
+} from "@/lib/auth/email-confirmation";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -24,11 +30,34 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "confirmation">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmationSource, setConfirmationSource] = useState<"signin" | "signup">("signin");
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendCooldownUntil, setResendCooldownUntil] = useState<number | null>(null);
+  const [resendCooldownClock, setResendCooldownClock] = useState(() => Date.now());
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const resendRequestInFlight = useRef(false);
+  const resendCooldownUntilRef = useRef<number | null>(null);
+  const resendCooldownSeconds = getEmailConfirmationCooldownSeconds(
+    resendCooldownUntil,
+    resendCooldownClock,
+  );
+  const resendDisabled = resendBusy || resendCooldownSeconds > 0;
+  const resendButtonLabel = resendBusy
+    ? "Sending..."
+    : resendCooldownSeconds > 0
+      ? `Resend available in ${resendCooldownSeconds}s`
+      : "Resend confirmation email";
+
+  useEffect(() => {
+    if (resendCooldownSeconds <= 0) return;
+    const timeout = window.setTimeout(() => setResendCooldownClock(Date.now()), 1_000);
+    return () => window.clearTimeout(timeout);
+  }, [resendCooldownSeconds]);
 
   useEffect(() => {
     try {
@@ -80,8 +109,8 @@ function AuthPage() {
           toast.success("Account created. Welcome aboard.");
           navigate({ to: "/portfolio" });
         } else {
-          toast.success("Check your email to confirm your account before signing in.");
-          setMode("signin");
+          setConfirmationSource("signup");
+          setMode("confirmation");
           setPassword("");
         }
       } else if (mode === "forgot") {
@@ -93,7 +122,15 @@ function AuthPage() {
         setMode("signin");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) {
+          if (isEmailNotConfirmedError(error)) {
+            setConfirmationSource("signin");
+            setMode("confirmation");
+            setPassword("");
+            return;
+          }
+          throw error;
+        }
         toast.success("Welcome back, pirate.");
         navigate({ to: "/portfolio" });
       }
@@ -101,6 +138,58 @@ function AuthPage() {
       toast.error(getErrorMessage(err, "Auth failed"));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleResendConfirmation() {
+    const now = Date.now();
+    if (
+      resendRequestInFlight.current ||
+      !canRequestEmailConfirmationResend({
+        busy: resendBusy,
+        cooldownUntil: resendCooldownUntilRef.current,
+        now,
+      })
+    ) {
+      return;
+    }
+
+    resendRequestInFlight.current = true;
+    setResendBusy(true);
+    try {
+      const result = await requestSignupConfirmationEmail({
+        email,
+        now,
+        resend: ({ email: resendEmail }) =>
+          supabase.auth.resend({
+            type: "signup",
+            email: resendEmail,
+          }),
+      });
+
+      if (result.cooldownUntil !== null) {
+        resendCooldownUntilRef.current = result.cooldownUntil;
+        setResendCooldownUntil(result.cooldownUntil);
+        setResendCooldownClock(Date.now());
+      }
+
+      if (result.status === "sent") {
+        toast.success(
+          "If an unconfirmed account exists for that email, a new confirmation message has been sent.",
+        );
+      } else if (result.status === "missing_email") {
+        toast.error("Enter your email address before requesting another confirmation message.");
+        emailInputRef.current?.focus();
+      } else if (result.status === "rate_limited") {
+        toast.error("Too many confirmation requests. Please wait before trying again.");
+      } else {
+        toast.error(
+          "We could not resend the confirmation email. Check your connection and try again.",
+        );
+      }
+    } finally {
+      resendRequestInFlight.current = false;
+      setResendBusy(false);
     }
   }
 
@@ -116,6 +205,54 @@ function AuthPage() {
       toast.error(getErrorMessage(err, "Google sign-in failed"));
       setBusy(false);
     }
+  }
+
+  if (mode === "confirmation") {
+    return (
+      <TerminalShell>
+        <div className="mx-auto max-w-md p-6">
+          <div className="terminal-panel">
+            <div className="terminal-header">Email Confirmation</div>
+            <div className="space-y-4 p-5 text-sm">
+              <div role="status" className="space-y-2">
+                <p className="font-bold text-primary">Email not confirmed</p>
+                <p className="text-muted-foreground">
+                  {confirmationSource === "signup"
+                    ? "Your account was created and is waiting for email confirmation."
+                    : "Confirm your email before signing in to this account."}
+                </p>
+                <p className="text-muted-foreground">
+                  Check your inbox and spam folder for the confirmation message.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={resendDisabled}
+                className="w-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground disabled:opacity-40"
+              >
+                {resendButtonLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("signin");
+                  setPassword("");
+                }}
+                className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                Back to sign in
+              </button>
+            </div>
+          </div>
+          <p className="mt-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
+            <Link to="/" className="hover:text-primary">
+              Back to market
+            </Link>
+          </p>
+        </div>
+      </TerminalShell>
+    );
   }
 
   return (
@@ -161,6 +298,7 @@ function AuthPage() {
             )}
             <Field label="Email">
               <input
+                ref={emailInputRef}
                 type="email"
                 required
                 value={email}
@@ -195,13 +333,23 @@ function AuthPage() {
             </button>
 
             {mode === "signin" && (
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-              >
-                Forgot password?
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot")}
+                  className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={resendDisabled}
+                  className="block w-full text-center text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 disabled:opacity-40"
+                >
+                  {resendButtonLabel}
+                </button>
+              </div>
             )}
             {mode === "forgot" && (
               <button
