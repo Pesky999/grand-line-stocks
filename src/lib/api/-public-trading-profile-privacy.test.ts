@@ -24,6 +24,9 @@ function executableSql(source: string) {
 const migrationPath = "supabase/migrations/20260727010000_public_trading_profile_privacy.sql";
 const migration = read(migrationPath);
 const executableMigration = executableSql(migration);
+const runtimeAccessMigration = read(
+  "supabase/migrations/20260728030000_authenticated_player_runtime_access.sql",
+);
 const legendarySource = read("src/lib/api/legendary.functions.ts");
 const walletSource = read("src/lib/api/wallet.functions.ts");
 const publicProfileRoute = read("src/routes/u.$username.tsx");
@@ -235,8 +238,15 @@ test("owner-only largest-holder RPC preserves private eligibility without leakin
     "export const getMyLegacyLog",
     "export const listCharacterTopHolders",
   );
-  assert.match(legacyLog, /db\.rpc\("is_my_character_largest_holder"/);
-  assert.match(legacyLog, /largestHolderEligible = largestHolderResults\.some/);
+  const legacySnapshot = between(
+    runtimeAccessMigration,
+    "CREATE OR REPLACE FUNCTION public.get_my_legacy_log_snapshot()",
+    "$$;",
+  );
+  assert.match(legacyLog, /\.rpc\("get_my_legacy_log_snapshot"\)/);
+  assert.match(legacySnapshot, /my_holdings\.user_id = v_user_id/);
+  assert.match(legacySnapshot, /MAX\(all_holdings\.shares\)/);
+  assert.match(legacySnapshot, /INTO v_largest_holder_eligible/);
   assert.doesNotMatch(legacyLog, /get_public_character_top_holders/);
 });
 

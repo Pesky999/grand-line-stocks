@@ -2568,6 +2568,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_my_legacy_log_snapshot: {
+        Args: never
+        Returns: Json
+      }
       get_my_legacy_rank: {
         Args: never
         Returns: {
@@ -2575,6 +2579,10 @@ export type Database = {
           rank: number
           value: number
         }[]
+      }
+      get_my_onboarding_progress: {
+        Args: never
+        Returns: Json
       }
       get_public_character_top_holders: {
         Args: { _limit?: number; _offset?: number; _slug: string }
@@ -2638,6 +2646,15 @@ export type Database = {
         Args: { _slug: string }
         Returns: boolean
       }
+      mutate_my_onboarding_progress: {
+        Args: {
+          _mutation: string
+          _step: number | null
+          _tip_id: string | null
+          _tip_version: number | null
+        }
+        Returns: Json
+      }
       preview_market_event: {
         Args: { _event_id: string }
         Returns: {
@@ -2700,6 +2717,10 @@ export type Database = {
         Returns: undefined
       }
       record_my_daily_activity: { Args: never; Returns: Json }
+      record_my_onboarding_event: {
+        Args: { _event_data: Json; _event_name: string }
+        Returns: boolean
+      }
       record_user_daily_activity: { Args: { _user_id: string }; Returns: number }
       refresh_all_user_progression: { Args: never; Returns: Json }
       refresh_leaderboards: { Args: never; Returns: undefined }

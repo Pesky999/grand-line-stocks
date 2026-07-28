@@ -27,6 +27,9 @@ function exportedFunction(source: string, name: string) {
 
 const apiSource = read("src/lib/api/onboarding.functions.ts");
 const walletSource = read("src/lib/api/wallet.functions.ts");
+const runtimeMigration = read(
+  "supabase/migrations/20260728030000_authenticated_player_runtime_access.sql",
+);
 
 test("onboarding server functions are authenticated and never accept a user id from the browser", () => {
   for (const name of [
@@ -47,69 +50,47 @@ test("onboarding server functions are authenticated and never accept a user id f
   }
 });
 
-test("onboarding writes use the trusted server client and strict state transitions", () => {
-  const ensureProgress = sourceBetween(
-    apiSource,
-    "async function ensureOnboardingProgress",
-    "async function updateOnboardingProgress",
-  );
-
-  assert.match(apiSource, /async function admin\(\)/);
-  assert.match(apiSource, /supabaseAdmin/);
-  assert.match(apiSource, /ensureOnboardingProgress/);
-  assert.match(apiSource, /createFirstLoginOnboardingState/);
-  assert.match(apiSource, /promoteUntouchedOnboardingState/);
-  assert.match(ensureProgress, /const existing = await readOnboardingProgress\(db, userId\)/);
-  assert.match(
-    ensureProgress,
-    /if \(existing\) return promoteOnboardingProgressIfUntouched\(db, userId, existing\)/,
-  );
-  assert.ok(
-    ensureProgress.indexOf("if (existing) return promoteOnboardingProgressIfUntouched") <
-      ensureProgress.indexOf("const next = createFirstLoginOnboardingState()"),
-    "existing progress rows should be considered before missing-row creation",
-  );
-  assert.match(apiSource, /startStockTutorial/);
-  assert.match(apiSource, /restartStockTutorial/);
-  assert.match(apiSource, /saveStockTutorialStep/);
-  assert.match(apiSource, /completeStockTutorial/);
-  assert.match(apiSource, /skipStockTutorial/);
-  assert.match(apiSource, /dismissPageTip/);
-  assert.match(apiSource, /skipAllPageTips/);
-  assert.match(apiSource, /resetPageTips/);
+test("core onboarding uses authenticated caller-scoped RPCs without the service-role client", () => {
+  assert.doesNotMatch(apiSource, /async function admin\(\)|supabaseAdmin|client\.server/);
+  assert.match(apiSource, /\.rpc\("get_my_onboarding_progress"\)/);
+  assert.match(apiSource, /\.rpc\("mutate_my_onboarding_progress"/);
+  assert.match(apiSource, /\.rpc\("record_my_onboarding_event"/);
+  assert.match(apiSource, /readMyOnboardingProgress\(context\.supabase\)/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase/);
+  assert.match(apiSource, /recordOnboardingEventBestEffort\(context\.supabase/);
+  assert.doesNotMatch(apiSource, /\.from\("user_onboarding_(?:progress|events)"\)|context\.userId/);
 });
 
-test("missing progress recovery creates first-login without profile or trade classification", () => {
-  const promote = sourceBetween(
-    apiSource,
-    "async function promoteOnboardingProgressIfUntouched",
-    "async function ensureOnboardingProgress",
-  );
-  const ensureProgress = sourceBetween(
-    apiSource,
-    "async function ensureOnboardingProgress",
-    "async function updateOnboardingProgress",
-  );
+test("onboarding actions preserve the existing transition contract", () => {
+  assert.match(apiSource, /input\.restart \? "restart" : "start"/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "save_step"/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "complete"\)/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "skip"\)/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "dismiss_tip"/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "skip_tips"\)/);
+  assert.match(apiSource, /mutateMyOnboardingProgress\(context\.supabase, "reset_tips"\)/);
 
-  assert.doesNotMatch(apiSource, /classifyMissingOnboardingProgress/);
-  assert.doesNotMatch(apiSource, /profileCreatedAt|created_at|profiles|transactions/);
-  assert.doesNotMatch(apiSource, /FIRST_LOGIN_ONBOARDING_RECOVERY_WINDOW_MS/);
-  assert.match(promote, /const next = promoteUntouchedOnboardingState\(current\)/);
-  assert.match(promote, /\.update\(\{\s+stock_tutorial_offer: next\.stockTutorialOffer/);
-  assert.match(promote, /page_tips_disabled: next\.pageTipsDisabled/);
-  assert.match(promote, /\.eq\("stock_tutorial_status", "not_started"\)/);
-  assert.match(promote, /\.eq\("stock_tutorial_last_step", 0\)/);
-  assert.match(promote, /\.in\("stock_tutorial_offer", \["soft", "none"\]\)/);
-  assert.match(promote, /\.is\("started_at", null\)/);
-  assert.match(promote, /\.is\("completed_at", null\)/);
-  assert.match(promote, /\.is\("skipped_at", null\)/);
-  assert.match(promote, /promote_untouched_progress/);
-  assert.match(promote, /return next/);
-  assert.match(ensureProgress, /const next = createFirstLoginOnboardingState\(\)/);
-  assert.match(ensureProgress, /\.insert\(\{\s+user_id: userId,\s+\.\.\.toDatabasePatch\(next\)/);
-  assert.match(ensureProgress, /if \(error\.code === "23505"\)/);
-  assert.match(ensureProgress, /create_missing_progress/);
-  assert.match(ensureProgress, /return next/);
+  for (const action of [
+    "start",
+    "restart",
+    "save_step",
+    "complete",
+    "skip",
+    "dismiss_tip",
+    "skip_tips",
+    "reset_tips",
+  ]) {
+    assert.match(runtimeMigration, new RegExp(`WHEN '${action}' THEN`));
+  }
+});
+
+test("onboarding state failures are contained with a soft non-redirecting fallback", () => {
+  const stateEndpoint = exportedFunction(apiSource, "getMyOnboardingState");
+
+  assert.match(stateEndpoint, /try \{/);
+  assert.match(stateEndpoint, /logOnboardingFailure\(\s*"read_progress"/);
+  assert.match(stateEndpoint, /return createSoftOnboardingState\(\)/);
+  assert.doesNotMatch(stateEndpoint, /throw new Error|throw error/);
 });
 
 test("analytics schema is bounded and best-effort", () => {
@@ -186,7 +167,7 @@ test("public analytics endpoint accepts only browser-originated observation even
   assert.doesNotMatch(publicSchema, /stepKey|pageKey|dedupeKey|metadata/);
 });
 
-test("trusted analytics derive persisted columns and reject arbitrary payload fields", () => {
+test("trusted analytics send bounded event data while SQL derives persisted columns", () => {
   const trustedSchema = sourceBetween(
     apiSource,
     "const recordOnboardingEventInputSchema",
@@ -194,37 +175,21 @@ test("trusted analytics derive persisted columns and reject arbitrary payload fi
   );
   const mapper = sourceBetween(
     apiSource,
-    "function toStoredEvent",
+    "function toRpcEventData",
     "function logOnboardingFailure",
   );
 
-  assert.match(
-    mapper,
-    /dedupe_key: `onboarding_offer_seen:\$\{event\.offer\}:v\$\{STOCK_TUTORIAL_VERSION\}`/,
-  );
-  assert.match(
-    mapper,
-    /dedupe_key: event\.restart\s+\?\s+null\s+:\s+`stock_tutorial_started:v\$\{STOCK_TUTORIAL_VERSION\}`/,
-  );
-  assert.match(mapper, /step_key: event\.step/);
-  assert.match(
-    mapper,
-    /dedupe_key: `stock_tutorial_step_completed:\$\{event\.step\}:v\$\{STOCK_TUTORIAL_VERSION\}`/,
-  );
   assert.match(mapper, /eventName\) \{\s+case "onboarding_offer_seen"/);
-  assert.match(mapper, /metadata: \{ offer: event\.offer \}/);
-  assert.match(
-    mapper,
-    /metadata: \{\s+restart: event\.restart,\s+source: event\.source \?\? "welcome"/,
-  );
-  assert.match(mapper, /metadata: \{ source: event\.source \}/);
-  assert.match(mapper, /metadata: \{ side: event\.side \}/);
-  assert.match(mapper, /dedupe_key: "first_live_trade_started"/);
-  assert.match(mapper, /dedupe_key: "first_live_trade_completed"/);
-  assert.match(mapper, /page_key: event\.tipId/);
-  assert.match(mapper, /dedupe_key: `page_tip_seen:\$\{event\.tipId\}:v\$\{event\.version\}`/);
-  assert.match(mapper, /dedupe_key: `page_tip_completed:\$\{event\.tipId\}:v\$\{event\.version\}`/);
-  assert.match(mapper, /dedupe_key: `page_tips_skipped:v\$\{STOCK_TUTORIAL_VERSION\}`/);
+  assert.match(mapper, /return \{ offer: event\.offer \}/);
+  assert.match(mapper, /restart: event\.restart,\s+source: event\.source \?\? "welcome"/);
+  assert.match(mapper, /return \{ step: event\.step \}/);
+  assert.match(mapper, /return \{ source: event\.source \}/);
+  assert.match(mapper, /return \{ side: event\.side \}/);
+  assert.match(mapper, /tipId: event\.tipId,\s+version: event\.version/);
+  assert.doesNotMatch(mapper, /user_id|dedupe_key|event_name|tutorial_version/);
+  assert.match(runtimeMigration, /ON CONFLICT \(user_id, dedupe_key\) DO NOTHING/);
+  assert.match(runtimeMigration, /v_dedupe_key := 'first_live_trade_started'/);
+  assert.match(runtimeMigration, /v_dedupe_key := 'first_live_trade_completed'/);
 
   for (const forbidden of [
     "stepKey",
@@ -261,7 +226,7 @@ test("tutorial replay records an event without rewriting completed progress", ()
   assert.doesNotMatch(sourceBetween(complete, "if (input.replay)", "const updated"), /eventName/);
   assert.doesNotMatch(
     sourceBetween(complete, "if (input.replay)", "const updated"),
-    /updateOnboardingProgress/,
+    /mutateMyOnboardingProgress/,
   );
 });
 
@@ -271,15 +236,15 @@ test("trade functions record first live trade analytics without changing trade p
   assert.match(walletSource, /eventName: "first_live_trade_completed"/);
   assert.match(
     walletSource,
-    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_started",\s+side: "buy"/,
+    /await recordOnboardingEventBestEffort\(context\.supabase, \{\s+eventName: "first_live_trade_started",\s+side: "buy"/,
   );
   assert.match(
     walletSource,
-    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_completed",\s+side: "buy"/,
+    /await recordOnboardingEventBestEffort\(context\.supabase, \{\s+eventName: "first_live_trade_completed",\s+side: "buy"/,
   );
   assert.match(
     walletSource,
-    /await recordOnboardingEventBestEffort\(context\.userId, \{\s+eventName: "first_live_trade_started",\s+side: "sell"/,
+    /await recordOnboardingEventBestEffort\(context\.supabase, \{\s+eventName: "first_live_trade_started",\s+side: "sell"/,
   );
   assert.match(
     walletSource,

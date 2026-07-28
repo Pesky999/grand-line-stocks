@@ -11,7 +11,7 @@ const CANONICAL_REVISION = "stock-onboarding-v1";
 const GUARDED_FILES = {
   "package.json": "c7a324f719903681bc875637c24da478c578f4e80552ffee2acc897339c99280",
   "src/integrations/supabase/types.ts":
-    "cefa17dd5cf74d5940e7da7f272df8e73cf8887ddb2081eceaea7d2f2824af71",
+    "f0cb322c476e544ce7efb52c8b1fb5052da9b62fca9867e8fd0293b2df1d785b",
   "src/routeTree.gen.ts": "7b4184d7680d9721b7dec277a8d17f8278bcbbad0a1e47a78361f7ceecb392cb",
 } as const;
 

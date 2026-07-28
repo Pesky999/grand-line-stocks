@@ -24,6 +24,165 @@ const recordMyDailyActivityResultSchema = z
   })
   .strict();
 
+const investorTitleSchema = z.enum([
+  "rookie_pirate",
+  "east_blue_trader",
+  "grand_line_investor",
+  "warlord_investor",
+  "yonko_investor",
+  "pirate_king_investor",
+]);
+
+const investorSpecializationSchema = z.enum([
+  "generalist",
+  "value_investor",
+  "growth_investor",
+  "speculator",
+  "meme_investor",
+  "event_trader",
+  "whale",
+]);
+
+const legacyLogStatsSchema = z
+  .object({
+    avg_holding_days: z.coerce.number(),
+    best_trade_pnl: z.coerce.number(),
+    best_trade_slug: z.string().nullable(),
+    current_net_worth: z.coerce.number(),
+    current_rank: z.coerce.number().int().nullable(),
+    days_active: z.coerce.number().int(),
+    highest_net_worth: z.coerce.number(),
+    highest_rank: z.coerce.number().int().nullable(),
+    largest_position_slug: z.string().nullable(),
+    largest_position_value: z.coerce.number(),
+    last_active_date: z.string(),
+    login_streak: z.coerce.number().int(),
+    losses: z.coerce.number().int(),
+    rank_overall_prev: z.coerce.number().int().nullable(),
+    realized_pnl: z.coerce.number(),
+    reputation_score: z.coerce.number().int(),
+    specialization: investorSpecializationSchema,
+    title: investorTitleSchema,
+    total_buys: z.coerce.number().int(),
+    total_sells: z.coerce.number().int(),
+    total_trades: z.coerce.number().int(),
+    total_volume: z.coerce.number(),
+    updated_at: z.string(),
+    user_id: z.string().uuid(),
+    wins: z.coerce.number().int(),
+    worst_trade_pnl: z.coerce.number(),
+    worst_trade_slug: z.string().nullable(),
+  })
+  .strict();
+
+const legacyLogSnapshotSchema = z
+  .object({
+    profile: z
+      .object({
+        id: z.string().uuid(),
+        username: z.string(),
+        display_name: z.string().nullable(),
+        created_at: z.string(),
+      })
+      .strict()
+      .nullable(),
+    stats: legacyLogStatsSchema.nullable(),
+    rank: z
+      .object({
+        rank: z.coerce.number().int(),
+        prev_rank: z.coerce.number().int().nullable(),
+        value: z.coerce.number(),
+      })
+      .strict()
+      .nullable(),
+    catalog: z.array(
+      z
+        .object({
+          code: z.string(),
+          name: z.string(),
+          description: z.string(),
+          tier: z.enum(["beginner", "intermediate", "advanced", "legendary"]),
+          category: z.string(),
+          icon: z.string(),
+          reputation_reward: z.coerce.number().int(),
+        })
+        .strict(),
+    ),
+    unlocked: z.array(
+      z
+        .object({
+          unlocked_at: z.string(),
+          achievements: z
+            .object({
+              code: z.string(),
+              reputation_reward: z.coerce.number().int(),
+            })
+            .strict(),
+        })
+        .strict(),
+    ),
+    legacy_records: z.array(
+      z
+        .object({
+          code: z.string(),
+          title: z.string(),
+          description: z.string(),
+          value: z.coerce.number().nullable(),
+          achieved_at: z.string(),
+          character_id: z.string().uuid().nullable(),
+          characters: z
+            .object({
+              slug: z.string(),
+              name: z.string(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    ),
+    holdings: z.array(
+      z
+        .object({
+          character_id: z.string().uuid(),
+          shares: z.coerce.number(),
+          created_at: z.string(),
+          characters: z
+            .object({
+              slug: z.string(),
+              category: z.string(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    ),
+    first_event_eligible: z.boolean(),
+    glg_stats: z
+      .object({
+        games_won: z.coerce.number().int(),
+        one_shot_wins: z.coerce.number().int(),
+        best_streak: z.coerce.number().int(),
+      })
+      .strict()
+      .nullable(),
+    glg_hints_free_count: z.coerce.number().int().min(0),
+    daily_crew_submissions: z.array(
+      z
+        .object({
+          score: z.coerce.number(),
+          rank: z.enum(["s", "a", "b", "c", "fail"]),
+          daily_crew_missions: z
+            .object({
+              max_score: z.coerce.number(),
+            })
+            .strict(),
+        })
+        .strict(),
+    ),
+    largest_holder_eligible: z.boolean(),
+  })
+  .strict();
+
 type PublicLeaderboardRow = {
   rank: number;
   prev_rank: number | null;
@@ -301,136 +460,45 @@ export const recordMyDailyActivity = createServerFn({ method: "POST" })
 export const getMyLegacyLog = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = context.supabase;
-    const userId = context.userId;
-
-    const { data: profile, error: profileError } = await db
-      .from("profiles")
-      .select("id,username,display_name,created_at")
-      .eq("id", userId)
-      .maybeSingle();
-    if (profileError) throw profileError;
-
-    const [
-      { data: stats, error: statsError },
-      { data: rank, error: rankError },
-      { data: catalog, error: catalogError },
-      { data: unlocked, error: unlockedError },
-      { data: legacyRecords, error: legacyError },
-      { data: holdings, error: holdingsError },
-      { data: firstEvent, error: firstEventError },
-      { data: glgStats, error: glgStatsError },
-      { count: glgHintsFreeCount, error: glgHintsFreeError },
-      { data: dailyCrewSubmissions, error: dailyCrewError },
-    ] = await Promise.all([
-      db.from("user_stats").select("*").eq("user_id", userId).maybeSingle(),
-      db.rpc("get_my_legacy_rank").maybeSingle(),
-      db
-        .from("achievements")
-        .select("code,name,description,tier,category,icon,reputation_reward")
-        .order("tier", { ascending: true })
-        .order("code", { ascending: true }),
-      db
-        .from("user_achievements")
-        .select("unlocked_at,achievements(code,reputation_reward)")
-        .eq("user_id", userId)
-        .order("unlocked_at", { ascending: false }),
-      db
-        .from("legacy_records")
-        .select("code,title,description,value,achieved_at,character_id,characters(slug,name)")
-        .eq("user_id", userId)
-        .order("achieved_at", { ascending: false }),
-      db
-        .from("user_holdings")
-        .select("character_id,shares,created_at,characters(slug,name,current_price,category)")
-        .eq("user_id", userId)
-        .gt("shares", 0),
-      profile?.created_at
-        ? db
-            .from("market_events")
-            .select("id")
-            .eq("status", "published")
-            .not("published_at", "is", null)
-            .gte("published_at", profile.created_at)
-            .lte("published_at", new Date().toISOString())
-            .limit(1)
-        : Promise.resolve({ data: [], error: null }),
-      db
-        .from("grand_line_guess_stats")
-        .select("games_won,one_shot_wins,best_streak")
-        .eq("user_id", userId)
-        .maybeSingle(),
-      db
-        .from("grand_line_guess_results")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("solved", true)
-        .eq("hints_used", 0),
-      db
-        .from("daily_crew_submissions")
-        .select("score,rank,daily_crew_missions(max_score)")
-        .eq("user_id", userId),
-    ]);
-
-    for (const error of [
-      statsError,
-      rankError,
-      catalogError,
-      unlockedError,
-      legacyError,
-      holdingsError,
-      firstEventError,
-      glgStatsError,
-      glgHintsFreeError,
-      dailyCrewError,
-    ]) {
-      if (error) throw error;
+    const { data, error } = await context.supabase.rpc("get_my_legacy_log_snapshot");
+    if (error) {
+      console.warn("[LegacyLog]", {
+        stage: "snapshot_read",
+        code: error.code ?? "LEGACY_LOG_SNAPSHOT_READ_FAILED",
+      });
+      throw new Error("Could not load Legacy Log.");
     }
 
-    const positiveHoldings = (holdings ?? []) as {
-      character_id: string;
-      shares: number | string;
-      created_at: string;
-      characters: {
-        slug: string;
-        category: string;
-      } | null;
-    }[];
-    const characterSlugs = [
-      ...new Set(
-        positiveHoldings
-          .map((holding) => holding.characters?.slug)
-          .filter((slug): slug is string => Boolean(slug)),
-      ),
-    ];
+    const parsedSnapshot = legacyLogSnapshotSchema.safeParse(data);
+    if (!parsedSnapshot.success) {
+      console.warn("[LegacyLog]", {
+        stage: "snapshot_parse",
+        code: "LEGACY_LOG_SNAPSHOT_INVALID",
+      });
+      throw new Error("Could not load Legacy Log.");
+    }
+
+    const {
+      profile,
+      stats,
+      rank,
+      catalog,
+      unlocked,
+      legacy_records: legacyRecords,
+      holdings: positiveHoldings,
+      first_event_eligible: firstEventEligible,
+      glg_stats: glgStats,
+      glg_hints_free_count: glgHintsFreeCount,
+      daily_crew_submissions: dailyCrewSubmissions,
+      largest_holder_eligible: largestHolderEligible,
+    } = parsedSnapshot.data;
     const heldCategories = new Set(
       positiveHoldings
         .map((holding) => holding.characters?.category)
         .filter((category): category is string => !!category),
     );
-    let largestHolderEligible = false;
 
-    if (characterSlugs.length > 0) {
-      const largestHolderResults = await Promise.all(
-        characterSlugs.map((slug) =>
-          db.rpc("is_my_character_largest_holder", {
-            _slug: slug,
-          }),
-        ),
-      );
-
-      for (const { error } of largestHolderResults) {
-        if (error) throw error;
-      }
-
-      largestHolderEligible = largestHolderResults.some(({ data }) => data === true);
-    }
-
-    const dailyCrewRows = (dailyCrewSubmissions ?? []) as {
-      score: number | string;
-      rank: string;
-      daily_crew_missions: { max_score: number | string } | null;
-    }[];
+    const dailyCrewRows = dailyCrewSubmissions;
     const dailyCrewBestScore = dailyCrewRows.reduce(
       (max, submission) => Math.max(max, Number(submission.score)),
       0,
@@ -461,26 +529,19 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
       return Math.max(max, Math.floor((now - openedAt) / 86_400_000));
     }, 0);
 
-    const unlockedAchievements = (
-      (unlocked ?? []) as {
-        unlocked_at: string;
-        achievements: { code: string; reputation_reward: number } | null;
-      }[]
-    )
-      .filter((entry) => entry.achievements?.code)
-      .map((entry) => ({
-        code: entry.achievements!.code,
-        unlockedAt: entry.unlocked_at,
-        reputationReward: Number(entry.achievements!.reputation_reward ?? 0),
-      }));
+    const unlockedAchievements = unlocked.map((entry) => ({
+      code: entry.achievements.code,
+      unlockedAt: entry.unlocked_at,
+      reputationReward: Number(entry.achievements.reputation_reward),
+    }));
 
     return {
       profile,
       stats,
       rank,
-      catalog: catalog ?? [],
+      catalog,
       unlocked: unlockedAchievements,
-      legacyRecords: legacyRecords ?? [],
+      legacyRecords,
       metrics: {
         totalTrades: Number(stats?.total_trades ?? 0),
         totalBuys: Number(stats?.total_buys ?? 0),
@@ -509,7 +570,7 @@ export const getMyLegacyLog = createServerFn({ method: "GET" })
         dailyCrewPerfectCount,
         maxOpenHoldingAgeDays,
         largestHolderEligible,
-        firstEventEligible: (firstEvent ?? []).length > 0,
+        firstEventEligible,
         reputationScore: Number(stats?.reputation_score ?? 0),
       },
       achievementCount: unlockedAchievements.length,
