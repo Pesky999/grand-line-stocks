@@ -39,12 +39,19 @@ function AuthPage() {
   const [resendBusy, setResendBusy] = useState(false);
   const [resendCooldownUntil, setResendCooldownUntil] = useState<number | null>(null);
   const [resendCooldownClock, setResendCooldownClock] = useState(() => Date.now());
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const resendRequestInFlight = useRef(false);
   const resendCooldownUntilRef = useRef<number | null>(null);
   const resendCooldownSeconds = getEmailConfirmationCooldownSeconds(
     resendCooldownUntil,
     resendCooldownClock,
   );
+  const resendDisabled = resendBusy || resendCooldownSeconds > 0;
+  const resendButtonLabel = resendBusy
+    ? "Sending..."
+    : resendCooldownSeconds > 0
+      ? `Resend available in ${resendCooldownSeconds}s`
+      : "Resend confirmation email";
 
   useEffect(() => {
     if (resendCooldownSeconds <= 0) return;
@@ -172,6 +179,7 @@ function AuthPage() {
         );
       } else if (result.status === "missing_email") {
         toast.error("Enter your email address before requesting another confirmation message.");
+        emailInputRef.current?.focus();
       } else if (result.status === "rate_limited") {
         toast.error("Too many confirmation requests. Please wait before trying again.");
       } else {
@@ -220,14 +228,10 @@ function AuthPage() {
               <button
                 type="button"
                 onClick={handleResendConfirmation}
-                disabled={resendBusy || resendCooldownSeconds > 0}
+                disabled={resendDisabled}
                 className="w-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground disabled:opacity-40"
               >
-                {resendBusy
-                  ? "Sending..."
-                  : resendCooldownSeconds > 0
-                    ? `Resend available in ${resendCooldownSeconds}s`
-                    : "Resend confirmation email"}
+                {resendButtonLabel}
               </button>
               <button
                 type="button"
@@ -294,6 +298,7 @@ function AuthPage() {
             )}
             <Field label="Email">
               <input
+                ref={emailInputRef}
                 type="email"
                 required
                 value={email}
@@ -328,13 +333,23 @@ function AuthPage() {
             </button>
 
             {mode === "signin" && (
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-              >
-                Forgot password?
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot")}
+                  className="block w-full text-center text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={resendDisabled}
+                  className="block w-full text-center text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 disabled:opacity-40"
+                >
+                  {resendButtonLabel}
+                </button>
+              </div>
             )}
             {mode === "forgot" && (
               <button

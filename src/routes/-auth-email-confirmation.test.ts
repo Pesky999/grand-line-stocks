@@ -75,9 +75,37 @@ test("resend failures stay contained and cooldown prevents repeated requests", (
   assert.match(resendBlock, /resendCooldownUntilRef\.current/);
   assert.match(resendBlock, /result\.status === "rate_limited"/);
   assert.match(resendBlock, /result\.status === "missing_email"/);
+  assert.match(resendBlock, /emailInputRef\.current\?\.focus\(\)/);
   assert.match(resendBlock, /Check your connection and try again/);
-  assert.match(authSource, /disabled=\{resendBusy \|\| resendCooldownSeconds > 0\}/);
+  assert.match(authSource, /const resendDisabled = resendBusy \|\| resendCooldownSeconds > 0/);
+  assert.match(authSource, /const resendButtonLabel = resendBusy/);
   assert.match(authSource, /`Resend available in \$\{resendCooldownSeconds\}s`/);
+});
+
+test("normal sign-in exposes resend without submitting a password", () => {
+  const signInControls = sourceBetween(
+    authSource,
+    '{mode === "signin" && (',
+    '{mode === "forgot" && (',
+  );
+
+  assert.match(signInControls, /Forgot password\?/);
+  assert.match(signInControls, /onClick=\{handleResendConfirmation\}/);
+  assert.match(signInControls, /type="button"/);
+  assert.doesNotMatch(signInControls, /type="submit"|handleSubmit|signInWithPassword/);
+  assert.match(signInControls, /disabled=\{resendDisabled\}/);
+  assert.match(signInControls, /\{resendButtonLabel\}/);
+  assert.match(authSource, /ref=\{emailInputRef\}/);
+});
+
+test("normal sign-in and confirmation state share one resend handler and cooldown", () => {
+  assert.equal(authSource.match(/onClick=\{handleResendConfirmation\}/g)?.length, 2);
+  assert.equal(authSource.match(/disabled=\{resendDisabled\}/g)?.length, 2);
+  assert.equal(authSource.match(/\{resendButtonLabel\}/g)?.length, 2);
+  assert.equal(authSource.match(/async function handleResendConfirmation\(\)/g)?.length, 1);
+  assert.match(authSource, /if \(mode === "confirmation"\)/);
+  assert.match(authSource, />Email not confirmed</);
+  assert.match(authSource, /Check your inbox and spam folder/);
 });
 
 test("confirmed password and Google sign-in behavior remains unchanged", () => {
