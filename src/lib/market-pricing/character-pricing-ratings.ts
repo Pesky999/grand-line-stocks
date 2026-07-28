@@ -3,7 +3,7 @@ import {
   MARKET_PRICING_ALGORITHM_VERSION,
   type CharacterValuationRatings,
   type StockCategory,
-} from "./v1.js";
+} from "./v1.ts";
 
 export const RATING_KEYS = [
   "narrativeImportance",
@@ -24,11 +24,7 @@ export type CharacterPricingRatingsRow =
 
 export type CharacterPricingDatabaseStatus = "draft" | "approved";
 export type CharacterPricingState =
-  | "unrated"
-  | "draft"
-  | "approved"
-  | "stale_draft"
-  | "stale_approved";
+  "unrated" | "draft" | "approved" | "stale_draft" | "stale_approved";
 
 export type PersistentPricingInput = {
   ratings: CharacterValuationRatings;

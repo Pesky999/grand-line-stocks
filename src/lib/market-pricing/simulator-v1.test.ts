@@ -2,14 +2,14 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SIMULATION_SCENARIOS, runMarketPricingSimulationSuite } from "./simulation-runner-v1.js";
+import { SIMULATION_SCENARIOS, runMarketPricingSimulationSuite } from "./simulation-runner-v1.ts";
 import {
   normalizeApprovedEvents,
   simulateMarketMovement,
   type DailyMarketIndexEffect,
   type SimulationInput,
-} from "./simulator-v1.js";
-import type { ApprovedEventImpact, MovementConfiguration } from "./movement-v1.js";
+} from "./simulator-v1.ts";
+import type { ApprovedEventImpact, MovementConfiguration } from "./movement-v1.ts";
 
 const scenarioByName = new Map(SIMULATION_SCENARIOS.map((scenario) => [scenario.name, scenario]));
 

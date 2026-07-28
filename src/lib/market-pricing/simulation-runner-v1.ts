@@ -2,8 +2,8 @@ import {
   simulateMarketMovement,
   type SimulationInput,
   type SimulationResult,
-} from "./simulator-v1.js";
-import type { SimulationSummary } from "./movement-v1.js";
+} from "./simulator-v1.ts";
+import type { SimulationSummary } from "./movement-v1.ts";
 
 export type SimulationScenarioDefinition = {
   name: string;

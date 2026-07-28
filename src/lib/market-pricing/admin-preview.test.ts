@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateDailyMovement } from "./movement-v1.js";
+import { calculateDailyMovement } from "./movement-v1.ts";
 import {
   calculatePricingPreview,
   createDefaultPricingPreviewDraft,
   createEmptySimulationEvent,
   validatePricingPreviewDraft,
   type PricingPreviewCharacter,
-} from "./admin-preview.js";
-import { calculateIpoPricing } from "./v1.js";
-import { simulateMarketMovement } from "./simulator-v1.js";
+} from "./admin-preview.ts";
+import { calculateIpoPricing } from "./v1.ts";
+import { simulateMarketMovement } from "./simulator-v1.ts";
 
 const character: PricingPreviewCharacter = {
   slug: "luffy",

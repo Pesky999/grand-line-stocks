@@ -10,7 +10,7 @@ import {
   validatePersistentPricingDraft,
   type CharacterPricingRatingsRow,
   type PersistentPricingDraftFields,
-} from "./character-pricing-ratings.js";
+} from "./character-pricing-ratings.ts";
 
 const currentRow: CharacterPricingRatingsRow = {
   character_id: "00000000-0000-0000-0000-000000000001",

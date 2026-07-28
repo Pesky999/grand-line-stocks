@@ -3,7 +3,7 @@ import {
   roundBerryValue,
   type MarketPricingAlgorithmVersion,
   type StockCategory,
-} from "./v1.js";
+} from "./v1.ts";
 import {
   calculateDailyMovement,
   type ApprovedEventImpact,
@@ -12,7 +12,7 @@ import {
   type SimulationDayResult,
   type SimulationExtremeDay,
   type SimulationSummary,
-} from "./movement-v1.js";
+} from "./movement-v1.ts";
 
 export type DailyMarketIndexEffect = {
   day: number;

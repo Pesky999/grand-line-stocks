@@ -9,7 +9,7 @@ import {
   calculateMeanReversionPct,
   calculateNextMomentumPct,
   type CharacterMovementInput,
-} from "./movement-v1.js";
+} from "./movement-v1.ts";
 
 const baseInput: CharacterMovementInput = {
   currentPrice: 100,

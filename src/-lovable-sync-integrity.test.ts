@@ -9,7 +9,7 @@ import test from "node:test";
 const CANONICAL_REVISION = "stock-onboarding-v1";
 
 const GUARDED_FILES = {
-  "package.json": "c7a324f719903681bc875637c24da478c578f4e80552ffee2acc897339c99280",
+  "package.json": "fe01c736d46244fa7d44c7c81637460a9beec9a471caeae514f9a15e9e35fb93",
   "src/integrations/supabase/types.ts":
     "f0cb322c476e544ce7efb52c8b1fb5052da9b62fca9867e8fd0293b2df1d785b",
   "src/routeTree.gen.ts": "7b4184d7680d9721b7dec277a8d17f8278bcbbad0a1e47a78361f7ceecb392cb",

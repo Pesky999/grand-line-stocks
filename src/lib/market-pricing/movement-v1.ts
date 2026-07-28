@@ -4,7 +4,7 @@ import {
   roundBerryValue,
   type MarketPricingAlgorithmVersion,
   type StockCategory,
-} from "./v1.js";
+} from "./v1.ts";
 
 export type DailyMarketState = {
   marketIndexEffectPct: number;
