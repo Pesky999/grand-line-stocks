@@ -18,14 +18,21 @@ const source = readProjectFile("src/lib/api/legendary.functions.ts");
 const legacyRankMigration = readProjectFile(
   "supabase/migrations/20260728020000_get_my_legacy_rank.sql",
 );
+const runtimeAccessMigration = readProjectFile(
+  "supabase/migrations/20260728030000_authenticated_player_runtime_access.sql",
+);
 const typesSource = readProjectFile("src/integrations/supabase/types.ts");
 
-function between(start: string, end: string) {
-  const startIndex = source.indexOf(start);
+function sourceBetween(sourceText: string, start: string, end: string) {
+  const startIndex = sourceText.indexOf(start);
   assert.notEqual(startIndex, -1, `${start} should exist`);
-  const endIndex = source.indexOf(end, startIndex + start.length);
+  const endIndex = sourceText.indexOf(end, startIndex + start.length);
   assert.notEqual(endIndex, -1, `${end} should exist after ${start}`);
-  return source.slice(startIndex, endIndex);
+  return sourceText.slice(startIndex, endIndex);
+}
+
+function between(start: string, end: string) {
+  return sourceBetween(source, start, end);
 }
 
 test("recordMyDailyActivity requires auth and accepts no user id", () => {
@@ -160,22 +167,23 @@ test("getMyLegacyLog requires auth and is read-only", () => {
 
   assert.match(legacyLog, /createServerFn\(\{ method: "GET" \}\)/);
   assert.match(legacyLog, /middleware\(\[requireSupabaseAuth\]\)/);
-  assert.match(legacyLog, /const db = context\.supabase/);
-  assert.match(legacyLog, /const userId = context\.userId/);
+  assert.match(legacyLog, /context\.supabase\.rpc\("get_my_legacy_log_snapshot"\)/);
+  assert.doesNotMatch(legacyLog, /\.from\(/);
+  assert.doesNotMatch(legacyLog, /context\.userId|_user_id|userId/);
   assert.doesNotMatch(legacyLog, /await admin\(\)|supabaseAdmin|client\.server/);
   assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
   assert.doesNotMatch(legacyLog, /record_my_daily_activity|refresh_user_progression/);
 });
 
-test("getMyLegacyLog reads its private all-time rank through the caller-only RPC", () => {
+test("getMyLegacyLog reads one caller-scoped snapshot and contains raw database failures", () => {
   const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
 
-  assert.match(legacyLog, /db\.rpc\("get_my_legacy_rank"\)\.maybeSingle\(\)/);
+  assert.match(legacyLog, /\.rpc\("get_my_legacy_log_snapshot"\)/);
+  assert.match(legacyLog, /legacyLogSnapshotSchema\.safeParse\(data\)/);
+  assert.match(legacyLog, /code: error\.code \?\? "LEGACY_LOG_SNAPSHOT_READ_FAILED"/);
+  assert.match(legacyLog, /throw new Error\("Could not load Legacy Log\."\)/);
   assert.doesNotMatch(legacyLog, /\.from\("leaderboard_cache"\)/);
-  assert.doesNotMatch(
-    legacyLog,
-    /get_my_legacy_rank[\s\S]*_user_id|_user_id[\s\S]*get_my_legacy_rank/,
-  );
+  assert.doesNotMatch(legacyLog, /throw error|error\.message/);
 });
 
 test("get_my_legacy_rank exposes only the authenticated player's private rank row", () => {
@@ -226,6 +234,7 @@ test("generated types expose the no-argument Legacy Log rank RPC", () => {
     typesSource,
     /get_my_legacy_rank:\s*\{\s*Args: never\s*Returns:\s*\{\s*prev_rank: number\s*rank: number\s*value: number\s*\}\[\]\s*\}/,
   );
+  assert.match(typesSource, /get_my_legacy_log_snapshot:\s*\{\s*Args: never\s*Returns: Json\s*\}/);
 });
 
 test("historical onboarding migrations remain byte-for-byte unchanged after line-ending normalization", () => {
@@ -243,26 +252,39 @@ test("historical onboarding migrations remain byte-for-byte unchanged after line
   );
 });
 
-test("getMyLegacyLog scopes private reads to the authenticated player", () => {
+test("Legacy Log snapshot scopes every protected read to auth.uid without caller input", () => {
   const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
+  const snapshotHeader = sourceBetween(
+    runtimeAccessMigration,
+    "CREATE OR REPLACE FUNCTION public.get_my_legacy_log_snapshot()",
+    "AS $$",
+  );
 
-  assert.match(legacyLog, /\.from\("profiles"\)[\s\S]*\.eq\("id", userId\)/);
-  assert.match(legacyLog, /\.from\("user_stats"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("user_achievements"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("legacy_records"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("user_holdings"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("grand_line_guess_stats"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("grand_line_guess_results"\)[\s\S]*\.eq\("user_id", userId\)/);
-  assert.match(legacyLog, /\.from\("daily_crew_submissions"\)[\s\S]*\.eq\("user_id", userId\)/);
+  assert.doesNotMatch(legacyLog, /\.from\(/);
+  assert.match(snapshotHeader, /RETURNS jsonb/);
+  assert.doesNotMatch(snapshotHeader, /_user_id|uuid|text|integer/);
+  assert.match(runtimeAccessMigration, /v_user_id uuid := auth\.uid\(\)/);
+  for (const table of [
+    "profiles",
+    "user_stats",
+    "user_achievements",
+    "legacy_records",
+    "user_holdings",
+    "grand_line_guess_stats",
+    "grand_line_guess_results",
+    "daily_crew_submissions",
+  ]) {
+    assert.match(runtimeAccessMigration, new RegExp(`public\\.${table}`));
+  }
 });
 
 test("Legacy Log returns catalog, unlocked achievements, records, and private progress metrics", () => {
   const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
 
-  assert.match(legacyLog, /\.from\("achievements"\)/);
-  assert.match(legacyLog, /catalog: catalog \?\? \[\]/);
+  assert.match(runtimeAccessMigration, /FROM public\.achievements AS achievements/);
+  assert.match(legacyLog, /catalog,/);
   assert.match(legacyLog, /unlocked: unlockedAchievements/);
-  assert.match(legacyLog, /legacyRecords: legacyRecords \?\? \[\]/);
+  assert.match(legacyLog, /legacyRecords,/);
   assert.match(legacyLog, /maxOpenHoldingAgeDays/);
   assert.match(legacyLog, /largestHolderEligible/);
   assert.match(legacyLog, /firstEventEligible/);
@@ -291,31 +313,26 @@ test("Legacy Log returns catalog, unlocked achievements, records, and private pr
 });
 
 test("Legacy Log first-event and largest-holder eligibility are returned as booleans only", () => {
-  const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
-
-  assert.match(legacyLog, /\.from\("market_events"\)[\s\S]*\.eq\("status", "published"\)/);
-  assert.match(legacyLog, /\.gte\("published_at", profile\.created_at\)/);
-  assert.match(legacyLog, /\.lte\("published_at", new Date\(\)\.toISOString\(\)\)/);
-  assert.match(legacyLog, /firstEventEligible: \(firstEvent \?\? \[\]\)\.length > 0/);
-  assert.match(legacyLog, /\.rpc\("is_my_character_largest_holder"/);
-  assert.match(
-    legacyLog,
-    /largestHolderEligible = largestHolderResults\.some\(\(\{ data \}\) => data === true\)/,
-  );
-  assert.doesNotMatch(legacyLog, /get_public_character_top_holders|topSharesBySlug|holderRows/);
+  assert.match(runtimeAccessMigration, /market_events\.status = 'published'::public\.event_status/);
+  assert.match(runtimeAccessMigration, /market_events\.published_at >= v_profile_created_at/);
+  assert.match(runtimeAccessMigration, /market_events\.published_at <= pg_catalog\.now\(\)/);
+  assert.match(runtimeAccessMigration, /INTO v_first_event_eligible/);
+  assert.match(runtimeAccessMigration, /my_holdings\.user_id = v_user_id/);
+  assert.match(runtimeAccessMigration, /MAX\(all_holdings\.shares\)/);
+  assert.match(runtimeAccessMigration, /INTO v_largest_holder_eligible/);
+  assert.doesNotMatch(runtimeAccessMigration, /get_public_character_top_holders/);
 });
 
 test("Legacy Log reads new achievement expansion data sources without writes", () => {
   const legacyLog = between("export const getMyLegacyLog", "export const listCharacterTopHolders");
 
-  assert.match(
-    legacyLog,
-    /\.select\("character_id,shares,created_at,characters\(slug,name,current_price,category\)"\)/,
-  );
-  assert.match(legacyLog, /\.select\("games_won,one_shot_wins,best_streak"\)/);
-  assert.match(legacyLog, /\.select\("id", \{ count: "exact", head: true \}\)/);
-  assert.match(legacyLog, /\.eq\("solved", true\)[\s\S]*\.eq\("hints_used", 0\)/);
-  assert.match(legacyLog, /\.select\("score,rank,daily_crew_missions\(max_score\)"\)/);
+  assert.match(runtimeAccessMigration, /FROM public\.user_holdings AS holdings/);
+  assert.match(runtimeAccessMigration, /FROM public\.grand_line_guess_stats AS stats/);
+  assert.match(runtimeAccessMigration, /FROM public\.grand_line_guess_results AS results/);
+  assert.match(runtimeAccessMigration, /results\.solved IS TRUE/);
+  assert.match(runtimeAccessMigration, /results\.hints_used = 0/);
+  assert.match(runtimeAccessMigration, /FROM public\.daily_crew_submissions AS submissions/);
+  assert.match(runtimeAccessMigration, /JOIN public\.daily_crew_missions AS missions/);
   assert.match(
     legacyLog,
     /dailyCrewRows\.filter\(\(submission\) =>[\s\S]*\["a", "s"\]\.includes\(submission\.rank\)/,
@@ -329,5 +346,9 @@ test("Legacy Log reads new achievement expansion data sources without writes", (
     /Number\(submission\.score\) === Number\(submission\.daily_crew_missions\?\.max_score \?\? 100\)/,
   );
   assert.doesNotMatch(legacyLog, /\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
+  assert.doesNotMatch(
+    runtimeAccessMigration,
+    /\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+public\.(?:legacy_records|user_holdings|grand_line_guess|daily_crew)/i,
+  );
   assert.doesNotMatch(legacyLog, /record_my_daily_activity|refresh_user_progression/);
 });

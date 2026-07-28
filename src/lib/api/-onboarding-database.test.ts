@@ -183,7 +183,7 @@ test("backfill is forward-only and reads trades without mutating financial or ga
   }
 });
 
-test("generated Supabase types expose only the new onboarding table contracts", () => {
+test("generated Supabase types expose onboarding tables and caller-scoped runtime RPCs", () => {
   assert.match(typesSource, /user_onboarding_progress: \{/);
   assert.match(typesSource, /stock_tutorial_status: string/);
   assert.match(typesSource, /stock_tutorial_offer: string/);
@@ -192,4 +192,7 @@ test("generated Supabase types expose only the new onboarding table contracts", 
   assert.match(typesSource, /event_name: string/);
   assert.match(typesSource, /dedupe_key: string \| null/);
   assert.match(typesSource, /metadata: Json/);
+  assert.match(typesSource, /get_my_onboarding_progress:\s*\{\s*Args: never\s*Returns: Json\s*\}/);
+  assert.match(typesSource, /mutate_my_onboarding_progress:\s*\{/);
+  assert.match(typesSource, /record_my_onboarding_event:\s*\{/);
 });

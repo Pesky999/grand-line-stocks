@@ -5,17 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import {
   STOCK_TUTORIAL_FINAL_STEP,
-  STOCK_TUTORIAL_VERSION,
-  completeStockTutorial,
-  dismissPageTip,
-  createFirstLoginOnboardingState,
-  promoteUntouchedOnboardingState,
-  resetPageTips,
-  restartStockTutorial,
-  saveStockTutorialStep,
-  skipAllPageTips,
-  skipStockTutorial,
-  startStockTutorial,
+  createSoftOnboardingState,
   type OnboardingProgressState,
   type StockTutorialStatus,
 } from "@/lib/onboarding/progress";
@@ -182,29 +172,15 @@ const dismissPageTipInputSchema = z
 type OnboardingDb = SupabaseClient<Database>;
 type OnboardingEventInput = z.infer<typeof recordOnboardingEventInputSchema>;
 type TutorialStepKey = z.infer<typeof tutorialStepKeySchema>;
-
-async function admin(): Promise<OnboardingDb> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return supabaseAdmin;
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function toDatabasePatch(state: OnboardingProgressState) {
-  return {
-    stock_tutorial_version: state.stockTutorialVersion,
-    stock_tutorial_status: state.stockTutorialStatus,
-    stock_tutorial_offer: state.stockTutorialOffer,
-    stock_tutorial_last_step: state.stockTutorialLastStep,
-    page_tips_disabled: state.pageTipsDisabled,
-    page_tip_versions: state.pageTipVersions as Json,
-    started_at: state.startedAt,
-    completed_at: state.completedAt,
-    skipped_at: state.skippedAt,
-  };
-}
+type OnboardingMutation =
+  | "start"
+  | "restart"
+  | "save_step"
+  | "complete"
+  | "skip"
+  | "dismiss_tip"
+  | "skip_tips"
+  | "reset_tips";
 
 function normalizeProgressRow(row: unknown): OnboardingProgressState {
   const parsed = onboardingProgressRowSchema.parse(row);
@@ -236,81 +212,31 @@ function completedStepForSavedStep(savedStep: number): TutorialStepKey | null {
   }
 }
 
-function toStoredEvent(event: OnboardingEventInput) {
-  const base = {
-    event_name: event.eventName,
-    tutorial_version: STOCK_TUTORIAL_VERSION,
-    step_key: null as string | null,
-    page_key: null as string | null,
-    metadata: emptyMetadataSchema.parse({}) as Json,
-    dedupe_key: null as string | null,
-  };
-
+function toRpcEventData(event: OnboardingEventInput): Json {
   switch (event.eventName) {
     case "onboarding_offer_seen":
-      return {
-        ...base,
-        metadata: { offer: event.offer } as Json,
-        dedupe_key: `onboarding_offer_seen:${event.offer}:v${STOCK_TUTORIAL_VERSION}`,
-      };
+      return { offer: event.offer };
     case "stock_tutorial_started":
       return {
-        ...base,
-        metadata: {
-          restart: event.restart,
-          source: event.source ?? "welcome",
-        } as Json,
-        dedupe_key: event.restart ? null : `stock_tutorial_started:v${STOCK_TUTORIAL_VERSION}`,
+        restart: event.restart,
+        source: event.source ?? "welcome",
       };
     case "stock_tutorial_step_completed":
-      return {
-        ...base,
-        step_key: event.step,
-        dedupe_key: `stock_tutorial_step_completed:${event.step}:v${STOCK_TUTORIAL_VERSION}`,
-      };
+      return { step: event.step };
     case "stock_tutorial_completed":
-      return {
-        ...base,
-        dedupe_key: `stock_tutorial_completed:v${STOCK_TUTORIAL_VERSION}`,
-      };
     case "stock_tutorial_skipped":
-      return {
-        ...base,
-        dedupe_key: `stock_tutorial_skipped:v${STOCK_TUTORIAL_VERSION}`,
-      };
+    case "page_tips_skipped":
+      return emptyMetadataSchema.parse({});
     case "stock_tutorial_replayed":
-      return {
-        ...base,
-        metadata: { source: event.source } as Json,
-      };
+      return { source: event.source };
     case "first_live_trade_started":
-      return {
-        ...base,
-        metadata: { side: event.side } as Json,
-        dedupe_key: "first_live_trade_started",
-      };
     case "first_live_trade_completed":
-      return {
-        ...base,
-        metadata: { side: event.side } as Json,
-        dedupe_key: "first_live_trade_completed",
-      };
+      return { side: event.side };
     case "page_tip_seen":
-      return {
-        ...base,
-        page_key: event.tipId,
-        dedupe_key: `page_tip_seen:${event.tipId}:v${event.version}`,
-      };
     case "page_tip_completed":
       return {
-        ...base,
-        page_key: event.tipId,
-        dedupe_key: `page_tip_completed:${event.tipId}:v${event.version}`,
-      };
-    case "page_tips_skipped":
-      return {
-        ...base,
-        dedupe_key: `page_tips_skipped:v${STOCK_TUTORIAL_VERSION}`,
+        tipId: event.tipId,
+        version: event.version,
       };
   }
 
@@ -322,163 +248,41 @@ function logOnboardingFailure(stage: string, code: string) {
   console.warn("[Onboarding]", { stage, code });
 }
 
-async function insertEventBestEffort(
+async function readMyOnboardingProgress(db: OnboardingDb) {
+  const { data, error } = await db.rpc("get_my_onboarding_progress");
+  if (error) throw error;
+  return normalizeProgressRow(data);
+}
+
+async function mutateMyOnboardingProgress(
   db: OnboardingDb,
-  userId: string,
+  mutation: OnboardingMutation,
+  options: { step?: number; tipId?: string; tipVersion?: number } = {},
+) {
+  const { data, error } = await db.rpc("mutate_my_onboarding_progress", {
+    _mutation: mutation,
+    _step: options.step ?? null,
+    _tip_id: options.tipId ?? null,
+    _tip_version: options.tipVersion ?? null,
+  });
+  if (error) throw error;
+  return normalizeProgressRow(data);
+}
+
+export async function recordOnboardingEventBestEffort(
+  db: OnboardingDb,
   event: OnboardingEventInput,
 ) {
-  const { error } = await db.from("user_onboarding_events").insert({
-    user_id: userId,
-    ...toStoredEvent(event),
-  });
-
-  if (error) {
-    if (error.code === "23505") return;
-    logOnboardingFailure("event_write", error.code ?? "ONBOARDING_EVENT_WRITE_FAILED");
-  }
-}
-
-async function readOnboardingProgress(db: OnboardingDb, userId: string) {
-  const { data, error } = await db
-    .from("user_onboarding_progress")
-    .select(
-      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? normalizeProgressRow(data) : null;
-}
-
-async function promoteOnboardingProgressIfUntouched(
-  db: OnboardingDb,
-  userId: string,
-  current: OnboardingProgressState,
-) {
-  const next = promoteUntouchedOnboardingState(current);
-  if (next === current) return current;
-
-  const { data, error } = await db
-    .from("user_onboarding_progress")
-    .update({
-      stock_tutorial_offer: next.stockTutorialOffer,
-      page_tips_disabled: next.pageTipsDisabled,
-    })
-    .eq("user_id", userId)
-    .eq("stock_tutorial_status", "not_started")
-    .eq("stock_tutorial_last_step", 0)
-    .in("stock_tutorial_offer", ["soft", "none"])
-    .is("started_at", null)
-    .is("completed_at", null)
-    .is("skipped_at", null)
-    .select(
-      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
-    )
-    .maybeSingle();
-
-  if (error) {
-    logOnboardingFailure(
-      "promote_untouched_progress",
-      error.code ?? "ONBOARDING_PROGRESS_PROMOTION_FAILED",
-    );
-    try {
-      const latest = await readOnboardingProgress(db, userId);
-      if (latest) return latest;
-    } catch {
-      logOnboardingFailure(
-        "promote_untouched_progress_recheck",
-        "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
-      );
-    }
-    return next;
-  }
-
-  if (data) return normalizeProgressRow(data);
-
-  try {
-    const latest = await readOnboardingProgress(db, userId);
-    if (latest) return latest;
-  } catch {
-    logOnboardingFailure(
-      "promote_untouched_progress_recheck",
-      "ONBOARDING_PROGRESS_PROMOTION_RECHECK_FAILED",
-    );
-  }
-
-  return next;
-}
-
-async function ensureOnboardingProgress(db: OnboardingDb, userId: string) {
-  const existing = await readOnboardingProgress(db, userId);
-  if (existing) return promoteOnboardingProgressIfUntouched(db, userId, existing);
-
-  const next = createFirstLoginOnboardingState();
-  const { data, error } = await db
-    .from("user_onboarding_progress")
-    .insert({
-      user_id: userId,
-      ...toDatabasePatch(next),
-    })
-    .select(
-      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
-    )
-    .single();
-
-  if (error) {
-    if (error.code === "23505") {
-      try {
-        const raced = await readOnboardingProgress(db, userId);
-        if (raced) return promoteOnboardingProgressIfUntouched(db, userId, raced);
-      } catch {
-        logOnboardingFailure(
-          "create_missing_progress_recheck",
-          "ONBOARDING_PROGRESS_CREATE_RECHECK_FAILED",
-        );
-      }
-    }
-    logOnboardingFailure(
-      "create_missing_progress",
-      error.code ?? "ONBOARDING_PROGRESS_CREATE_FAILED",
-    );
-    return next;
-  }
-
-  return normalizeProgressRow(data);
-}
-
-async function updateOnboardingProgress(
-  db: OnboardingDb,
-  userId: string,
-  next: OnboardingProgressState,
-) {
-  const { data, error } = await db
-    .from("user_onboarding_progress")
-    .update(toDatabasePatch(next))
-    .eq("user_id", userId)
-    .select(
-      "user_id,stock_tutorial_version,stock_tutorial_status,stock_tutorial_offer,stock_tutorial_last_step,page_tips_disabled,page_tip_versions,started_at,completed_at,skipped_at",
-    )
-    .single();
-
-  if (error) throw error;
-  return normalizeProgressRow(data);
-}
-
-async function mutateProgress(
-  userId: string,
-  mutate: (current: OnboardingProgressState) => OnboardingProgressState,
-) {
-  const db = await admin();
-  const current = await ensureOnboardingProgress(db, userId);
-  return updateOnboardingProgress(db, userId, mutate(current));
-}
-
-export async function recordOnboardingEventBestEffort(userId: string, event: OnboardingEventInput) {
   try {
     const parsed = recordOnboardingEventInputSchema.parse(event);
-    const db = await admin();
-    await insertEventBestEffort(db, userId, parsed);
+    const { error } = await db.rpc("record_my_onboarding_event", {
+      _event_name: parsed.eventName,
+      _event_data: toRpcEventData(parsed),
+    });
+    if (!error) return;
+    if (error) {
+      logOnboardingFailure("event_write", error.code ?? "ONBOARDING_EVENT_WRITE_FAILED");
+    }
   } catch (error) {
     logOnboardingFailure(
       "event_best_effort",
@@ -491,14 +295,13 @@ export const getMyOnboardingState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     try {
-      const db = await admin();
-      return await ensureOnboardingProgress(db, context.userId);
+      return await readMyOnboardingProgress(context.supabase);
     } catch (error) {
       logOnboardingFailure(
         "read_progress",
         error instanceof Error ? "ONBOARDING_PROGRESS_READ_FAILED" : "ONBOARDING_PROGRESS_UNKNOWN",
       );
-      throw new Error("Could not load onboarding state.");
+      return createSoftOnboardingState();
     }
   });
 
@@ -507,22 +310,21 @@ export const startMyStockTutorial = createServerFn({ method: "POST" })
   .inputValidator((data) => startTutorialInputSchema.parse(data ?? {}))
   .handler(async ({ data, context }) => {
     const input = data ?? {};
-    const db = await admin();
-    const current = await ensureOnboardingProgress(db, context.userId);
+    const current = await readMyOnboardingProgress(context.supabase);
 
     if (input.replay && current.stockTutorialStatus === "completed") {
-      await recordOnboardingEventBestEffort(context.userId, {
+      await recordOnboardingEventBestEffort(context.supabase, {
         eventName: "stock_tutorial_replayed",
         source: "profile",
       });
       return current;
     }
 
-    const next = input.restart
-      ? restartStockTutorial(current, nowIso())
-      : startStockTutorial(current, nowIso());
-    const updated = await updateOnboardingProgress(db, context.userId, next);
-    await recordOnboardingEventBestEffort(context.userId, {
+    const updated = await mutateMyOnboardingProgress(
+      context.supabase,
+      input.restart ? "restart" : "start",
+    );
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "stock_tutorial_started",
       restart: Boolean(input.restart),
       source: input.source ?? "welcome",
@@ -535,11 +337,11 @@ export const saveMyStockTutorialStep = createServerFn({ method: "POST" })
   .inputValidator((data) => saveTutorialStepInputSchema.parse(data))
   .handler(async ({ data, context }) => {
     const completedStep = completedStepForSavedStep(data.step);
-    const updated = await mutateProgress(context.userId, (current) =>
-      saveStockTutorialStep(current, data.step),
-    );
+    const updated = await mutateMyOnboardingProgress(context.supabase, "save_step", {
+      step: data.step,
+    });
     if (completedStep) {
-      await recordOnboardingEventBestEffort(context.userId, {
+      await recordOnboardingEventBestEffort(context.supabase, {
         eventName: "stock_tutorial_step_completed",
         step: completedStep,
       });
@@ -553,18 +355,15 @@ export const completeMyStockTutorial = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const input = data ?? {};
     if (input.replay) {
-      const db = await admin();
-      return ensureOnboardingProgress(db, context.userId);
+      return readMyOnboardingProgress(context.supabase);
     }
 
-    const updated = await mutateProgress(context.userId, (current) =>
-      completeStockTutorial(current, nowIso()),
-    );
-    await recordOnboardingEventBestEffort(context.userId, {
+    const updated = await mutateMyOnboardingProgress(context.supabase, "complete");
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "stock_tutorial_step_completed",
       step: "step_5",
     });
-    await recordOnboardingEventBestEffort(context.userId, {
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "stock_tutorial_completed",
     });
     return updated;
@@ -573,10 +372,8 @@ export const completeMyStockTutorial = createServerFn({ method: "POST" })
 export const skipMyStockTutorial = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const updated = await mutateProgress(context.userId, (current) =>
-      skipStockTutorial(current, nowIso()),
-    );
-    await recordOnboardingEventBestEffort(context.userId, {
+    const updated = await mutateMyOnboardingProgress(context.supabase, "skip");
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "stock_tutorial_skipped",
     });
     return updated;
@@ -586,10 +383,11 @@ export const dismissMyPageTip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => dismissPageTipInputSchema.parse(data))
   .handler(async ({ data, context }) => {
-    const updated = await mutateProgress(context.userId, (current) =>
-      dismissPageTip(current, data.tipId, data.version),
-    );
-    await recordOnboardingEventBestEffort(context.userId, {
+    const updated = await mutateMyOnboardingProgress(context.supabase, "dismiss_tip", {
+      tipId: data.tipId,
+      tipVersion: data.version,
+    });
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "page_tip_completed",
       tipId: data.tipId,
       version: data.version,
@@ -600,8 +398,8 @@ export const dismissMyPageTip = createServerFn({ method: "POST" })
 export const skipMyPageTips = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const updated = await mutateProgress(context.userId, skipAllPageTips);
-    await recordOnboardingEventBestEffort(context.userId, {
+    const updated = await mutateMyOnboardingProgress(context.supabase, "skip_tips");
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "page_tips_skipped",
     });
     return updated;
@@ -609,21 +407,21 @@ export const skipMyPageTips = createServerFn({ method: "POST" })
 
 export const resetMyPageTips = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => mutateProgress(context.userId, resetPageTips));
+  .handler(async ({ context }) => mutateMyOnboardingProgress(context.supabase, "reset_tips"));
 
 export const recordMyOnboardingEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => publicRecordOnboardingEventInputSchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.eventName === "onboarding_offer_seen") {
-      await recordOnboardingEventBestEffort(context.userId, {
+      await recordOnboardingEventBestEffort(context.supabase, {
         eventName: "onboarding_offer_seen",
         offer: data.offer,
       });
       return { ok: true } as const;
     }
 
-    await recordOnboardingEventBestEffort(context.userId, {
+    await recordOnboardingEventBestEffort(context.supabase, {
       eventName: "page_tip_seen",
       tipId: data.tipId,
       version: data.version,
