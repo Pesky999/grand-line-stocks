@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -16,12 +16,19 @@ function between(source: string, start: string, end: string) {
 }
 
 const marketSource = read("src/lib/api/market.functions.ts");
+const eventsSource = read("src/lib/api/events.functions.ts");
 const pricingFunctionsSource = read("src/lib/api/character-pricing-ratings.functions.ts");
 const panelSource = read("src/components/admin/PricingPreviewPanel.tsx");
 const lifecycleSql = read(
   "supabase/migrations/20260804010000_market_listing_lifecycle_and_pricing_v1_2.sql",
 );
+const characterPolicyFixSql = read(
+  "supabase/migrations/20260804015000_split_character_read_policies.sql",
+);
 const catalogSql = read("supabase/migrations/20260804020000_reprice_and_expand_market_to_112.sql");
+const marketLaunchMigrations = readdirSync(join(process.cwd(), "supabase/migrations"))
+  .filter((filename) => /^202608040(?:10000|15000|20000)_/.test(filename))
+  .sort();
 
 test("public market reads list only published characters while admins can load private drafts", () => {
   const publicList = between(
@@ -50,6 +57,18 @@ test("public market reads list only published characters while admins can load p
   assert.doesNotMatch(adminList, /\.eq\("is_listed", true\)/);
 });
 
+test("public character and market-event reads do not invoke the administrator role helper", () => {
+  const publicEvents = between(
+    eventsSource,
+    "// ---------- Public ----------",
+    "// ---------- Admin ----------",
+  );
+
+  assert.match(publicEvents, /\.from\("characters"\)/);
+  assert.match(publicEvents, /market_event_impacts[\s\S]*characters\(slug,name\)/);
+  assert.doesNotMatch(publicEvents, /(?:rpc\("has_role"|public\.has_role)/);
+});
+
 test("new character creation is private and cannot set a client-supplied market price", () => {
   const create = between(
     marketSource,
@@ -67,12 +86,65 @@ test("new character creation is private and cannot set a client-supplied market 
   assert.doesNotMatch(create, /price_history/);
 });
 
-test("database RLS exposes listed characters plus admin-visible drafts", () => {
+test("database RLS keeps anonymous listed reads separate from authenticated draft access", () => {
   assert.match(lifecycleSql, /ADD COLUMN IF NOT EXISTS is_listed boolean NOT NULL DEFAULT true/);
-  assert.match(
+
+  const lifecyclePublicPolicy = between(
     lifecycleSql,
-    /CREATE POLICY "Listed characters are publicly readable"[\s\S]*TO anon, authenticated[\s\S]*is_listed[\s\S]*public\.has_role\(auth\.uid\(\), 'admin'::public\.app_role\)/,
+    'CREATE POLICY "Listed characters are publicly readable"',
+    'CREATE POLICY "Administrators can read character drafts"',
   );
+  const lifecycleAdminPolicy = between(
+    lifecycleSql,
+    'CREATE POLICY "Administrators can read character drafts"',
+    "CREATE OR REPLACE FUNCTION public.calculate_market_price_v1_2",
+  );
+  const correctivePublicPolicy = between(
+    characterPolicyFixSql,
+    'CREATE POLICY "Listed characters are publicly readable"',
+    'CREATE POLICY "Administrators can read character drafts"',
+  );
+  const correctiveAdminPolicy = between(
+    characterPolicyFixSql,
+    'CREATE POLICY "Administrators can read character drafts"',
+    "NOTIFY pgrst, 'reload schema';",
+  );
+
+  for (const [label, publicPolicy, adminPolicy] of [
+    ["lifecycle", lifecyclePublicPolicy, lifecycleAdminPolicy],
+    ["corrective", correctivePublicPolicy, correctiveAdminPolicy],
+  ]) {
+    assert.match(publicPolicy, /FOR SELECT\s+TO anon, authenticated\s+USING \(is_listed\);/);
+    assert.doesNotMatch(publicPolicy, /has_role/);
+    assert.match(adminPolicy, /FOR SELECT\s+TO authenticated/);
+    assert.match(
+      adminPolicy,
+      /USING \(public\.has_role\(auth\.uid\(\), 'admin'::public\.app_role\)\);/,
+    );
+    assert.doesNotMatch(adminPolicy, /TO anon/);
+    assert.equal(
+      (`${publicPolicy}${adminPolicy}`.match(/public\.has_role/g) ?? []).length,
+      1,
+      `${label} character read policies should call has_role only for administrators`,
+    );
+  }
+
+  assert.match(characterPolicyFixSql, /^BEGIN;/);
+  assert.match(
+    characterPolicyFixSql,
+    /DROP POLICY IF EXISTS "Listed characters are publicly readable" ON public\.characters;/,
+  );
+  assert.match(
+    characterPolicyFixSql,
+    /DROP POLICY IF EXISTS "Administrators can read character drafts" ON public\.characters;/,
+  );
+  assert.match(characterPolicyFixSql, /NOTIFY pgrst, 'reload schema';/);
+  assert.match(characterPolicyFixSql, /COMMIT;\s*$/);
+  assert.deepEqual(marketLaunchMigrations, [
+    "20260804010000_market_listing_lifecycle_and_pricing_v1_2.sql",
+    "20260804015000_split_character_read_policies.sql",
+    "20260804020000_reprice_and_expand_market_to_112.sql",
+  ]);
 });
 
 test("the V1.2 database formula exactly encodes the approved score stretch", () => {

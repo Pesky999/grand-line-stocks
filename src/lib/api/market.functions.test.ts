@@ -23,6 +23,9 @@ const initialMarketMigration = read(
 const listingLifecycleMigration = read(
   "supabase/migrations/20260804010000_market_listing_lifecycle_and_pricing_v1_2.sql",
 );
+const characterPolicyFixMigration = read(
+  "supabase/migrations/20260804015000_split_character_read_policies.sql",
+);
 
 test("public getCharacter uses the publishable-key client and not the service-role helper", () => {
   const getCharacterSource = sourceBetween(
@@ -191,8 +194,27 @@ test("repository migrations already allow public read access for characters and 
   );
   assert.match(
     listingLifecycleMigration,
-    /CREATE POLICY "Listed characters are publicly readable"[\s\S]*is_listed[\s\S]*public\.has_role\(auth\.uid\(\), 'admin'::public\.app_role\)/,
+    /CREATE POLICY "Listed characters are publicly readable"[\s\S]*TO anon, authenticated[\s\S]*USING \(is_listed\);/,
   );
+  const publicCharacterPolicy = sourceBetween(
+    characterPolicyFixMigration,
+    'CREATE POLICY "Listed characters are publicly readable"',
+    'CREATE POLICY "Administrators can read character drafts"',
+  );
+  const adminCharacterPolicy = sourceBetween(
+    characterPolicyFixMigration,
+    'CREATE POLICY "Administrators can read character drafts"',
+    "NOTIFY pgrst, 'reload schema';",
+  );
+  assert.match(publicCharacterPolicy, /TO anon, authenticated/);
+  assert.match(publicCharacterPolicy, /USING \(is_listed\);/);
+  assert.doesNotMatch(publicCharacterPolicy, /has_role/);
+  assert.match(adminCharacterPolicy, /TO authenticated/);
+  assert.match(
+    adminCharacterPolicy,
+    /public\.has_role\(auth\.uid\(\), 'admin'::public\.app_role\)/,
+  );
+  assert.doesNotMatch(adminCharacterPolicy, /TO anon/);
   assert.match(
     initialMarketMigration,
     /CREATE POLICY "Price history is publicly readable" ON public\.price_history FOR SELECT USING \(true\);/,

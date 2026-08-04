@@ -8,14 +8,18 @@ COMMENT ON COLUMN public.characters.is_listed IS
 
 DROP POLICY IF EXISTS "Characters are publicly readable" ON public.characters;
 DROP POLICY IF EXISTS "Listed characters are publicly readable" ON public.characters;
+DROP POLICY IF EXISTS "Administrators can read character drafts" ON public.characters;
 CREATE POLICY "Listed characters are publicly readable"
   ON public.characters
   FOR SELECT
   TO anon, authenticated
-  USING (
-    is_listed
-    OR public.has_role(auth.uid(), 'admin'::public.app_role)
-  );
+  USING (is_listed);
+
+CREATE POLICY "Administrators can read character drafts"
+  ON public.characters
+  FOR SELECT
+  TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'::public.app_role));
 
 CREATE OR REPLACE FUNCTION public.calculate_market_price_v1_2(
   _narrative_importance integer,
