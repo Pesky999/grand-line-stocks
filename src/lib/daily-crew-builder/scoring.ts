@@ -27,11 +27,11 @@ export const DAILY_CREW_SYNERGY_MAX = 10;
 export const DAILY_CREW_MAX_SCORE = 100;
 
 export const DAILY_CREW_ROLE_LABELS: Record<DailyCrewRole, string> = {
-  captain: "Captain",
-  fighter: "Fighter",
-  navigator: "Navigator",
-  strategist: "Strategist",
-  support: "Support",
+  captain: "Leadership",
+  fighter: "Execution",
+  navigator: "Awareness",
+  strategist: "Planning",
+  support: "Stability",
 };
 
 export type DailyCrewPoolCharacter = {
