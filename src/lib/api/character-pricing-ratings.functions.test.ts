@@ -22,6 +22,7 @@ test("every ratings server function requires authenticated middleware and admin 
     "exportCharacterPricingRatingsCsv",
     "saveCharacterPricingDraft",
     "saveAndApplyCharacterPricing",
+    "publishCharacterIpo",
     "resetCharacterPricingRatings",
   ]) {
     const body = functionSource(name);
@@ -76,7 +77,10 @@ test("CSV export reads characters and ratings through the authenticated admin cl
 
 test("CSV export includes the approved columns and keeps unrated cells blank", () => {
   const exportCsv = functionSource("exportCharacterPricingRatingsCsv");
-  const csvHelpers = source.slice(source.indexOf("const CSV_COLUMNS"), source.indexOf("export const getCharacterPricingRatings"));
+  const csvHelpers = source.slice(
+    source.indexOf("const CSV_COLUMNS"),
+    source.indexOf("export const getCharacterPricingRatings"),
+  );
 
   for (const column of [
     "character_id",
@@ -111,12 +115,18 @@ test("CSV export includes the approved columns and keeps unrated cells blank", (
 
 test("CSV export escapes cells and stays read-only", () => {
   const exportCsv = functionSource("exportCharacterPricingRatingsCsv");
-  const csvHelpers = source.slice(source.indexOf("function csvCell"), source.indexOf("export const getCharacterPricingRatings"));
+  const csvHelpers = source.slice(
+    source.indexOf("function csvCell"),
+    source.indexOf("export const getCharacterPricingRatings"),
+  );
 
   assert.match(csvHelpers, /\/\[",\\r\\n\]\//);
   assert.match(csvHelpers, /text\.replaceAll\('"', '""'\)/);
   assert.match(csvHelpers, /`\\uFEFF\$\{lines\.join\("\\r\\n"\)\}\\r\\n`/);
-  assert.match(csvHelpers, /grand-line-pricing-ratings-\$\{now\.toISOString\(\)\.slice\(0, 10\)\}\.csv/);
+  assert.match(
+    csvHelpers,
+    /grand-line-pricing-ratings-\$\{now\.toISOString\(\)\.slice\(0, 10\)\}\.csv/,
+  );
   assert.doesNotMatch(exportCsv, /\.(insert|update|delete|upsert)\(/);
   assert.doesNotMatch(
     exportCsv,
@@ -127,6 +137,7 @@ test("CSV export escapes cells and stays read-only", () => {
 test("writes call only the approved RPCs with server-owned algorithm version", () => {
   const save = functionSource("saveCharacterPricingDraft");
   const apply = functionSource("saveAndApplyCharacterPricing");
+  const publish = functionSource("publishCharacterIpo");
   const reset = functionSource("resetCharacterPricingRatings");
   const inputShape = source.slice(
     source.indexOf("const persistentRatingsInput"),
@@ -135,9 +146,11 @@ test("writes call only the approved RPCs with server-owned algorithm version", (
 
   assert.match(save, /\.rpc\("save_character_pricing_draft"/);
   assert.match(apply, /\.rpc\(\s*"save_and_apply_character_pricing"/);
+  assert.match(publish, /\.rpc\("publish_character_ipo"/);
   assert.match(reset, /\.rpc\("reset_character_pricing_ratings"/);
   assert.match(save, /_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
   assert.match(apply, /_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
+  assert.match(publish, /_pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION/);
   assert.doesNotMatch(source, /approve_character_pricing_ratings/);
   assert.doesNotMatch(source, /approve_and_apply_character_pricing_ratings/);
   assert.doesNotMatch(
@@ -146,24 +159,26 @@ test("writes call only the approved RPCs with server-owned algorithm version", (
   );
 });
 
-test("apply workflow accepts current persistent inputs and does not submit a price", () => {
-  const apply = functionSource("saveAndApplyCharacterPricing");
+test("reprice and IPO workflows accept current persistent inputs and do not submit a price", () => {
+  for (const functionName of ["saveAndApplyCharacterPricing", "publishCharacterIpo"]) {
+    const apply = functionSource(functionName);
 
-  assert.match(apply, /\.inputValidator\(\(input\) => persistentRatingsInput\.parse\(input\)\)/);
-  assert.match(
-    apply,
-    /calculateIpoPricing\(\{[\s\S]*ratings: data\.ratings[\s\S]*category: data\.category[\s\S]*comparableAdjustment: data\.comparableAdjustment[\s\S]*uncertaintyDiscountPct: data\.uncertaintyDiscountPct[\s\S]*launchCatalystPct: data\.launchCatalystPct[\s\S]*\}\)/,
-    "server calculates from the current persistent form input",
-  );
-  assert.match(apply, /const previewAppliedPrice = calculation\.suggestedPostCatalystPrice/);
-  assert.doesNotMatch(apply, /_applied_price/);
-  assert.match(apply, /_stock_category: data\.category/);
-  assert.doesNotMatch(apply, /\.from\("character_pricing_ratings"\)[\s\S]*\.select\("\*"\)/);
-  assert.doesNotMatch(
-    apply,
-    /data\.(appliedPrice|newPrice|price|pricingAlgorithmVersion|status|userId|approvedBy|updatedAt|calculationSnapshot)/,
-    "client input cannot supply market application metadata or calculated prices",
-  );
+    assert.match(apply, /\.inputValidator\(\(input\) => persistentRatingsInput\.parse\(input\)\)/);
+    assert.match(
+      apply,
+      /calculateIpoPricing\(\{[\s\S]*ratings: data\.ratings[\s\S]*category: data\.category[\s\S]*comparableAdjustment: data\.comparableAdjustment[\s\S]*uncertaintyDiscountPct: data\.uncertaintyDiscountPct[\s\S]*launchCatalystPct: data\.launchCatalystPct[\s\S]*\}\)/,
+      `${functionName} calculates from the current persistent form input`,
+    );
+    assert.match(apply, /const previewAppliedPrice = calculation\.suggestedPostCatalystPrice/);
+    assert.doesNotMatch(apply, /_applied_price/);
+    assert.match(apply, /_stock_category: data\.category/);
+    assert.doesNotMatch(apply, /\.from\("character_pricing_ratings"\)[\s\S]*\.select\("\*"\)/);
+    assert.doesNotMatch(
+      apply,
+      /data\.(appliedPrice|newPrice|price|pricingAlgorithmVersion|status|userId|approvedBy|updatedAt|calculationSnapshot)/,
+      "client input cannot supply market application metadata or calculated prices",
+    );
+  }
 });
 
 test("apply workflow treats the RPC-returned price as authoritative", () => {

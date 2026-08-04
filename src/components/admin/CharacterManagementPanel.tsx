@@ -270,6 +270,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
 
   async function refreshCharacterQueries(slug?: string) {
     await queryClient.invalidateQueries({ queryKey: ["characters"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin", "characters"] });
     await queryClient.invalidateQueries({ queryKey: ["market", "page"] });
     if (slug) await queryClient.invalidateQueries({ queryKey: ["character", slug] });
     await router.invalidate();
@@ -288,7 +289,7 @@ export function CharacterManagementPanel({ characters }: { characters: Character
       if (confirm.type === "create") {
         const created = await adminCreateCharacter({ data: confirm.payload });
         toast.success(
-          "Character created. Complete the official valuation in Market Pricing Preview.",
+          "Private draft created. Complete the official valuation in Market Pricing Preview, then publish its IPO.",
         );
         setAddForm(emptyAddForm);
         setMode("edit");
@@ -352,13 +353,13 @@ export function CharacterManagementPanel({ characters }: { characters: Character
             <div className="space-y-3">
               {creationNotice && (
                 <div className="border border-accent bg-accent/10 p-3 text-xs text-foreground">
-                  <div className="font-bold text-accent">{creationNotice} created</div>
+                  <div className="font-bold text-accent">{creationNotice} draft created</div>
                   <p className="mt-1 text-muted-foreground">
-                    Complete the official valuation in{" "}
+                    This character is not public or tradable. Complete the official valuation in{" "}
                     <Link to="/pricing-admin" className="text-accent underline">
                       Market Pricing Preview
                     </Link>
-                    .
+                    , then publish its IPO.
                   </p>
                 </div>
               )}
@@ -378,7 +379,12 @@ export function CharacterManagementPanel({ characters }: { characters: Character
                     className={`block w-full border-b border-border px-3 py-2 text-left text-xs last:border-b-0 hover:bg-card/80 ${character.slug === selectedSlug ? "bg-card text-primary" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-foreground">{character.name}</span>
+                      <span className="font-bold text-foreground">
+                        {character.name}
+                        {!character.is_listed && (
+                          <span className="ml-2 text-[9px] uppercase text-warn">Private draft</span>
+                        )}
+                      </span>
                       <span className="text-accent">{character.slug.toUpperCase()}</span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
@@ -395,6 +401,10 @@ export function CharacterManagementPanel({ characters }: { characters: Character
                 <div className="grid gap-2 border border-border bg-card/30 p-3 text-[10px] uppercase tracking-widest text-muted-foreground md:grid-cols-2">
                   <ReadOnly label="Database ID" value={selectedCharacter.id} />
                   <ReadOnly label="Slug" value={selectedCharacter.slug} />
+                  <ReadOnly
+                    label="Listing status"
+                    value={selectedCharacter.is_listed ? "Public" : "Private draft"}
+                  />
                   <ReadOnly
                     label="Created"
                     value={new Date(selectedCharacter.created_at).toLocaleString()}

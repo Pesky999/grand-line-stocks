@@ -18,6 +18,7 @@ import {
   exportCharacterPricingRatingsCsv,
   getCharacterPricingRatings,
   listCharacterPricingRatings,
+  publishCharacterIpo,
   resetCharacterPricingRatings,
   saveAndApplyCharacterPricing,
   saveCharacterPricingDraft,
@@ -93,6 +94,18 @@ function buildApplyConfirmation(
   character: CharacterRow,
   calculation: NonNullable<CalculationState["calculation"]>,
 ) {
+  if (!character.is_listed) {
+    return [
+      `Publish IPO for ${character.name}?`,
+      "",
+      `Calculated IPO price: ${formatBerry(calculation.ipo.suggestedPostCatalystPrice)}`,
+      `IPO category: ${formatCategory(calculation.ipo.category)}`,
+      `Pricing algorithm version: ${calculation.ipo.algorithmVersion}`,
+      "",
+      "This atomically approves the ratings, sets both current and previous price to the IPO price, creates one IPO history record, and makes the character public and tradable.",
+    ].join("\n");
+  }
+
   const currentPrice = Number(character.current_price);
   const proposedPrice = calculation.ipo.suggestedPostCatalystPrice;
   const changePct = calculateSignedPriceChangePct(currentPrice, proposedPrice);
@@ -417,7 +430,21 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
           : character,
       ),
     );
+    queryClient.setQueryData<CharacterRow[]>(["admin", "characters"], (current) =>
+      current?.map((character) =>
+        character.id === characterId
+          ? {
+              ...character,
+              previous_price: result.previousLivePrice,
+              current_price: result.newLivePrice,
+              category: result.newCategory,
+              is_listed: true,
+            }
+          : character,
+      ),
+    );
     await queryClient.invalidateQueries({ queryKey: ["characters"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin", "characters"] });
     await queryClient.invalidateQueries({ queryKey: ["market", "page"] });
     await queryClient.invalidateQueries({ queryKey: ["character", characterSlug] });
     await queryClient.invalidateQueries({ queryKey: ["character", characterSlug, "intel"] });
@@ -487,7 +514,9 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     const persistentSnapshot = persistentValidation.value;
     setOperation("apply");
     try {
-      const result = await saveAndApplyCharacterPricing({
+      const result = await (
+        selectedCharacter.is_listed ? saveAndApplyCharacterPricing : publishCharacterIpo
+      )({
         data: {
           characterId: operationCharacterId,
           ...persistentSnapshot,
@@ -498,9 +527,11 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
       await refreshRatingsState(operationQueryKey, operationCharacterId, result.ratings);
       await refreshAppliedMarketState(operationCharacterId, selectedCharacter.slug, result);
       toast.success(
-        `Ratings saved and live price updated to ${formatBerry(result.newLivePrice)} (${formatPct(
-          result.percentageChange,
-        )}).`,
+        selectedCharacter.is_listed
+          ? `Ratings saved and live price updated to ${formatBerry(result.newLivePrice)} (${formatPct(
+              result.percentageChange,
+            )}).`
+          : `${selectedCharacter.name} IPO published at ${formatBerry(result.newLivePrice)}. The character is now public and tradable.`,
       );
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Could not save and apply pricing ratings."));
@@ -581,17 +612,17 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
     <div className="space-y-4">
       <section className="terminal-panel">
         <div className="terminal-header flex items-center justify-between gap-2">
-          <span>Market Pricing V1 Preview</span>
+          <span>Market Pricing V1.2 Preview</span>
           <Badge variant="outline">Admin only</Badge>
         </div>
         <div className="space-y-3 p-4 text-xs text-muted-foreground">
           <Alert className="border-accent/40 bg-accent/10">
             <AlertTitle>Character valuation and live pricing</AlertTitle>
             <AlertDescription>
-              Save Draft stores ratings without changing the market. Save Ratings & Apply Price
-              saves the current ratings and updates the character&apos;s live price and stock
-              category using the calculated final valuation. Movement and simulation inputs remain
-              temporary.
+              Save Draft stores ratings without changing the market. For private character drafts,
+              Publish IPO atomically sets the official valuation and makes the listing public and
+              tradable. For existing listings, Save Ratings &amp; Apply Price reprices the live
+              stock. Movement and simulation inputs remain temporary.
             </AlertDescription>
           </Alert>
           <div className="grid gap-2 md:grid-cols-3">
@@ -657,6 +688,7 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
               {characters.map((character) => (
                 <option key={character.id} value={character.slug}>
                   {character.name} ({character.slug.toUpperCase()})
+                  {character.is_listed ? "" : " — PRIVATE DRAFT"}
                 </option>
               ))}
             </select>
@@ -669,6 +701,10 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
             />
             <Metric label="Category" value={formatCategory(selectedCharacter.category)} />
             <Metric label="Momentum" value={Number(selectedCharacter.momentum).toFixed(4)} />
+            <Metric
+              label="Listing"
+              value={selectedCharacter.is_listed ? "Public" : "Private draft"}
+            />
           </div>
         </div>
       </section>
@@ -801,7 +837,13 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
               !persistentValidation.ok ? "Fix persistent rating inputs before applying" : undefined
             }
           >
-            {operation === "apply" ? "Applying..." : "Save Ratings & Apply Price"}
+            {operation === "apply"
+              ? selectedCharacter.is_listed
+                ? "Applying..."
+                : "Publishing..."
+              : selectedCharacter.is_listed
+                ? "Save Ratings & Apply Price"
+                : "Publish IPO"}
           </button>
           <button
             type="button"
@@ -826,12 +868,13 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
         <div className="terminal-header">3. IPO Preview</div>
         <p className="border-b border-border p-4 text-xs text-muted-foreground">
           Base fair value drives movement and simulation previews. The post-catalyst price is the
-          final valuation used by Save Ratings & Apply Price.
+          final valuation used by {selectedCharacter.is_listed ? "repricing" : "the IPO"}.
         </p>
         {renderBlockedOutput(validation, calculationState)}
         {calculation && (
           <div className="grid gap-2 p-4 text-xs tabular md:grid-cols-2 xl:grid-cols-4">
             <Metric label="Weighted score" value={calculation.ipo.weightedScore.toFixed(4)} />
+            <Metric label="Pricing score (1.50)" value={calculation.ipo.pricingScore.toFixed(4)} />
             <Metric label="Base fair value" value={formatBerry(calculation.ipo.baseFairValue)} />
             <Metric
               label="Comparable fair value"
@@ -1195,9 +1238,10 @@ export function PricingPreviewPanel({ characters }: PricingPreviewPanelProps) {
             <p>No pricing or movement warnings for the current temporary inputs.</p>
           )}
           <p>
-            Save Draft stores only persistent ratings and IPO inputs. Save Ratings & Apply Price
-            updates only the selected character&apos;s live price, category, ratings approval
-            metadata, and price history. Movement and simulation inputs are never persisted.
+            Save Draft stores only persistent ratings and IPO inputs. Publish IPO additionally makes
+            a private draft public and tradable with equal current and previous prices. Repricing an
+            existing listing updates only its live price, category, ratings approval metadata, and
+            price history. Movement and simulation inputs are never persisted.
           </p>
         </div>
       </section>

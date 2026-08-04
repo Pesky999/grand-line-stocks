@@ -10,7 +10,7 @@ const migrationPath = join(
 );
 const applyMigrationPath = join(
   migrationsDir,
-  "20260707173704_save_and_apply_character_pricing.sql",
+  "20260804010000_market_listing_lifecycle_and_pricing_v1_2.sql",
 );
 const pricingSource = readFileSync(join(process.cwd(), "src/lib/market-pricing/v1.ts"), "utf8");
 const sql = readFileSync(migrationPath, "utf8");
@@ -22,6 +22,10 @@ function stripSqlComments(source: string): string {
 const sqlWithoutComments = stripSqlComments(sql);
 const applySql = readFileSync(applyMigrationPath, "utf8");
 const applySqlWithoutComments = stripSqlComments(applySql);
+const saveAndApplySql = applySql.slice(
+  applySql.indexOf("CREATE OR REPLACE FUNCTION public.save_and_apply_character_pricing"),
+  applySql.indexOf("CREATE OR REPLACE FUNCTION public.publish_character_ipo"),
+);
 
 function expectSql(pattern: RegExp, message: string): void {
   assert.match(sql, pattern, message);
@@ -278,7 +282,7 @@ test("migration does not mutate live market, financial, event, or pricing histor
   }
 });
 
-test("save-and-apply migration defines only the direct pricing application RPC", () => {
+test("listing lifecycle migration defines the direct pricing application RPC securely", () => {
   expectApplySql(
     /CREATE OR REPLACE FUNCTION public\.save_and_apply_character_pricing\(\s*_character_id uuid,/i,
     "direct save-and-apply RPC exists",
@@ -299,9 +303,9 @@ test("save-and-apply migration defines only the direct pricing application RPC",
     /approve_and_apply_character_pricing_ratings/i,
     "legacy approve-and-apply RPC name is absent",
   );
-  rejectApplySql(
-    /CREATE\s+TABLE|ALTER\s+TABLE\s+public\.characters|CREATE\s+POLICY|ALTER\s+POLICY/i,
-    "migration does not create tables or alter policies",
+  expectApplySql(
+    /ALTER TABLE public\.characters\s+ADD COLUMN IF NOT EXISTS is_listed boolean NOT NULL DEFAULT true/i,
+    "migration adds an explicit listing state",
   );
 });
 
@@ -333,14 +337,9 @@ test("save-and-apply RPC validates ratings, IPO inputs, and algorithm version", 
     /IF _launch_catalyst_pct IS NULL OR _launch_catalyst_pct NOT BETWEEN -30 AND 30/i,
     "launch catalyst is bounded",
   );
-  expectApplySql(/IF v_version IS NULL OR v_version = ''/i, "algorithm version is required");
   expectApplySql(
-    /v_expected_version constant text := '1\.1\.0'/i,
+    /IF v_version IS NULL OR v_version <> '1\.2\.0'/i,
     "the SQL migration pins the current pricing algorithm version",
-  );
-  expectApplySql(
-    /IF v_version <> v_expected_version/i,
-    "stale or unsupported pricing algorithm versions are rejected",
   );
   expectApplySql(
     /v_applied_price <= 0 OR v_applied_price > 99999/i,
@@ -350,20 +349,24 @@ test("save-and-apply RPC validates ratings, IPO inputs, and algorithm version", 
 
 test("save-and-apply SQL calculates the authoritative post-catalyst price", () => {
   rejectApplySql(/\b_applied_price\b/i, "direct RPC callers cannot provide an arbitrary price");
-  expectPricingSource(/MARKET_PRICING_ALGORITHM_VERSION = "1\.1\.0"/, "source version is 1.1.0");
+  expectPricingSource(/MARKET_PRICING_ALGORITHM_VERSION = "1\.2\.0"/, "source version is 1.2.0");
   expectPricingSource(/MARKET_PRICING_BASE_FAIR_VALUE_MULTIPLIER = 50/, "source multiplier is 50");
   expectPricingSource(
     /MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT = 0\.035835/,
     "source exponent is 0.035835",
   );
-  expectApplySql(/v_expected_version constant text := '1\.1\.0'/i, "SQL version is 1.1.0");
+  expectApplySql(/v_version <> '1\.2\.0'/i, "SQL version is 1.2.0");
   expectApplySql(
     /v_weighted_score :=\s+\(_narrative_importance \* 0\.25\) \+\s+\(_current_relevance \* 0\.20\) \+\s+\(_strength_status \* 0\.15\) \+\s+\(_popularity \* 0\.15\) \+\s+\(_future_potential \* 0\.15\) \+\s+\(_investor_confidence \* 0\.10\);/i,
     "SQL uses the exact current fundamental weights and excludes volatility",
   );
   expectApplySql(
-    /v_raw_base_fair_value := 50 \* pg_catalog\.exp\(\(0\.035835 \* v_weighted_score\)::double precision\)::numeric/i,
-    "SQL uses the current base multiplier and exponent",
+    /v_pricing_score := 79\.85 \+ \(\(v_weighted_score - 79\.85\) \* 1\.50\)/i,
+    "SQL applies the approved 1.50 score stretch around the fixed anchor",
+  );
+  expectApplySql(
+    /50 \* pg_catalog\.exp\(\(0\.035835 \* v_pricing_score\)::double precision\)::numeric/i,
+    "SQL uses the current base multiplier and exponent with the pricing score",
   );
   expectApplySql(
     /v_raw_comparable_adjusted_fair_value := v_raw_base_fair_value \* _comparable_adjustment/i,
@@ -405,7 +408,8 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
       input.popularity * 0.15 +
       input.futurePotential * 0.15 +
       input.investorConfidence * 0.1;
-    const rawBaseFairValue = 50 * Math.exp(0.035835 * weightedScore);
+    const pricingScore = 79.85 + (weightedScore - 79.85) * 1.5;
+    const rawBaseFairValue = 50 * Math.exp(0.035835 * pricingScore);
     const rawComparableAdjustedFairValue = rawBaseFairValue * input.comparableAdjustment;
     const rawSuggestedOpeningPrice =
       rawComparableAdjustedFairValue * (1 - input.uncertaintyDiscountPct / 100);
@@ -428,7 +432,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 0,
         launchCatalystPct: 0,
       },
-      expected: 300,
+      expected: 175.73,
     },
     {
       name: "non-default comparable adjustment",
@@ -443,7 +447,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 0,
         launchCatalystPct: 0,
       },
-      expected: 330,
+      expected: 193.3,
     },
     {
       name: "uncertainty discount",
@@ -458,7 +462,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 10,
         launchCatalystPct: 0,
       },
-      expected: 270,
+      expected: 158.15,
     },
     {
       name: "positive launch catalyst",
@@ -473,7 +477,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 0,
         launchCatalystPct: 12,
       },
-      expected: 336,
+      expected: 196.82,
     },
     {
       name: "negative launch catalyst",
@@ -488,7 +492,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 0,
         launchCatalystPct: -12,
       },
-      expected: 264,
+      expected: 154.64,
     },
     {
       name: "high rating combination",
@@ -503,7 +507,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 0,
         launchCatalystPct: 30,
       },
-      expected: 2924.94,
+      expected: 4196.76,
     },
     {
       name: "low rating combination",
@@ -518,7 +522,7 @@ test("pricing formula parity cases document expected post-catalyst prices", () =
         uncertaintyDiscountPct: 25,
         launchCatalystPct: -30,
       },
-      expected: 19.69,
+      expected: 4.71,
     },
   ];
 
@@ -542,16 +546,13 @@ test("save-and-apply RPC atomically saves ratings, updates live price, and recor
     /UPDATE public\.characters AS c[\s\S]*previous_price = v_character\.current_price[\s\S]*current_price = v_applied_price[\s\S]*category = _stock_category/i,
     "selected character price and category are updated",
   );
-  rejectApplySql(/momentum\s*=/i, "momentum is not modified");
+  assert.doesNotMatch(saveAndApplySql, /momentum\s*=/i, "repricing does not modify momentum");
   expectApplySql(
     /INSERT INTO public\.price_history \(character_id, price, note, pct_change, source\)/i,
     "price history is inserted",
   );
   expectApplySql(/'pricing_rebase'/i, "price history source is pricing_rebase");
-  expectApplySql(
-    /Market Pricing Preview applied valuation using algorithm/i,
-    "history note is clear",
-  );
+  expectApplySql(/Market Pricing applied valuation using algorithm/i, "history note is clear");
 });
 
 test("save-and-apply RPC returns the frontend contract and exact privileges", () => {
@@ -569,24 +570,23 @@ test("save-and-apply RPC returns the frontend contract and exact privileges", ()
     expectApplySql(new RegExp(`'${key}'`, "i"), `${key} is returned`);
   }
   expectApplySql(
-    /REVOKE ALL ON FUNCTION public\.save_and_apply_character_pricing\([^;]*FROM PUBLIC, anon, authenticated;/i,
+    /REVOKE ALL ON FUNCTION public\.save_and_apply_character_pricing\([^;]*FROM PUBLIC, anon, authenticated, service_role;/i,
     "execution is revoked before granting",
   );
   expectApplySql(
-    /GRANT EXECUTE ON FUNCTION public\.save_and_apply_character_pricing\([^;]*TO authenticated;/i,
-    "authenticated callers may execute the admin-checked RPC",
+    /GRANT EXECUTE ON FUNCTION public\.save_and_apply_character_pricing\([^;]*TO authenticated, service_role;/i,
+    "authenticated and trusted server callers may execute the admin-checked RPC",
   );
   rejectApplySql(
-    /GRANT EXECUTE ON FUNCTION public\.save_and_apply_character_pricing\([^;]*TO (PUBLIC|anon|service_role)/i,
-    "RPC is not granted to PUBLIC, anon, or service_role by this migration",
+    /GRANT EXECUTE ON FUNCTION public\.save_and_apply_character_pricing\([^;]*TO (PUBLIC|anon)(?:\s|,|;)/i,
+    "RPC is not granted to PUBLIC or anon by this migration",
   );
 });
 
-test("save-and-apply migration does not touch unrelated financial, event, or rumor data", () => {
+test("listing lifecycle does not mutate unrelated financial, event, or rumor data", () => {
   for (const forbidden of [
     /\bpublic\.user_wallets\b/i,
     /\bpublic\.user_holdings\b/i,
-    /\bpublic\.transactions\b/i,
     /\bpublic\.market_events\b/i,
     /\bpublic\.market_event_impacts\b/i,
     /\bpublic\.market_rumors\b/i,
@@ -595,4 +595,8 @@ test("save-and-apply migration does not touch unrelated financial, event, or rum
   ]) {
     rejectApplySql(forbidden, `save-and-apply migration avoids ${forbidden}`);
   }
+  expectApplySql(
+    /CREATE TRIGGER transactions_require_listed_character[\s\S]*BEFORE INSERT ON public\.transactions/i,
+    "transactions have a defense-in-depth listed-character guard",
+  );
 });

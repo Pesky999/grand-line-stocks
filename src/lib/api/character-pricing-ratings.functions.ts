@@ -97,6 +97,10 @@ function mapDatabaseError(error: { message?: string } | null): Error {
     return new Error("Administrator authorization required.");
   }
   if (message.includes("Character not found")) return new Error("Character not found");
+  if (message.includes("already listed")) return new Error("Character is already listed.");
+  if (message.includes("not listed")) {
+    return new Error("Character is still a private draft. Publish its IPO instead.");
+  }
   if (
     message.includes("pricing_algorithm_version") ||
     message.includes("pricing algorithm version")
@@ -326,6 +330,46 @@ export const saveAndApplyCharacterPricing = createServerFn({ method: "POST" })
     }
 
     const { data: result, error } = await context.supabase.rpc("save_and_apply_character_pricing", {
+      _character_id: data.characterId,
+      _narrative_importance: data.ratings.narrativeImportance,
+      _current_relevance: data.ratings.currentRelevance,
+      _strength_status: data.ratings.strengthStatus,
+      _popularity: data.ratings.popularity,
+      _future_potential: data.ratings.futurePotential,
+      _investor_confidence: data.ratings.investorConfidence,
+      _volatility: data.ratings.volatility,
+      _stock_category: data.category,
+      _comparable_adjustment: data.comparableAdjustment,
+      _uncertainty_discount_pct: data.uncertaintyDiscountPct,
+      _launch_catalyst_pct: data.launchCatalystPct,
+      _pricing_algorithm_version: MARKET_PRICING_ALGORITHM_VERSION,
+    });
+    if (error) throw mapDatabaseError(error);
+    return mapApplyRpcResult(result);
+  });
+
+export const publishCharacterIpo = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => persistentRatingsInput.parse(input))
+  .handler(async ({ data, context }): Promise<CharacterPricingApplicationResult> => {
+    await requireAdminRole(context.supabase, context.userId);
+    const calculation = calculateIpoPricing({
+      ratings: data.ratings,
+      category: data.category,
+      comparableAdjustment: data.comparableAdjustment,
+      uncertaintyDiscountPct: data.uncertaintyDiscountPct,
+      launchCatalystPct: data.launchCatalystPct,
+    });
+    const previewAppliedPrice = calculation.suggestedPostCatalystPrice;
+    if (
+      !Number.isFinite(previewAppliedPrice) ||
+      previewAppliedPrice <= 0 ||
+      previewAppliedPrice > MAX_SUPPORTED_MARKET_PRICE
+    ) {
+      throw new Error("Calculated applied price is outside the supported market price range.");
+    }
+
+    const { data: result, error } = await context.supabase.rpc("publish_character_ipo", {
       _character_id: data.characterId,
       _narrative_importance: data.ratings.narrativeImportance,
       _current_relevance: data.ratings.currentRelevance,

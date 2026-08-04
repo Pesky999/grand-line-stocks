@@ -20,12 +20,15 @@ const characterRouteSource = read("src/routes/character.$slug.tsx");
 const initialMarketMigration = read(
   "supabase/migrations/20260609203133_e914c326-8782-4455-b4ab-a55ac2e5e2a6.sql",
 );
+const listingLifecycleMigration = read(
+  "supabase/migrations/20260804010000_market_listing_lifecycle_and_pricing_v1_2.sql",
+);
 
 test("public getCharacter uses the publishable-key client and not the service-role helper", () => {
   const getCharacterSource = sourceBetween(
     marketSource,
     "export const getCharacter",
-    "export const listNews",
+    "export const adminListCharacters",
   );
 
   assert.match(getCharacterSource, /const db = getPublicSupabaseClient\(\);/);
@@ -39,7 +42,7 @@ test("public getCharacter selects only public character fields and preserves slu
   const getCharacterSource = sourceBetween(
     marketSource,
     "export const getCharacter",
-    "export const listNews",
+    "export const adminListCharacters",
   );
   const characterSelectSource = sourceBetween(
     marketSource,
@@ -63,12 +66,14 @@ test("public getCharacter selects only public character fields and preserves slu
     "updated_at",
     "created_at",
     "display_order",
+    "is_listed",
   ]) {
     assert.match(characterSelectSource, new RegExp(`\\b${field}\\b`));
   }
 
   assert.match(getCharacterSource, /z\.object\(\{ slug: z\.string\(\) \}\)\.parse\(d\)/);
   assert.match(getCharacterSource, /\.from\("characters"\)[\s\S]*?\.select\(characterSelect\)/);
+  assert.match(getCharacterSource, /\.eq\("is_listed", true\)/);
   assert.doesNotMatch(getCharacterSource, /\.select\("\*"\)/);
 });
 
@@ -76,7 +81,7 @@ test("public getCharacter throws lookup errors and only treats successful empty 
   const getCharacterSource = sourceBetween(
     marketSource,
     "export const getCharacter",
-    "export const listNews",
+    "export const adminListCharacters",
   );
 
   assert.match(getCharacterSource, /const \{ data: row, error \} = await db/);
@@ -89,7 +94,7 @@ test("public getCharacter throws price-history query errors instead of returning
   const getCharacterSource = sourceBetween(
     marketSource,
     "export const getCharacter",
-    "export const listNews",
+    "export const adminListCharacters",
   );
 
   assert.match(getCharacterSource, /error: historyError/);
@@ -101,7 +106,7 @@ test("public getCharacter keeps the newest bounded price-history query and chart
   const getCharacterSource = sourceBetween(
     marketSource,
     "export const getCharacter",
-    "export const listNews",
+    "export const adminListCharacters",
   );
 
   assert.match(getCharacterSource, /\.from\("price_history"\)/);
@@ -120,6 +125,7 @@ test("public getCharacter validates Supabase numeric and nested row shapes narro
   assert.match(marketSource, /momentum: numeric/);
   assert.match(marketSource, /price: numeric/);
   assert.match(marketSource, /display_order: z\.coerce\.number\(\)\.int\(\)\.nullable\(\)/);
+  assert.match(marketSource, /is_listed: z\.boolean\(\)/);
   assert.doesNotMatch(marketSource, /\bas any\b/);
 });
 
@@ -178,6 +184,14 @@ test("repository migrations already allow public read access for characters and 
   assert.match(
     initialMarketMigration,
     /CREATE POLICY "Characters are publicly readable" ON public\.characters FOR SELECT USING \(true\);/,
+  );
+  assert.match(
+    listingLifecycleMigration,
+    /DROP POLICY IF EXISTS "Characters are publicly readable" ON public\.characters;/,
+  );
+  assert.match(
+    listingLifecycleMigration,
+    /CREATE POLICY "Listed characters are publicly readable"[\s\S]*is_listed[\s\S]*public\.has_role\(auth\.uid\(\), 'admin'::public\.app_role\)/,
   );
   assert.match(
     initialMarketMigration,

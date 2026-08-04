@@ -1,6 +1,8 @@
-export const MARKET_PRICING_ALGORITHM_VERSION = "1.1.0" as const;
+export const MARKET_PRICING_ALGORITHM_VERSION = "1.2.0" as const;
 export const MARKET_PRICING_BASE_FAIR_VALUE_MULTIPLIER = 50;
 export const MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT = 0.035835;
+export const MARKET_PRICING_SCORE_STRETCH_ANCHOR = 79.85;
+export const MARKET_PRICING_SCORE_STRETCH_FACTOR = 1.5;
 
 export type MarketPricingAlgorithmVersion = typeof MARKET_PRICING_ALGORITHM_VERSION;
 
@@ -36,6 +38,7 @@ export type IpoPricingInput = {
 export type IpoPricingResult = {
   algorithmVersion: MarketPricingAlgorithmVersion;
   weightedScore: number;
+  pricingScore: number;
   baseFairValue: number;
   comparableAdjustment: number;
   comparableAdjustedFairValue: number;
@@ -126,11 +129,19 @@ export function calculateWeightedScore(ratings: CharacterValuationRatings): numb
   );
 }
 
-function calculateRawBaseFairValue(weightedScore: number): number {
+export function calculatePricingScore(weightedScore: number): number {
   assertRange(weightedScore, "weightedScore", 0, 100);
   return (
+    MARKET_PRICING_SCORE_STRETCH_ANCHOR +
+    (weightedScore - MARKET_PRICING_SCORE_STRETCH_ANCHOR) * MARKET_PRICING_SCORE_STRETCH_FACTOR
+  );
+}
+
+function calculateRawBaseFairValue(weightedScore: number): number {
+  const pricingScore = calculatePricingScore(weightedScore);
+  return (
     MARKET_PRICING_BASE_FAIR_VALUE_MULTIPLIER *
-    Math.exp(MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT * weightedScore)
+    Math.exp(MARKET_PRICING_BASE_FAIR_VALUE_EXPONENT * pricingScore)
   );
 }
 
@@ -156,6 +167,7 @@ export function calculateIpoPricing(input: IpoPricingInput): IpoPricingResult {
   }
 
   const weightedScore = calculateWeightedScore(input.ratings);
+  const pricingScore = calculatePricingScore(weightedScore);
   const rawBaseFairValue = calculateRawBaseFairValue(weightedScore);
   const rawComparableAdjustedFairValue = rawBaseFairValue * input.comparableAdjustment;
   const rawSuggestedOpeningPrice =
@@ -185,13 +197,14 @@ export function calculateIpoPricing(input: IpoPricingInput): IpoPricingResult {
   if (suggestedOpeningPrice < 40) {
     warnings.push("Suggested opening price is below Berry 40.");
   }
-  if (suggestedOpeningPrice > 2000) {
-    warnings.push("Suggested opening price exceeds Berry 2,000.");
+  if (suggestedOpeningPrice > 3000) {
+    warnings.push("Suggested opening price exceeds Berry 3,000.");
   }
 
   return {
     algorithmVersion: MARKET_PRICING_ALGORITHM_VERSION,
     weightedScore,
+    pricingScore,
     baseFairValue,
     comparableAdjustment: input.comparableAdjustment,
     comparableAdjustedFairValue,

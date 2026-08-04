@@ -5,9 +5,12 @@ import test from "node:test";
 import {
   FUNDAMENTAL_RATING_WEIGHTS,
   MARKET_PRICING_ALGORITHM_VERSION,
+  MARKET_PRICING_SCORE_STRETCH_ANCHOR,
+  MARKET_PRICING_SCORE_STRETCH_FACTOR,
   STOCK_CATEGORY_MOVEMENT_LIMITS,
   calculateBaseFairValue,
   calculateIpoPricing,
+  calculatePricingScore,
   calculateWeightedScore,
   classifyConfidence,
   type CharacterValuationRatings,
@@ -114,17 +117,17 @@ test("fundamental rating weights total 1 and exclude volatility", () => {
   assert.equal("volatility" in FUNDAMENTAL_RATING_WEIGHTS, false);
 });
 
-test("base fair value uses calibrated Candidate C checkpoints across the full score range", () => {
+test("base fair value applies the approved 1.50 score stretch around the fixed market anchor", () => {
   const checkpoints = [
-    [0, 50],
-    [20, 102.38],
-    [40, 209.65],
-    [50, 300],
-    [60, 429.29],
-    [70, 614.29],
-    [80, 879.03],
-    [90, 1257.87],
-    [100, 1799.97],
+    [0, 11.96],
+    [20, 35.04],
+    [40, 102.66],
+    [50, 175.73],
+    [60, 300.8],
+    [70, 514.91],
+    [80, 881.4],
+    [90, 1508.75],
+    [100, 2582.62],
   ] as const;
 
   for (const [weightedScore, expectedBaseFairValue] of checkpoints) {
@@ -132,20 +135,22 @@ test("base fair value uses calibrated Candidate C checkpoints across the full sc
   }
 });
 
-test("all ratings at 0 produce score 0 and Berry 50.00 base value", () => {
+test("all ratings at 0 produce score 0 and the stretched market-floor base value", () => {
   const ratings = allRatings(0);
 
   assert.equal(calculateWeightedScore(ratings), 0);
-  assert.equal(calculateBaseFairValue(0), 50);
-  assert.equal(calculateIpoPricing({ ...baseInput, ratings }).baseFairValue, 50);
+  assert.equal(calculatePricingScore(0), -39.925);
+  assert.equal(calculateBaseFairValue(0), 11.96);
+  assert.equal(calculateIpoPricing({ ...baseInput, ratings }).baseFairValue, 11.96);
 });
 
-test("all six fundamental ratings at 100 produce score 100 and approximately Berry 1,799.97", () => {
+test("all six fundamental ratings at 100 produce the stretched premium valuation", () => {
   const ratings = allRatings(100);
   const result = calculateIpoPricing({ ...baseInput, ratings });
 
   assert.equal(result.weightedScore, 100);
-  assert.equal(result.baseFairValue, 1799.97);
+  assert.equal(result.pricingScore, 110.075);
+  assert.equal(result.baseFairValue, 2582.62);
 });
 
 test("ratings at 50 produce the expected rounded formula result", () => {
@@ -153,7 +158,16 @@ test("ratings at 50 produce the expected rounded formula result", () => {
   const result = calculateIpoPricing({ ...baseInput, ratings });
 
   assert.equal(result.weightedScore, 50);
-  assert.equal(result.baseFairValue, 300);
+  assert.equal(result.pricingScore, 35.075);
+  assert.equal(result.baseFairValue, 175.73);
+});
+
+test("the score stretch is centered exactly at 79.85 and widens both sides", () => {
+  assert.equal(MARKET_PRICING_SCORE_STRETCH_ANCHOR, 79.85);
+  assert.equal(MARKET_PRICING_SCORE_STRETCH_FACTOR, 1.5);
+  assert.equal(calculatePricingScore(79.85), 79.85);
+  assert.equal(calculatePricingScore(90), 95.075);
+  assert.equal(calculatePricingScore(70), 65.075);
 });
 
 test("volatility does not affect weighted score or base fair value", () => {
@@ -173,8 +187,8 @@ test("volatility does not affect weighted score or base fair value", () => {
 test("algorithm version is stable and explicit", () => {
   const result = calculateIpoPricing(baseInput);
 
-  assert.equal(MARKET_PRICING_ALGORITHM_VERSION, "1.1.0");
-  assert.equal(result.algorithmVersion, "1.1.0");
+  assert.equal(MARKET_PRICING_ALGORITHM_VERSION, "1.2.0");
+  assert.equal(result.algorithmVersion, "1.2.0");
 });
 
 test("comparable adjustment applies directly to fair value", () => {
@@ -183,8 +197,8 @@ test("comparable adjustment applies directly to fair value", () => {
   const higher = calculateIpoPricing({ ...baseInput, comparableAdjustment: 1.1 });
 
   assert.equal(neutral.comparableAdjustedFairValue, neutral.baseFairValue);
-  assert.equal(lower.comparableAdjustedFairValue, 270);
-  assert.equal(higher.comparableAdjustedFairValue, 330);
+  assert.equal(lower.comparableAdjustedFairValue, 158.15);
+  assert.equal(higher.comparableAdjustedFairValue, 193.3);
 });
 
 test("uncertainty discount lowers opening price", () => {
@@ -193,8 +207,8 @@ test("uncertainty discount lowers opening price", () => {
   const high = calculateIpoPricing({ ...baseInput, uncertaintyDiscountPct: 25 });
 
   assert.equal(neutral.suggestedOpeningPrice, neutral.comparableAdjustedFairValue);
-  assert.equal(medium.suggestedOpeningPrice, 255);
-  assert.equal(high.suggestedOpeningPrice, 225);
+  assert.equal(medium.suggestedOpeningPrice, 149.37);
+  assert.equal(high.suggestedOpeningPrice, 131.8);
 });
 
 test("launch catalyst is returned separately and supports positive, negative, and zero adjustments", () => {
@@ -203,11 +217,11 @@ test("launch catalyst is returned separately and supports positive, negative, an
   const negative = calculateIpoPricing({ ...baseInput, launchCatalystPct: -10 });
 
   assert.equal(zero.suggestedPostCatalystPrice, zero.suggestedOpeningPrice);
-  assert.equal(positive.suggestedPostCatalystPrice, 330);
-  assert.equal(negative.suggestedPostCatalystPrice, 270);
+  assert.equal(positive.suggestedPostCatalystPrice, 193.3);
+  assert.equal(negative.suggestedPostCatalystPrice, 158.15);
 });
 
-test("maximum valuation outputs reflect the calibrated Candidate C scale", () => {
+test("maximum valuation outputs reflect the approved 1.50 stretch scale", () => {
   const result = calculateIpoPricing({
     ...baseInput,
     ratings: allRatings(100),
@@ -216,10 +230,10 @@ test("maximum valuation outputs reflect the calibrated Candidate C scale", () =>
     launchCatalystPct: 30,
   });
 
-  assert.equal(result.baseFairValue, 1799.97);
-  assert.equal(result.comparableAdjustedFairValue, 2249.96);
-  assert.equal(result.suggestedOpeningPrice, 2249.96);
-  assert.equal(result.suggestedPostCatalystPrice, 2924.94);
+  assert.equal(result.baseFairValue, 2582.62);
+  assert.equal(result.comparableAdjustedFairValue, 3228.28);
+  assert.equal(result.suggestedOpeningPrice, 3228.28);
+  assert.equal(result.suggestedPostCatalystPrice, 4196.76);
 });
 
 test("confidence boundaries are deterministic", () => {
@@ -346,17 +360,14 @@ test("warning boundaries are deterministic and exclusive", () => {
 
   const belowLowOpeningPrice = calculateIpoPricing({
     ...baseInput,
-    ratings: allRatings(0),
-    comparableAdjustment: 0.75,
-    uncertaintyDiscountPct: 25,
+    ratings: allRatings(20),
   });
-  const exactLowOpeningPrice = calculateIpoPricing({
+  const boundaryLowOpeningPrice = calculateIpoPricing({
     ...baseInput,
-    ratings: allRatings(0),
-    comparableAdjustment: 1,
-    uncertaintyDiscountPct: 20,
+    ratings: allRatings(20),
+    comparableAdjustment: 1.142,
   });
-  const exactHighComparableAdjustment = 2000 / calculateBaseFairValue(100);
+  const exactHighComparableAdjustment = 3000 / calculateBaseFairValue(100);
   const exactHighPrice = calculateIpoPricing({
     ...baseInput,
     ratings: allRatings(100),
@@ -376,16 +387,16 @@ test("warning boundaries are deterministic and exclusive", () => {
     uncertaintyDiscountPct: 0,
   });
 
-  assert.equal(belowLowOpeningPrice.suggestedOpeningPrice, 28.13);
+  assert.equal(belowLowOpeningPrice.suggestedOpeningPrice, 35.04);
   assert.equal(hasWarning(belowLowOpeningPrice, "below Berry 40"), true);
-  assert.equal(exactLowOpeningPrice.suggestedOpeningPrice, 40);
-  assert.equal(hasWarning(exactLowOpeningPrice, "below Berry 40"), false);
-  assert.equal(exactHighPrice.suggestedOpeningPrice, 2000);
-  assert.equal(hasWarning(exactHighPrice, "exceeds Berry 2,000"), false);
-  assert.equal(ordinaryElitePrice.suggestedOpeningPrice, 1799.97);
-  assert.equal(hasWarning(ordinaryElitePrice, "exceeds Berry 2,000"), false);
-  assert.equal(aboveHighPrice.suggestedOpeningPrice, 2249.96);
-  assert.equal(hasWarning(aboveHighPrice, "exceeds Berry 2,000"), true);
+  assert.equal(boundaryLowOpeningPrice.suggestedOpeningPrice, 40.01);
+  assert.equal(hasWarning(boundaryLowOpeningPrice, "below Berry 40"), false);
+  assert.equal(exactHighPrice.suggestedOpeningPrice, 3000);
+  assert.equal(hasWarning(exactHighPrice, "exceeds Berry 3,000"), false);
+  assert.equal(ordinaryElitePrice.suggestedOpeningPrice, 2582.62);
+  assert.equal(hasWarning(ordinaryElitePrice, "exceeds Berry 3,000"), false);
+  assert.equal(aboveHighPrice.suggestedOpeningPrice, 3228.28);
+  assert.equal(hasWarning(aboveHighPrice, "exceeds Berry 3,000"), true);
 });
 
 test("returned movement limits are safe copies of frozen shared category configuration", () => {
@@ -412,21 +423,21 @@ test("returned movement limits are safe copies of frozen shared category configu
 test("post-catalyst price uses raw opening price rather than rounded opening price", () => {
   const precisionFixture = {
     ...baseInput,
-    ratings: allRatings(1),
+    ratings: allRatings(0),
     comparableAdjustment: 0.77,
     uncertaintyDiscountPct: 1.3,
-    launchCatalystPct: -22.3,
+    launchCatalystPct: -11.7,
   };
-  const rawWeightedScore = 1;
+  const rawWeightedScore = 0;
   const result = calculateIpoPricing(precisionFixture);
   const incorrectRoundedOpeningPipeline = roundForTest(
     result.suggestedOpeningPrice * (1 + precisionFixture.launchCatalystPct / 100),
   );
 
   assert.equal(result.weightedScore, rawWeightedScore);
-  assert.equal(result.suggestedOpeningPrice, 39.39);
-  assert.equal(result.suggestedPostCatalystPrice, 30.6);
-  assert.equal(incorrectRoundedOpeningPipeline, 30.61);
+  assert.equal(result.suggestedOpeningPrice, 9.09);
+  assert.equal(result.suggestedPostCatalystPrice, 8.02);
+  assert.equal(incorrectRoundedOpeningPipeline, 8.03);
   assert.notEqual(result.suggestedPostCatalystPrice, incorrectRoundedOpeningPipeline);
 });
 
@@ -461,7 +472,7 @@ test("documented placeholder fixtures calculate without mutating inputs", () => 
     const before = structuredClone(fixture.input);
     const result = calculateIpoPricing(fixture.input);
 
-    assert.equal(result.algorithmVersion, "1.1.0", fixture.name);
+    assert.equal(result.algorithmVersion, "1.2.0", fixture.name);
     assert.equal(result.category, fixture.input.category, fixture.name);
     assert.deepEqual(fixture.input, before, fixture.name);
   }

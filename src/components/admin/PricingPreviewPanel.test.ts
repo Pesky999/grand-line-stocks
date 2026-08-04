@@ -19,7 +19,7 @@ test("pricing admin route stays under the authenticated admin authorization patt
   assert.match(routeSource, /createFileRoute\("\/_authenticated\/pricing-admin"\)/);
   assert.match(routeSource, /amIAdmin\(\)/);
   assert.match(routeSource, /redirect\(\{ to: "\/" \}\)/);
-  assert.match(routeSource, /listCharacters/);
+  assert.match(routeSource, /adminListCharacters/);
   assert.match(adminSource, /to="\/pricing-admin"/);
 });
 
@@ -32,9 +32,10 @@ test("preview source keeps the route admin-only and avoids hidden attributes or 
   assert.doesNotMatch(combinedSource, /useSearch|searchParams|navigate\(/);
 });
 
-test("preview exposes ratings persistence controls and the one-step live-price apply control", () => {
+test("preview exposes ratings persistence controls and distinct IPO and reprice actions", () => {
   assert.match(panelSource, /Save Draft/);
   assert.match(panelSource, /Save Ratings & Apply Price/);
+  assert.match(panelSource, /Publish IPO/);
   assert.match(panelSource, /Reset to Unrated/);
   assert.doesNotMatch(panelSource, /Apply to live|Publish price|Rebase|Commit new quote/);
 });
@@ -43,7 +44,7 @@ test("preview wording distinguishes base fair value and signed fair-value differ
   assert.match(panelSource, /Base fair value drives movement and simulation previews/);
   assert.match(
     panelSource,
-    /post-catalyst price is the\s+final valuation used by Save Ratings & Apply Price/,
+    /post-catalyst price is the\s+final valuation used by \{selectedCharacter\.is_listed \? "repricing" : "the IPO"\}/,
   );
   assert.match(panelSource, /Final price difference from fair value/);
   assert.match(panelSource, /negative means below fair value, positive means above fair value/);
@@ -55,6 +56,7 @@ test("ratings functions are used and preview-only inputs are omitted from save p
   assert.match(panelSource, /exportCharacterPricingRatingsCsv/);
   assert.match(panelSource, /saveCharacterPricingDraft/);
   assert.match(panelSource, /saveAndApplyCharacterPricing/);
+  assert.match(panelSource, /publishCharacterIpo/);
   assert.match(panelSource, /resetCharacterPricingRatings/);
   assert.match(panelSource, /validatePersistentPricingDraft\(draft\)/);
   assert.match(ratingsHelperSource, /validatePersistentPricingDraft/);
@@ -83,7 +85,10 @@ test("CSV export button downloads the read-only admin export without touching pr
   assert.match(downloadFunction, /anchor\.click\(\)/);
   assert.match(downloadFunction, /URL\.revokeObjectURL\(url\)/);
   assert.doesNotMatch(exportFunction, /setDraft|setBaselinePersistent|refreshRatingsState/);
-  assert.doesNotMatch(exportFunction, /refreshAppliedMarketState|invalidateQueries|saveAndApplyPrice/);
+  assert.doesNotMatch(
+    exportFunction,
+    /refreshAppliedMarketState|invalidateQueries|saveAndApplyPrice/,
+  );
 });
 
 test("status, stale, and dirty-state workflow are represented", () => {
@@ -102,13 +107,12 @@ test("status, stale, and dirty-state workflow are represented", () => {
   }
 });
 
-test("wording states draft saves are safe while the apply action updates live price", () => {
+test("wording states drafts are private while IPO publishing and repricing are explicit", () => {
   assert.match(panelSource, /Draft saved\. The live market was not changed\./);
   assert.match(panelSource, /Save Draft stores ratings without changing the market/);
-  assert.match(
-    panelSource,
-    /Save Ratings & Apply Price[\s\S]*updates the character&apos;s live price/,
-  );
+  assert.match(panelSource, /Publish IPO atomically sets the official valuation/);
+  assert.match(panelSource, /makes the listing public and\s+tradable/);
+  assert.match(panelSource, /Save Ratings &amp; Apply Price[\s\S]*?reprices the live\s+stock/);
   assert.match(
     panelSource,
     /Share quantities, wallet balances, average costs, and transaction history will not change/,
@@ -231,6 +235,8 @@ test("character editor is metadata-only and sends new characters to pricing prev
     assert.doesNotMatch(characterPanelSource, forbidden);
   }
   assert.match(characterPanelSource, /Complete the official valuation in Market Pricing Preview/);
+  assert.match(characterPanelSource, /not public or tradable/);
+  assert.match(characterPanelSource, /Private draft/);
   assert.match(characterPanelSource, /to="\/pricing-admin"/);
 });
 
@@ -273,6 +279,9 @@ test("admin character server functions rely on database market defaults and do n
     assert.doesNotMatch(updateFunction, forbidden);
   }
   assert.doesNotMatch(createFunction, /price_history/);
+  assert.match(createFunction, /is_listed: false/);
+  assert.match(marketFunctionsSource, /export const adminListCharacters/);
+  assert.match(marketFunctionsSource, /\.eq\("is_listed", true\)/);
 });
 
 function functionBlock(source: string, name: string): string {

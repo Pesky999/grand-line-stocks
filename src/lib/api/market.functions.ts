@@ -16,7 +16,7 @@ async function admin() {
 const numeric = z.coerce.number();
 
 const characterSelect =
-  "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,updated_at,created_at,display_order";
+  "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,is_listed,updated_at,created_at,display_order";
 
 const characterRowSchema = z.object({
   id: z.string().uuid(),
@@ -31,6 +31,7 @@ const characterRowSchema = z.object({
   previous_price: numeric,
   category: z.enum(["blue_chip", "growth", "speculative", "meme"]),
   momentum: numeric,
+  is_listed: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
   display_order: z.coerce.number().int().nullable(),
@@ -58,9 +59,8 @@ export const listCharacters = createServerFn({ method: "GET" }).handler(async ()
   const db = getPublicSupabaseClient();
   const { data, error } = await db
     .from("characters")
-    .select(
-      "id,slug,name,crew,role,bounty,image_url,description,current_price,previous_price,category,momentum,created_at,updated_at,display_order",
-    )
+    .select(characterSelect)
+    .eq("is_listed", true)
     .order("current_price", { ascending: false })
     .returns<CharacterRow[]>();
   if (error) throw error;
@@ -75,6 +75,7 @@ export const getCharacter = createServerFn({ method: "GET" })
       .from("characters")
       .select(characterSelect)
       .eq("slug", data.slug)
+      .eq("is_listed", true)
       .maybeSingle();
     if (error) throw error;
     if (!row) throw new Error("Not found");
@@ -90,6 +91,26 @@ export const getCharacter = createServerFn({ method: "GET" })
     if (historyError) throw historyError;
     const history = priceHistoryRowsSchema.parse(historyRows ?? []);
     return { character, history: selectLatestPriceHistoryWindowForChart(history) };
+  });
+
+export const adminListCharacters = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden: admin role required");
+
+    const { data, error } = await context.supabase
+      .from("characters")
+      .select(characterSelect)
+      .order("is_listed", { ascending: true })
+      .order("current_price", { ascending: false })
+      .returns<CharacterRow[]>();
+    if (error) throw error;
+    return data ?? [];
   });
 
 export const listNews = createServerFn({ method: "GET" }).handler(async () => {
@@ -217,6 +238,7 @@ export const adminCreateCharacter = createServerFn({ method: "POST" })
         image_url: data.image_url,
         description: data.description,
         display_order: data.display_order,
+        is_listed: false,
       })
       .select(characterSelect)
       .single();
@@ -282,8 +304,10 @@ export const adminPostNews = createServerFn({ method: "POST" })
         .from("characters")
         .select("id")
         .eq("slug", data.characterSlug)
+        .eq("is_listed", true)
         .maybeSingle();
-      character_id = c?.id ?? null;
+      if (!c) throw new Error("Character not found or not listed");
+      character_id = c.id;
     }
     const { error } = await db.from("news").insert({
       title: data.title,

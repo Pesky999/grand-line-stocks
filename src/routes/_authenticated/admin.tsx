@@ -1,12 +1,15 @@
 import { createFileRoute, Link, useRouter, redirect } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { listCharacters, adminPostNews, amIAdmin } from "@/lib/api/market.functions";
+import { adminListCharacters, adminPostNews, amIAdmin } from "@/lib/api/market.functions";
 import { TerminalShell } from "@/components/TerminalShell";
 import { CharacterManagementPanel } from "@/components/admin/CharacterManagementPanel";
 import { toast } from "sonner";
 
-const charsQO = queryOptions({ queryKey: ["characters"], queryFn: () => listCharacters() });
+const charsQO = queryOptions({
+  queryKey: ["admin", "characters"],
+  queryFn: () => adminListCharacters(),
+});
 type NewsImpact = "bullish" | "bearish" | "neutral";
 
 function isNewsImpact(value: string): value is NewsImpact {
@@ -138,11 +141,13 @@ function Admin() {
                 className="border border-border bg-input px-2 py-2 text-sm"
               >
                 <option value="">— Tag character (optional) —</option>
-                {characters.map((c) => (
-                  <option key={c.id} value={c.slug}>
-                    {c.name}
-                  </option>
-                ))}
+                {characters
+                  .filter((character) => character.is_listed)
+                  .map((c) => (
+                    <option key={c.id} value={c.slug}>
+                      {c.name}
+                    </option>
+                  ))}
               </select>
             </div>
             <button
