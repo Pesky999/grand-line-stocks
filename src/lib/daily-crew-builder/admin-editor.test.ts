@@ -184,7 +184,7 @@ test("existing complete 15/5 mission detail preserves its loaded format", () => 
   const detail = completeFifteenCharacterMissionDetail();
   const editor = editorFromMissionDetail(detail);
   const validation = validateDailyCrewMissionEditor(editor, { todayUtc: "2026-07-14" });
-  const payload = toMissionSavePayload(editor);
+  const payload = toMissionSavePayload(editor, { todayUtc: "2026-07-14" });
 
   assert.equal(editor.poolSize, 15);
   assert.equal(editor.jobCount, 5);
@@ -674,10 +674,13 @@ test("status actions follow UTC date, status, readiness, submissions, and dirty 
 
 test("save payload excludes empty perfect crew slots", () => {
   const editor = completeValidEditor();
-  const payload = toMissionSavePayload({
-    ...editor,
-    perfectSolution: [...editor.perfectSolution, { role: "fighter", characterId: "" }],
-  });
+  const payload = toMissionSavePayload(
+    {
+      ...editor,
+      perfectSolution: [...editor.perfectSolution, { role: "fighter", characterId: "" }],
+    },
+    { todayUtc: "2026-07-14" },
+  );
 
   assert.equal(payload.pool.length, 9);
   assert.equal(payload.perfectSolution.length, 3);
@@ -693,6 +696,17 @@ test("save payload rejects incomplete pool slot state", () => {
           index === 8 ? { ...entry, characterId: "" } : entry,
         ),
       }),
+    /complete and valid/,
+  );
+});
+
+test("save payload rejects mission dates before the injected current UTC date", () => {
+  assert.throws(
+    () =>
+      toMissionSavePayload(
+        { ...completeValidEditor(), missionDate: "2026-07-13" },
+        { todayUtc: "2026-07-14" },
+      ),
     /complete and valid/,
   );
 });

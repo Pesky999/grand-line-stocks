@@ -12,7 +12,7 @@ import {
   classifyConfidence,
   type CharacterValuationRatings,
   type IpoPricingInput,
-} from "./v1.js";
+} from "./v1.ts";
 
 const ratingFields = [
   "narrativeImportance",

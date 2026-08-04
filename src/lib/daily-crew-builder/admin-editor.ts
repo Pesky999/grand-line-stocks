@@ -63,11 +63,7 @@ export type DailyCrewMissionEditor = {
 };
 
 export type DailyCrewEditorValidationGroup =
-  | "missionDetails"
-  | "characterPool"
-  | "jobs"
-  | "scoreMatrix"
-  | "perfectCrew";
+  "missionDetails" | "characterPool" | "jobs" | "scoreMatrix" | "perfectCrew";
 
 export type DailyCrewEditorValidation = {
   ok: boolean;
@@ -90,10 +86,7 @@ export type DailyCrewMissionSavePayload = {
 };
 
 export type DailyCrewStatusActionKey =
-  | "schedule"
-  | "archive"
-  | "return_to_draft"
-  | "restore_to_draft";
+  "schedule" | "archive" | "return_to_draft" | "restore_to_draft";
 
 export type DailyCrewStatusAction = {
   action: DailyCrewStatusActionKey;
@@ -959,8 +952,11 @@ export function getDailyCrewStatusActions(
   return [];
 }
 
-export function toMissionSavePayload(editor: DailyCrewMissionEditor): DailyCrewMissionSavePayload {
-  const validation = validateDailyCrewMissionEditor(editor);
+export function toMissionSavePayload(
+  editor: DailyCrewMissionEditor,
+  options: { todayUtc?: string } = {},
+): DailyCrewMissionSavePayload {
+  const validation = validateDailyCrewMissionEditor(editor, options);
   if (!validation.ok) {
     throw new Error("Daily Crew mission must be complete and valid before saving.");
   }

@@ -3,23 +3,23 @@ import {
   type CharacterValuationRatings,
   type IpoPricingResult,
   type StockCategory,
-} from "./v1.js";
+} from "./v1.ts";
 import {
   RATING_KEYS,
   STOCK_CATEGORIES,
   validatePersistentPricingDraft,
   type RatingKey,
-} from "./character-pricing-ratings.js";
+} from "./character-pricing-ratings.ts";
 import {
   calculateDailyMovement,
   type DailyMovementResult,
   type SimulationDayResult,
-} from "./movement-v1.js";
+} from "./movement-v1.ts";
 import {
   simulateMarketMovement,
   type DailyApprovedEventImpact,
   type SimulationResult,
-} from "./simulator-v1.js";
+} from "./simulator-v1.ts";
 
 export type PricingPreviewCharacter = {
   slug: string;
