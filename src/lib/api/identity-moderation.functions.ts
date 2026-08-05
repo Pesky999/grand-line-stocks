@@ -303,18 +303,33 @@ export const listIdentityModerationRules = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await requireAdmin(context.userId, context.supabase);
     const db = await admin();
-    const { data, error } = await db
-      .from("identity_moderation_terms")
-      .select(
-        "id,term,normalized_term,kind,category,match_mode,severity,notes,is_core,active,created_at,updated_at",
-      )
-      .or("is_core.eq.false,kind.neq.blocked")
-      .order("active", { ascending: false })
-      .order("category", { ascending: true })
-      .order("term", { ascending: true });
+    const select =
+      "id,term,normalized_term,kind,category,match_mode,severity,notes,is_core,active,created_at,updated_at";
+    const [
+      { data: supplementalRules, error: supplementalError },
+      { data: safeCoreRules, error: safeCoreError },
+    ] = await Promise.all([
+      db.from("identity_moderation_terms").select(select).eq("is_core", false),
+      db
+        .from("identity_moderation_terms")
+        .select(select)
+        .eq("is_core", true)
+        .neq("kind", "blocked"),
+    ]);
 
-    if (error) throw new Error("Could not load identity moderation rules.");
-    return (data ?? []) as IdentityModerationTermRow[];
+    if (supplementalError || safeCoreError) {
+      throw new Error("Could not load identity moderation rules.");
+    }
+
+    return [
+      ...((supplementalRules ?? []) as IdentityModerationTermRow[]),
+      ...((safeCoreRules ?? []) as IdentityModerationTermRow[]),
+    ].sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) ||
+        a.category.localeCompare(b.category) ||
+        a.term.localeCompare(b.term),
+    );
   });
 
 export const listIdentityModerationActions = createServerFn({ method: "GET" })

@@ -149,7 +149,27 @@ test("identity moderation server functions keep public precheck generic and admi
     "export const listIdentityModerationRules",
     "export const listIdentityModerationActions",
   );
-  assert.match(ruleList, /\.or\("is_core\.eq\.false,kind\.neq\.blocked"\)/);
+  assert.doesNotMatch(ruleList, /\.or\(/);
+  assert.match(
+    ruleList,
+    /db\.from\("identity_moderation_terms"\)\.select\(select\)\.eq\("is_core", false\)/,
+  );
+  assert.match(
+    ruleList,
+    /\.from\("identity_moderation_terms"\)[\s\S]*\.eq\("is_core", true\)[\s\S]*\.neq\("kind", "blocked"\)/,
+  );
+  assert.match(ruleList, /Promise\.all\(\[/);
+  assert.match(ruleList, /if \(supplementalError \|\| safeCoreError\)/);
+  assert.equal((ruleList.match(/Could not load identity moderation rules\./g) ?? []).length, 1);
+  assert.match(
+    ruleList,
+    /\.\.\.\(\(supplementalRules \?\? \[\]\) as IdentityModerationTermRow\[\]\)/,
+  );
+  assert.match(ruleList, /\.\.\.\(\(safeCoreRules \?\? \[\]\) as IdentityModerationTermRow\[\]\)/);
+  assert.match(ruleList, /Number\(b\.active\) - Number\(a\.active\)/);
+  assert.match(ruleList, /a\.category\.localeCompare\(b\.category\)/);
+  assert.match(ruleList, /a\.term\.localeCompare\(b\.term\)/);
+  assert.doesNotMatch(ruleList, /safeCoreRules[\s\S]*\.eq\("kind", "blocked"\)/);
 
   const addRule = sourceBetween(
     apiSource,
