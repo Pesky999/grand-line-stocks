@@ -2325,8 +2325,43 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_add_identity_moderation_rule: {
+        Args: {
+          _category: string
+          _kind: string
+          _match_mode: string
+          _notes?: string | null
+          _severity: number
+          _term: string
+        }
+        Returns: Json
+      }
       admin_bulk_import_daily_crew_builder_templates: {
         Args: { _templates: Json }
+        Returns: Json
+      }
+      admin_get_identity_moderation_overview: {
+        Args: never
+        Returns: Json
+      }
+      admin_list_identity_moderation_actions: {
+        Args: never
+        Returns: Json
+      }
+      admin_list_identity_moderation_flags: {
+        Args: { _limit?: number; _status?: string }
+        Returns: Json
+      }
+      admin_list_identity_moderation_rules: {
+        Args: never
+        Returns: Json
+      }
+      admin_mark_identity_moderation_flag_reviewed: {
+        Args: { _flag_id: string; _note?: string | null; _status: string }
+        Returns: Json
+      }
+      admin_rescan_identity_moderation_profiles: {
+        Args: never
         Returns: Json
       }
       admin_reset_profile_identity: {
@@ -2336,6 +2371,14 @@ export type Database = {
           _reset_username?: boolean
           _target_profile_id: string
         }
+        Returns: Json
+      }
+      admin_search_identity_moderation_profiles: {
+        Args: { _query?: string }
+        Returns: Json
+      }
+      admin_set_identity_moderation_rule_active: {
+        Args: { _active: boolean; _term_id: string }
         Returns: Json
       }
       restore_public_identity_remediation_incident: {
@@ -2470,6 +2513,14 @@ export type Database = {
           _user_id: string
         }
         Returns: undefined
+      }
+      check_public_display_name_policy: {
+        Args: { _display_name: string }
+        Returns: boolean
+      }
+      check_public_username_policy_and_availability: {
+        Args: { _username: string }
+        Returns: boolean
       }
       check_achievements: { Args: { _user_id: string }; Returns: number }
       check_legacy_for_user: { Args: { _user_id: string }; Returns: undefined }
@@ -2847,6 +2898,10 @@ export type Database = {
           correct: boolean
           reward: number
         }[]
+      }
+      update_my_public_display_name: {
+        Args: { _display_name: string }
+        Returns: boolean
       }
       user_equity: { Args: { _user_id: string }; Returns: number }
       validate_daily_crew_mission: {

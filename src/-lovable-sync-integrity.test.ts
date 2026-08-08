@@ -11,7 +11,7 @@ const CANONICAL_REVISION = "stock-onboarding-v1";
 const GUARDED_FILES = {
   "package.json": "fe01c736d46244fa7d44c7c81637460a9beec9a471caeae514f9a15e9e35fb93",
   "src/integrations/supabase/types.ts":
-    "f0cb322c476e544ce7efb52c8b1fb5052da9b62fca9867e8fd0293b2df1d785b",
+    "a54208081814c64ba129e01aef71241923c09b3bef93ae13c5a7c0f6815c149e",
   "src/routeTree.gen.ts": "7b4184d7680d9721b7dec277a8d17f8278bcbbad0a1e47a78361f7ceecb392cb",
 } as const;
 
@@ -111,4 +111,20 @@ test("Lovable sync guard preserves canonical Supabase function signatures", () =
     functionsSource,
     /admin_save_daily_crew_builder_template:\s*\{[\s\S]*?_template_id: string \| null/,
   );
+  for (const functionName of [
+    "admin_get_identity_moderation_overview",
+    "admin_search_identity_moderation_profiles",
+    "admin_list_identity_moderation_flags",
+    "admin_list_identity_moderation_rules",
+    "admin_list_identity_moderation_actions",
+    "admin_mark_identity_moderation_flag_reviewed",
+    "admin_add_identity_moderation_rule",
+    "admin_set_identity_moderation_rule_active",
+    "admin_rescan_identity_moderation_profiles",
+    "check_public_username_policy_and_availability",
+    "check_public_display_name_policy",
+    "update_my_public_display_name",
+  ]) {
+    assert.match(functionsSource, new RegExp(`${functionName}: \\{`));
+  }
 });

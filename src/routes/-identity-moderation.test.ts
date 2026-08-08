@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -60,9 +60,10 @@ test("profile display-name editing validates locally and through the server API"
     /Display names are public and must follow Berry Street identity rules/,
   );
 
-  assert.match(walletApiSource, /evaluateDisplayNameOnServer/);
+  assert.match(walletApiSource, /"check_public_display_name_policy"/);
+  assert.match(walletApiSource, /"update_my_public_display_name"/);
   assert.match(walletApiSource, /That display name is not allowed\./);
-  assert.match(walletApiSource, /\.eq\("id", context\.userId\)/);
+  assert.doesNotMatch(walletApiSource, /supabaseAdmin|client\.server|public-identity\.server/);
   assert.doesNotMatch(profileSource, /updateProfile\(\{ data: \{ username/);
   assert.doesNotMatch(walletApiSource, /z\.object\(\{ username/);
 });
@@ -108,26 +109,20 @@ test("identity moderation server functions keep public precheck generic and admi
 
   assert.match(publicCheck, /createServerFn\(\{ method: "POST" \}\)/);
   assert.doesNotMatch(publicCheck, /middleware\(\[requireSupabaseAuth\]\)/);
-  assert.match(publicCheck, /return \{ available: result\.available \} as const/);
+  assert.match(publicCheck, /"check_public_username_policy_and_availability"/);
+  assert.match(publicCheck, /return \{ available: !error && available === true \} as const/);
   assert.match(publicCheck, /return \{ available: false \} as const/);
   assert.doesNotMatch(publicCheck, /normalizedUsername|code:|message:/);
   assert.doesNotMatch(publicCheck, /identity_moderation_terms|identity_moderation_flags/);
-  assert.match(apiSource, /import\("@\/lib\/moderation\/public-identity\.server"\)/);
-  assert.doesNotMatch(
-    apiSource,
-    /from "@\/lib\/moderation\/public-identity\.server"/,
-    "server-only policy must be dynamically imported",
-  );
+  assert.doesNotMatch(apiSource, /supabaseAdmin|client\.server|public-identity\.server|\.from\(/);
 
   const profileSearch = sourceBetween(
     apiSource,
     "export const searchIdentityModerationProfiles",
     "export const listIdentityModerationFlags",
   );
-  assert.match(profileSearch, /z\.string\(\)\.uuid\(\)\.safeParse\(query\)/);
-  assert.match(profileSearch, /\.eq\("id", profileId\.data\)/);
-  assert.match(profileSearch, /\.ilike\("username", escaped\)/);
-  assert.match(profileSearch, /\.ilike\("display_name", escaped\)/);
+  assert.match(profileSearch, /"admin_search_identity_moderation_profiles"/);
+  assert.match(profileSearch, /\{ _query: data\.query \}/);
 
   const flagList = sourceBetween(
     apiSource,
@@ -138,10 +133,8 @@ test("identity moderation server functions keep public precheck generic and admi
     apiSource,
     /status: z\.enum\(\["open", "reviewed", "resolved", "dismissed", "all"\]\)/,
   );
-  assert.match(
-    flagList,
-    /if \(data\.status !== "all"\) request = request\.eq\("status", data\.status\)/,
-  );
+  assert.match(flagList, /"admin_list_identity_moderation_flags"/);
+  assert.match(flagList, /\{ _status: data\.status, _limit: data\.limit \}/);
   assert.doesNotMatch(flagList, /identity_moderation_terms\(/);
 
   const ruleList = sourceBetween(
@@ -149,66 +142,28 @@ test("identity moderation server functions keep public precheck generic and admi
     "export const listIdentityModerationRules",
     "export const listIdentityModerationActions",
   );
-  assert.doesNotMatch(ruleList, /\.or\(/);
-  assert.match(
-    ruleList,
-    /db\.from\("identity_moderation_terms"\)\.select\(select\)\.eq\("is_core", false\)/,
-  );
-  assert.match(
-    ruleList,
-    /\.from\("identity_moderation_terms"\)[\s\S]*\.eq\("is_core", true\)[\s\S]*\.neq\("kind", "blocked"\)/,
-  );
-  assert.match(ruleList, /Promise\.all\(\[/);
-  assert.match(ruleList, /if \(supplementalError \|\| safeCoreError\)/);
+  assert.match(ruleList, /"admin_list_identity_moderation_rules"/);
+  assert.doesNotMatch(ruleList, /\.or\(|\.from\(/);
   assert.equal((ruleList.match(/Could not load identity moderation rules\./g) ?? []).length, 1);
-  assert.match(
-    ruleList,
-    /\.\.\.\(\(supplementalRules \?\? \[\]\) as IdentityModerationTermRow\[\]\)/,
-  );
-  assert.match(ruleList, /\.\.\.\(\(safeCoreRules \?\? \[\]\) as IdentityModerationTermRow\[\]\)/);
-  assert.match(ruleList, /Number\(b\.active\) - Number\(a\.active\)/);
-  assert.match(ruleList, /a\.category\.localeCompare\(b\.category\)/);
-  assert.match(ruleList, /a\.term\.localeCompare\(b\.term\)/);
-  assert.doesNotMatch(ruleList, /safeCoreRules[\s\S]*\.eq\("kind", "blocked"\)/);
 
   const addRule = sourceBetween(
     apiSource,
     "export const addIdentityModerationRule",
     "export const setIdentityModerationRuleActive",
   );
-  assert.match(addRule, /if \(data\.kind === "allow"\)/);
-  assert.match(addRule, /evaluatePublicIdentity/);
-  assert.match(addRule, /mapIdentityModerationRule/);
-  assert.match(
-    addRule,
-    /\.select\("id,term,normalized_term,kind,category,match_mode,severity,is_core,active"\)/,
-  );
-  assert.match(addRule, /\.eq\("is_core", true\)/);
-  assert.match(addRule, /\.eq\("kind", "blocked"\)/);
-  assert.match(addRule, /\.in\("category", \[\.\.\.ACTIVE_IDENTITY_MODERATION_CATEGORIES\]\)/);
-  assert.doesNotMatch(addRule, /\.eq\("normalized_term", normalized\)/);
+  assert.match(addRule, /"admin_add_identity_moderation_rule"/);
+  assert.match(addRule, /result\.code === "protected_conflict"/);
   assert.match(addRule, /Allowlist entry conflicts with a protected core rule/);
-  assert.match(apiSource, /function isAllowedSupplementalRule/);
-  assert.match(apiSource, /data\.kind === "blocked" && isActiveIdentityModerationCategory/);
+  assert.match(addRule, /result\.code === "category"/);
   assert.match(apiSource, /Only profanity and slur categories can be enforced\./);
-  assert.match(apiSource, /normalizeTermForMatchMode/);
-  assert.match(apiSource, /case "exact":[\s\S]*return forms\.leetNormalized/);
 
   const rescan = sourceBetween(
     apiSource,
     "export const rescanIdentityModerationProfiles",
-    "return { scanned: profiles?.length ?? 0, flagged, activeRules: rules.length }",
+    "return data as { scanned: number; flagged: number; activeRules: number }",
   );
-  assert.match(rescan, /evaluatePublicIdentityModerationOnly\(value, field, rules\)/);
-  assert.doesNotMatch(rescan, /evaluateUsernameOnServer|evaluateDisplayNameOnServer/);
-  assert.doesNotMatch(rescan, /invalid_format|too_short|too_long|reserved|contact_info/);
-  assert.match(rescan, /\.in\("status", \["open", "reviewed"\]\)/);
-  assert.match(rescan, /\.eq\("term_id", result\.matchedRule\.id\)/);
-  assert.match(rescan, /\.is\("term_id", null\)/);
-  assert.match(rescan, /if \(\(existingFlags \?\? \[\]\)\.length > 0\) continue/);
-  assert.match(rescan, /\.from\("identity_moderation_flags"\)\.insert/);
-  assert.match(rescan, /category: result\.category \?\? "moderation"/);
-  assert.doesNotMatch(rescan, /\.from\("profiles"\)\.update/);
+  assert.match(rescan, /"admin_rescan_identity_moderation_profiles"/);
+  assert.doesNotMatch(rescan, /\.from\(|\.insert\(|\.update\(/);
   assert.doesNotMatch(rescan, /adminResetProfileIdentity|admin_reset_profile_identity/);
 
   for (const adminFunction of [
@@ -233,11 +188,7 @@ test("identity moderation server functions keep public precheck generic and admi
         ? apiSource.slice(apiSource.indexOf(start))
         : apiSource.slice(apiSource.indexOf(start), nextExport);
     assert.match(block, /middleware\(\[requireSupabaseAuth\]\)/, `${adminFunction} requires auth`);
-    assert.match(
-      block,
-      /requireAdmin\(context\.userId, context\.supabase\)/,
-      `${adminFunction} checks admin`,
-    );
+    assert.match(block, /context\.supabase\.rpc\(/, `${adminFunction} uses caller RPC access`);
   }
 });
 
@@ -249,8 +200,11 @@ test("browser routes do not import the server-only moderation policy loader", ()
   ] as const) {
     assert.doesNotMatch(source, /public-identity\.server/, `${name} must not import server policy`);
   }
-  assert.doesNotMatch(walletApiSource, /from "@\/lib\/moderation\/public-identity\.server"/);
-  assert.match(walletApiSource, /import\("@\/lib\/moderation\/public-identity\.server"\)/);
+  assert.doesNotMatch(walletApiSource, /public-identity\.server|supabaseAdmin|client\.server/);
+  assert.equal(
+    existsSync(join(process.cwd(), "src/lib/moderation/public-identity.server.ts")),
+    false,
+  );
 });
 
 test("signup and moderation admin UI avoid policy-leaking public messages", () => {
