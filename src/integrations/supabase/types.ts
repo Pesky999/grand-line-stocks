@@ -176,7 +176,6 @@ export type Database = {
           display_order: number | null
           id: string
           image_url: string | null
-          is_listed: boolean
           momentum: number
           name: string
           previous_price: number
@@ -194,7 +193,6 @@ export type Database = {
           display_order?: number | null
           id?: string
           image_url?: string | null
-          is_listed?: boolean
           momentum?: number
           name: string
           previous_price?: number
@@ -212,7 +210,6 @@ export type Database = {
           display_order?: number | null
           id?: string
           image_url?: string | null
-          is_listed?: boolean
           momentum?: number
           name?: string
           previous_price?: number
@@ -264,51 +261,6 @@ export type Database = {
           },
         ]
       }
-      daily_crew_mission_pool: {
-        Row: {
-          character_id: string
-          created_at: string
-          display_order: number
-          id: string
-          is_straw_hat: boolean
-          mission_id: string
-          visible_tags: string[]
-        }
-        Insert: {
-          character_id: string
-          created_at?: string
-          display_order: number
-          id?: string
-          is_straw_hat?: boolean
-          mission_id: string
-          visible_tags?: string[]
-        }
-        Update: {
-          character_id?: string
-          created_at?: string
-          display_order?: number
-          id?: string
-          is_straw_hat?: boolean
-          mission_id?: string
-          visible_tags?: string[]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_crew_mission_pool_character_id_fkey"
-            columns: ["character_id"]
-            isOneToOne: false
-            referencedRelation: "characters"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "daily_crew_mission_pool_mission_id_fkey"
-            columns: ["mission_id"]
-            isOneToOne: false
-            referencedRelation: "daily_crew_missions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       daily_crew_mission_template_character_role_scores: {
         Row: {
           character_id: string
@@ -336,14 +288,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "daily_crew_mission_template_chara_template_id_character_id_fkey"
+            foreignKeyName: "daily_crew_mission_template_character_role_scores_template_id_character_id_fkey"
             columns: ["template_id", "character_id"]
             isOneToOne: false
             referencedRelation: "daily_crew_mission_template_pool"
             referencedColumns: ["template_id", "character_id"]
           },
           {
-            foreignKeyName: "daily_crew_mission_template_character_rol_template_id_role_fkey"
+            foreignKeyName: "daily_crew_mission_template_character_role_scores_template_id_role_fkey"
             columns: ["template_id", "role"]
             isOneToOne: false
             referencedRelation: "daily_crew_mission_template_role_requirements"
@@ -372,14 +324,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "daily_crew_mission_template_perfe_template_id_character_id_fkey"
+            foreignKeyName: "daily_crew_mission_template_perfect_solution_template_id_character_id_fkey"
             columns: ["template_id", "character_id"]
             isOneToOne: true
             referencedRelation: "daily_crew_mission_template_pool"
             referencedColumns: ["template_id", "character_id"]
           },
           {
-            foreignKeyName: "daily_crew_mission_template_perfect_solut_template_id_role_fkey"
+            foreignKeyName: "daily_crew_mission_template_perfect_solution_template_id_role_fkey"
             columns: ["template_id", "role"]
             isOneToOne: true
             referencedRelation: "daily_crew_mission_template_role_requirements"
@@ -511,6 +463,111 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      daily_crew_rotation_plan_slots: {
+        Row: {
+          created_at: string
+          plan_id: string
+          slot_number: number
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          plan_id: string
+          slot_number: number
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          plan_id?: string
+          slot_number?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_rotation_plan_slots_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_rotation_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_crew_rotation_plan_slots_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_mission_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_crew_rotation_plans: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_crew_mission_pool: {
+        Row: {
+          character_id: string
+          created_at: string
+          display_order: number
+          id: string
+          is_straw_hat: boolean
+          mission_id: string
+          visible_tags: string[]
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          display_order: number
+          id?: string
+          is_straw_hat?: boolean
+          mission_id: string
+          visible_tags?: string[]
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_straw_hat?: boolean
+          mission_id?: string
+          visible_tags?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_crew_mission_pool_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_crew_mission_pool_mission_id_fkey"
+            columns: ["mission_id"]
+            isOneToOne: false
+            referencedRelation: "daily_crew_missions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       daily_crew_missions: {
         Row: {
@@ -663,66 +720,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      daily_crew_rotation_plan_slots: {
-        Row: {
-          created_at: string
-          plan_id: string
-          slot_number: number
-          template_id: string
-        }
-        Insert: {
-          created_at?: string
-          plan_id: string
-          slot_number: number
-          template_id: string
-        }
-        Update: {
-          created_at?: string
-          plan_id?: string
-          slot_number?: number
-          template_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_crew_rotation_plan_slots_plan_id_fkey"
-            columns: ["plan_id"]
-            isOneToOne: false
-            referencedRelation: "daily_crew_rotation_plans"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "daily_crew_rotation_plan_slots_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "daily_crew_mission_templates"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_crew_rotation_plans: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          revision: number
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          revision?: number
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          revision?: number
-          updated_at?: string
-        }
-        Relationships: []
       }
       daily_crew_submission_roles: {
         Row: {
@@ -1252,174 +1249,6 @@ export type Database = {
         }
         Relationships: []
       }
-      identity_moderation_actions: {
-        Row: {
-          action_type: string
-          actor_user_id: string | null
-          created_at: string
-          field: string | null
-          id: string
-          new_value: string | null
-          previous_value: string | null
-          profile_id: string | null
-          reason: string | null
-          term_id: string | null
-        }
-        Insert: {
-          action_type: string
-          actor_user_id?: string | null
-          created_at?: string
-          field?: string | null
-          id?: string
-          new_value?: string | null
-          previous_value?: string | null
-          profile_id?: string | null
-          reason?: string | null
-          term_id?: string | null
-        }
-        Update: {
-          action_type?: string
-          actor_user_id?: string | null
-          created_at?: string
-          field?: string | null
-          id?: string
-          new_value?: string | null
-          previous_value?: string | null
-          profile_id?: string | null
-          reason?: string | null
-          term_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "identity_moderation_actions_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "identity_moderation_actions_term_id_fkey"
-            columns: ["term_id"]
-            isOneToOne: false
-            referencedRelation: "identity_moderation_terms"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      identity_moderation_flags: {
-        Row: {
-          category: string
-          created_at: string
-          field: string
-          id: string
-          normalized_value: string
-          observed_value: string | null
-          profile_id: string
-          resolution_note: string | null
-          reviewed_at: string | null
-          reviewed_by: string | null
-          status: string
-          term_id: string | null
-          updated_at: string
-          violation_code: string
-        }
-        Insert: {
-          category: string
-          created_at?: string
-          field: string
-          id?: string
-          normalized_value: string
-          observed_value?: string | null
-          profile_id: string
-          resolution_note?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          status?: string
-          term_id?: string | null
-          updated_at?: string
-          violation_code: string
-        }
-        Update: {
-          category?: string
-          created_at?: string
-          field?: string
-          id?: string
-          normalized_value?: string
-          observed_value?: string | null
-          profile_id?: string
-          resolution_note?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          status?: string
-          term_id?: string | null
-          updated_at?: string
-          violation_code?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "identity_moderation_flags_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "identity_moderation_flags_term_id_fkey"
-            columns: ["term_id"]
-            isOneToOne: false
-            referencedRelation: "identity_moderation_terms"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      identity_moderation_terms: {
-        Row: {
-          active: boolean
-          category: string
-          created_at: string
-          created_by: string | null
-          id: string
-          is_core: boolean
-          kind: string
-          match_mode: string
-          normalized_term: string
-          notes: string | null
-          severity: number
-          term: string
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          category: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_core?: boolean
-          kind: string
-          match_mode: string
-          normalized_term: string
-          notes?: string | null
-          severity: number
-          term: string
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          category?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_core?: boolean
-          kind?: string
-          match_mode?: string
-          normalized_term?: string
-          notes?: string | null
-          severity?: number
-          term?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       leaderboard_cache: {
         Row: {
           board_key: string
@@ -1834,6 +1663,174 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      identity_moderation_actions: {
+        Row: {
+          action_type: string
+          actor_user_id: string | null
+          created_at: string
+          field: string | null
+          id: string
+          new_value: string | null
+          previous_value: string | null
+          profile_id: string | null
+          reason: string | null
+          term_id: string | null
+        }
+        Insert: {
+          action_type: string
+          actor_user_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          profile_id?: string | null
+          reason?: string | null
+          term_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          actor_user_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          profile_id?: string | null
+          reason?: string | null
+          term_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_moderation_actions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "identity_moderation_actions_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "identity_moderation_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      identity_moderation_flags: {
+        Row: {
+          category: string
+          created_at: string
+          field: string
+          id: string
+          normalized_value: string
+          observed_value: string | null
+          profile_id: string
+          resolution_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          term_id: string | null
+          updated_at: string
+          violation_code: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          field: string
+          id?: string
+          normalized_value: string
+          observed_value?: string | null
+          profile_id: string
+          resolution_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          term_id?: string | null
+          updated_at?: string
+          violation_code: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          field?: string
+          id?: string
+          normalized_value?: string
+          observed_value?: string | null
+          profile_id?: string
+          resolution_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          term_id?: string | null
+          updated_at?: string
+          violation_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_moderation_flags_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "identity_moderation_flags_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "identity_moderation_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      identity_moderation_terms: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_core: boolean
+          kind: string
+          match_mode: string
+          normalized_term: string
+          notes: string | null
+          severity: number
+          term: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_core?: boolean
+          kind: string
+          match_mode: string
+          normalized_term: string
+          notes?: string | null
+          severity: number
+          term: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_core?: boolean
+          kind?: string
+          match_mode?: string
+          normalized_term?: string
+          notes?: string | null
+          severity?: number
+          term?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -2332,8 +2329,17 @@ export type Database = {
         Args: { _templates: Json }
         Returns: Json
       }
-      admin_create_daily_crew_builder_mission_from_template: {
-        Args: { _mission_date: string; _template_id: string }
+      admin_reset_profile_identity: {
+        Args: {
+          _reason?: string | null
+          _reset_display_name?: boolean
+          _reset_username?: boolean
+          _target_profile_id: string
+        }
+        Returns: Json
+      }
+      restore_public_identity_remediation_incident: {
+        Args: never
         Returns: Json
       }
       admin_generate_daily_crew_rotation: {
@@ -2352,13 +2358,12 @@ export type Database = {
         }
         Returns: Json
       }
-      admin_reset_profile_identity: {
-        Args: {
-          _reason?: string
-          _reset_display_name?: boolean
-          _reset_username?: boolean
-          _target_profile_id: string
-        }
+      admin_create_daily_crew_builder_mission_from_template: {
+        Args: { _mission_date: string; _template_id: string }
+        Returns: Json
+      }
+      admin_save_daily_crew_rotation_plan: {
+        Args: { _name: string; _plan_id: string | null; _slots: Json }
         Returns: Json
       }
       admin_save_daily_crew_builder_mission: {
@@ -2366,11 +2371,11 @@ export type Database = {
           _brief: string
           _jobs: Json
           _mission_date: string
-          _mission_id: string
+          _mission_id: string | null
           _mission_tags: string[]
           _perfect_solution: Json
           _pool: Json
-          _reveal_at: string
+          _reveal_at: string | null
           _reveal_policy: Database["public"]["Enums"]["daily_crew_reveal_policy"]
           _scores: Json
           _slug: string
@@ -2389,13 +2394,9 @@ export type Database = {
           _reveal_policy: Database["public"]["Enums"]["daily_crew_reveal_policy"]
           _scores: Json
           _slug: string
-          _template_id: string
+          _template_id: string | null
           _title: string
         }
-        Returns: Json
-      }
-      admin_save_daily_crew_rotation_plan: {
-        Args: { _name: string; _plan_id: string; _slots: Json }
         Returns: Json
       }
       admin_set_daily_crew_builder_mission_status: {
@@ -2461,10 +2462,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      award_daily_crew_builder_reward: {
-        Args: { _submission_id: string; _user_id: string }
-        Returns: Json
-      }
       award_grand_line_guess_reward: {
         Args: {
           _attempt_number: number
@@ -2474,41 +2471,12 @@ export type Database = {
         }
         Returns: undefined
       }
-      calculate_market_price_v1_2: {
-        Args: {
-          _comparable_adjustment: number
-          _current_relevance: number
-          _future_potential: number
-          _investor_confidence: number
-          _launch_catalyst_pct: number
-          _narrative_importance: number
-          _popularity: number
-          _pricing_algorithm_version: string
-          _strength_status: number
-          _uncertainty_discount_pct: number
-          _volatility: number
-        }
-        Returns: {
-          applied_price: number
-          pricing_score: number
-          weighted_score: number
-        }[]
-      }
       check_achievements: { Args: { _user_id: string }; Returns: number }
       check_legacy_for_user: { Args: { _user_id: string }; Returns: undefined }
-      evaluate_public_identity: {
-        Args: { _field: string; _value: string }
-        Returns: {
-          allowed: boolean
-          category: string
-          term_id: string
-          violation_code: string
-        }[]
-      }
       execute_trade: {
         Args: {
-          _request_id: string
           _shares: number
+          _request_id: string
           _side: string
           _slug: string
           _user_id: string
@@ -2541,12 +2509,7 @@ export type Database = {
         }
       }
       execute_trade_authenticated: {
-        Args: {
-          _request_id: string
-          _shares: number
-          _side: string
-          _slug: string
-        }
+        Args: { _request_id: string; _shares: number; _side: string; _slug: string }
         Returns: {
           balance_after: number
           character_id: string
@@ -2605,7 +2568,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      get_my_legacy_log_snapshot: { Args: never; Returns: Json }
+      get_my_legacy_log_snapshot: {
+        Args: never
+        Returns: Json
+      }
       get_my_legacy_rank: {
         Args: never
         Returns: {
@@ -2614,7 +2580,10 @@ export type Database = {
           value: number
         }[]
       }
-      get_my_onboarding_progress: { Args: never; Returns: Json }
+      get_my_onboarding_progress: {
+        Args: never
+        Returns: Json
+      }
       get_public_character_top_holders: {
         Args: { _limit?: number; _offset?: number; _slug: string }
         Returns: {
@@ -2638,7 +2607,7 @@ export type Database = {
           rank: number
           title: Database["public"]["Enums"]["investor_title"]
           username: string
-          value: number
+          value: number | null
         }[]
       }
       get_public_leaderboard_movers: {
@@ -2673,29 +2642,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      identity_moderation_clean_display: {
-        Args: { _value: string }
-        Returns: string
-      }
-      identity_moderation_compact: { Args: { _value: string }; Returns: string }
-      identity_moderation_next_username: {
-        Args: { _base: string; _profile_id: string }
-        Returns: string
-      }
-      identity_moderation_normalize: {
-        Args: { _value: string }
-        Returns: string
-      }
-      identity_moderation_reduce_repeats: {
-        Args: { _value: string }
-        Returns: string
-      }
-      identity_moderation_words: { Args: { _value: string }; Returns: string }
-      identity_username_canonical: { Args: { _value: string }; Returns: string }
-      identity_username_legacy_format_valid: {
-        Args: { _value: string }
-        Returns: boolean
-      }
       is_my_character_largest_holder: {
         Args: { _slug: string }
         Returns: boolean
@@ -2703,9 +2649,9 @@ export type Database = {
       mutate_my_onboarding_progress: {
         Args: {
           _mutation: string
-          _step: number
-          _tip_id: string
-          _tip_version: number
+          _step: number | null
+          _tip_id: string | null
+          _tip_version: number | null
         }
         Returns: Json
       }
@@ -2719,24 +2665,6 @@ export type Database = {
           price_before: number
           slug: string
         }[]
-      }
-      publish_character_ipo: {
-        Args: {
-          _character_id: string
-          _comparable_adjustment: number
-          _current_relevance: number
-          _future_potential: number
-          _investor_confidence: number
-          _launch_catalyst_pct: number
-          _narrative_importance: number
-          _popularity: number
-          _pricing_algorithm_version: string
-          _stock_category: Database["public"]["Enums"]["stock_category"]
-          _strength_status: number
-          _uncertainty_discount_pct: number
-          _volatility: number
-        }
-        Returns: Json
       }
       publish_due_events: { Args: never; Returns: number }
       recalc_user_stats: {
@@ -2777,18 +2705,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      record_daily_crew_builder_submission: {
-        Args: {
-          _assignments: Json
-          _mission_id: string
-          _rank: Database["public"]["Enums"]["daily_crew_rank"]
-          _reward_amount: number
-          _score: number
-          _score_breakdown: Json
-          _user_id: string
-        }
-        Returns: Json
-      }
       record_legacy_if_first: {
         Args: {
           _character_id: string
@@ -2805,10 +2721,7 @@ export type Database = {
         Args: { _event_data: Json; _event_name: string }
         Returns: boolean
       }
-      record_user_daily_activity: {
-        Args: { _user_id: string }
-        Returns: number
-      }
+      record_user_daily_activity: { Args: { _user_id: string }; Returns: number }
       refresh_all_user_progression: { Args: never; Returns: Json }
       refresh_leaderboards: { Args: never; Returns: undefined }
       refresh_user_progression: { Args: { _user_id: string }; Returns: Json }
@@ -2816,8 +2729,20 @@ export type Database = {
         Args: { _character_id: string }
         Returns: boolean
       }
-      restore_public_identity_remediation_incident: {
-        Args: never
+      award_daily_crew_builder_reward: {
+        Args: { _submission_id: string; _user_id: string }
+        Returns: Json
+      }
+      record_daily_crew_builder_submission: {
+        Args: {
+          _assignments: Json
+          _mission_id: string
+          _rank: Database["public"]["Enums"]["daily_crew_rank"]
+          _reward_amount: number
+          _score: number
+          _score_breakdown: Json
+          _user_id: string
+        }
         Returns: Json
       }
       run_daily_market_cycle: {
